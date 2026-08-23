@@ -91,6 +91,7 @@ const learnerNavItems = [
 
 const riskColors = { Low: '#70B99B', Medium: '#E0B155', High: '#E27D63' }
 const pieColors = ['#70B99B', '#E0B155', '#E27D63']
+const semesterOrdinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
 
 function RiskBadge({ risk }) {
   return <span className={`risk-badge risk-${risk.toLowerCase()}`}>{risk} risk</span>
@@ -151,6 +152,7 @@ function Overview({ user, students, onNavigate, onAddStudent, onUpload, onExport
   const department = isAdmin ? 'All departments' : user.department
   const scopeStudents = useMemo(() => isAdmin ? students : students.filter((student) => student.department === user.department), [isAdmin, students, user.department])
   const semesterStudents = scopeStudents.filter((student) => student.semester === selectedSemester)
+  const semesterCounts = semesters.map((semester) => ({ semester, count: scopeStudents.filter((student) => student.semester === semester).length }))
   const total = scopeStudents.length
   const avgAttendance = total ? (scopeStudents.reduce((sum, student) => sum + Number(student.attendance || 0), 0) / total).toFixed(1) : '0.0'
   const avgCgpa = total ? (scopeStudents.reduce((sum, student) => sum + Number(student.cgpa || 0), 0) / total).toFixed(1) : '0.0'
@@ -165,6 +167,10 @@ function Overview({ user, students, onNavigate, onAddStudent, onUpload, onExport
 
   return <div className="dashboard-content">
     <PageIntro eyebrow={`${department} · Academic year 2026–27`} title={user.role === 'admin' ? 'Good morning, Kavya.' : 'Good morning, Ananya.'} description={`${currentDate}  ·  Here is what needs your attention today.`} actions={<><button type="button" className="button-ghost" onClick={onExport}><FiDownload /> Export report</button>{!isAdmin && <button type="button" className="button-primary" onClick={onAddStudent}><FiPlus /> Add student</button>}</>} />
+    <section className="semester-picker-card">
+      <div className="semester-picker-head"><div><p className="page-eyebrow">Teacher workspace</p><h2>Choose a semester</h2><p>Select a semester to view only students from your department.</p></div><span className="scope-pill"><FiShield /> {isAdmin ? 'All departments' : `${user.department} only`}</span></div>
+      <div className="semester-picker-list">{semesterCounts.map(({ semester, count }, index) => <button type="button" className={`semester-picker-item ${semester === selectedSemester ? 'active' : ''}`} key={semester} onClick={() => setSelectedSemester(semester)}><span className="semester-picker-number">{semesterOrdinals[index]}</span><span className="semester-picker-label">Semester {semester}</span><span className="semester-picker-count">{count} {count === 1 ? 'student' : 'students'}</span><FiChevronRight /></button>)}</div>
+    </section>
     <div className="kpi-grid">
       <div className="kpi-card primary"><div className="kpi-top"><span className="kpi-label">Total students</span><span className="kpi-icon"><FiUsers /></span></div><div className="kpi-value">{total || 0}</div><span className="kpi-change"><FiArrowUp /> 8.4% vs last term</span><MiniSpark color="#F07E5E" /></div>
       <div className="kpi-card mint"><div className="kpi-top"><span className="kpi-label">Average attendance</span><span className="kpi-icon"><FiClock /></span></div><div className="kpi-value">{avgAttendance}%</div><span className="kpi-change"><FiArrowUp /> 2.1% this month</span><MiniSpark color="#59A686" /></div>
@@ -176,7 +182,6 @@ function Overview({ user, students, onNavigate, onAddStudent, onUpload, onExport
       <section className="content-card"><div className="card-heading"><div><h2 className="card-title">Risk distribution</h2><p className="card-description">Prediction engine snapshot</p></div><span className="live-tag" style={{ color: '#4f9276', background: '#eaf6f0', borderColor: '#d7ecdf' }}><i style={{ background: '#70B99B' }} /> This week</span></div><div className="risk-card-content"><div className="risk-donut"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={riskData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={75} paddingAngle={3} stroke="none"><Cell fill={pieColors[0]} /><Cell fill={pieColors[1]} /><Cell fill={pieColors[2]} /></Pie></PieChart></ResponsiveContainer><div className="risk-center"><strong>{total}</strong><span>students</span></div></div><div className="risk-legend">{riskData.map((item, index) => <div className="legend-item" key={item.name}><i className="legend-dot" style={{ background: pieColors[index] }} /><span>{item.name.replace(' risk', '')}</span><strong>{item.value}</strong></div>)}</div></div></section>
     </div>
     <section className="content-card alerts-card"><div className="card-heading"><div><h2 className="card-title">Needs a closer look</h2><p className="card-description">A short list for a more intentional follow-up</p></div><button className="button-ghost" type="button" onClick={() => onNavigate('prediction')}>Open prediction desk <FiArrowRight /></button></div><div className="alert-list">{alerts.length ? alerts.map((student) => <div className="alert-row" key={student.id}><Avatar initials={student.initials} tone={student.risk === 'High' ? '' : 'mint'} /><div className="alert-info"><strong>{student.name}</strong><span>{student.usn} · {student.attendance}% attendance · {student.cgpa} CGPA</span></div><RiskBadge risk={student.risk} /><FiChevronRight className="alert-arrow" /></div>) : <div className="empty-state">No students need attention right now.</div>}</div></section>
-    <div className="semester-tabs">{semesters.map((semester) => <button type="button" className={`semester-tab ${semester === selectedSemester ? 'active' : ''}`} key={semester} onClick={() => setSelectedSemester(semester)}>Semester {semester}</button>)}</div>
     <section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">Semester {selectedSemester} students</h2><p className="card-description">{semesterStudents.length} learners in {isAdmin ? 'the current sample view' : `${user.department} · all sections`}</p></div><div className="table-tools"><div className="search-field"><FiSearch /><input placeholder="Search students" aria-label="Search students" /></div><button className="filter-btn" type="button" onClick={() => onNavigate('students')}><FiFilter /> Filter</button></div></div><StudentTable students={semesterStudents.slice(0, 6)} compact onView={(student) => onNavigate('students', student)} /></section>
   </div>
 }

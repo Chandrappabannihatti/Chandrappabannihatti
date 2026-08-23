@@ -626,7 +626,7 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 
 /* Minimal department-first landing page */
 .simple-landing { min-height: 100vh; background: var(--cream); }
-.simple-college-header { display: grid; grid-template-columns: 205px minmax(0, 1fr) auto; align-items: center; gap: 28px; max-width: 1100px; margin: 0 auto; border-bottom: 1px solid #e4e3dc; padding: 26px 24px 24px; }
+.simple-college-header { display: grid; grid-template-columns: 205px minmax(0, 1fr); align-items: center; gap: 28px; max-width: 1100px; margin: 0 auto; border-bottom: 1px solid #e4e3dc; padding: 26px 24px 24px; }
 .simple-header-brand { align-self: start; padding-top: 2px; }
 .simple-college-copy { padding-left: 28px; border-left: 1px solid #e2e1da; }
 .simple-overline { margin: 0; color: var(--coral-dark); font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
@@ -670,7 +670,7 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 .simple-footer span:first-child { display: inline-flex; align-items: center; gap: 6px; }
 .simple-footer svg { color: #62a483; }
 @media (max-width: 760px) {
-  .simple-college-header { grid-template-columns: 1fr auto; gap: 17px; padding: 20px; }
+  .simple-college-header { grid-template-columns: 1fr; gap: 17px; padding: 20px; }
   .simple-header-brand { grid-column: 1 / -1; }
   .simple-college-copy { grid-column: 1; padding-left: 0; border-left: 0; }
   .simple-college-copy h1 { font-size: 18px; }
@@ -688,4 +688,32 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .simple-department-name strong { font-size: 12px; }
   .simple-department-name small { font-size: 9px; }
   .simple-footer { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
+
+/* Teacher semester selector */
+.semester-picker-card { margin-bottom: 13px; border: 1px solid #dce8e2; border-radius: 15px; padding: 18px 20px 20px; background: #edf7f2; }
+.semester-picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.semester-picker-head .page-eyebrow { margin-bottom: 6px; }
+.semester-picker-head h2 { margin: 0; color: var(--ink); font-family: 'Manrope', sans-serif; font-size: 19px; font-weight: 800; letter-spacing: -.05em; }
+.semester-picker-head p:last-child { margin: 5px 0 0; color: #82938e; font-size: 10px; }
+.scope-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #cfe4da; border-radius: 999px; padding: 7px 10px; color: #54846f; background: rgba(255,255,255,.54); font-size: 9px; font-weight: 800; white-space: nowrap; }
+.scope-pill svg { font-size: 12px; }
+.semester-picker-list { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 7px; margin-top: 17px; }
+.semester-picker-item { display: flex; min-height: 82px; flex-direction: column; align-items: flex-start; border: 1px solid #d7e7df; border-radius: 10px; padding: 10px; color: var(--ink); background: rgba(255,255,255,.57); text-align: left; transition: all .18s ease; }
+.semester-picker-item:hover { border-color: #72af96; background: #fff; transform: translateY(-2px); }
+.semester-picker-item.active { border-color: var(--ink); color: #fff; background: var(--ink); box-shadow: 0 7px 14px rgba(8,23,40,.14); }
+.semester-picker-number { color: #5a9c7d; font-family: 'Manrope', sans-serif; font-size: 17px; font-weight: 800; letter-spacing: -.06em; }
+.semester-picker-item.active .semester-picker-number { color: var(--mint); }
+.semester-picker-label { margin-top: 4px; font-size: 10px; font-weight: 800; }
+.semester-picker-count { margin-top: auto; color: #9aa9a4; font-size: 8px; }
+.semester-picker-item.active .semester-picker-count { color: #9eafb3; }
+.semester-picker-item > svg { position: absolute; display: none; }
+@media (max-width: 1100px) {
+  .semester-picker-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .semester-picker-card { padding: 15px; }
+  .semester-picker-head { align-items: flex-start; flex-direction: column; gap: 11px; }
+  .semester-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .semester-picker-item { min-height: 73px; }
 }

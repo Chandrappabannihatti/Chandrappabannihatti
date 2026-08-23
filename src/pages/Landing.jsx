@@ -47,7 +47,6 @@ export default function Landing() {
           <h1>PES Institute of Technology and Management</h1>
           <p className="simple-address">NH-206, Sagar Road, Shivamogga - 577204</p>
         </div>
-        <button className="simple-sign-in" type="button" onClick={() => goToLogin()}>Sign in <FiArrowRight /></button>
       </header>
 
       <section className="simple-department-section">
