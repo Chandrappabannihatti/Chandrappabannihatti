@@ -145,16 +145,22 @@ export function AdminSubjectManagement() {
 function SubjectForm({ subject, department, semester, onClose, onSave }) {
   const [form, setForm] = useState({ subjectCode: subject?.subjectCode || '', subjectName: subject?.subjectName || '', credits: subject?.credits || 3 })
   const [error, setError] = useState('')
-  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }))
+  const [saving, setSaving] = useState(false)
+  const update = (key, value) => { setError(''); setForm((current) => ({ ...current, [key]: value })) }
   const submit = async (event) => {
     event.preventDefault()
     if (!/^[A-Za-z0-9][A-Za-z0-9 -]{1,29}$/.test(form.subjectCode.trim())) { setError('Use a subject code with 2–30 letters or numbers.'); return }
     if (!form.subjectName.trim()) { setError('Enter a subject name.'); return }
     if (Number(form.credits) <= 0 || Number(form.credits) > 30) { setError('Credits must be greater than 0 and no more than 30.'); return }
-    const saved = await onSave(form)
-    if (!saved || saved.ok === false) setError(saved?.message || 'We could not save this subject. Check the details and try again.')
+    setSaving(true)
+    try {
+      const saved = await onSave(form)
+      if (!saved || saved.ok === false) setError(saved?.message || 'We could not save this subject. Check the details and try again.')
+    } catch (saveError) {
+      setError(saveError.message || 'We could not save this subject. Check the details and try again.')
+    } finally { setSaving(false) }
   }
-  return <div className="admin-modal-backdrop"><form className="admin-subject-modal" onSubmit={submit}><div className="admin-modal-head"><div><p>{department.label} · Semester {semester}</p><h2>{subject ? 'Edit subject' : 'Add subject'}</h2></div><button type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="admin-modal-body"><label>Subject code<input value={form.subjectCode} onChange={(event) => update('subjectCode', event.target.value.toUpperCase())} placeholder="CS706" maxLength="30" required /></label><label>Subject name<input value={form.subjectName} onChange={(event) => update('subjectName', event.target.value)} placeholder="Advanced Web Technologies" maxLength="160" required /></label><label>Credits<input type="number" min="0.5" max="30" step="0.5" value={form.credits} onChange={(event) => update('credits', event.target.value)} required /></label>{error && <div className="admin-form-error">{error}</div>}</div><div className="admin-modal-foot"><button className="admin-secondary-button" type="button" onClick={onClose}>Cancel</button><button className="admin-primary-button" type="submit"><FiCheck /> {subject ? 'Save changes' : 'Create subject'}</button></div></form></div>
+  return <div className="admin-modal-backdrop"><form className="admin-subject-modal" onSubmit={submit}><div className="admin-modal-head"><div><p>{department.label} · Semester {semester}</p><h2>{subject ? 'Edit subject' : 'Add subject'}</h2></div><button type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="admin-modal-body"><label>Subject code<input value={form.subjectCode} onChange={(event) => update('subjectCode', event.target.value.toUpperCase())} placeholder="CS706" maxLength="30" required /></label><label>Subject name<input value={form.subjectName} onChange={(event) => update('subjectName', event.target.value)} placeholder="Advanced Web Technologies" maxLength="160" required /></label><label>Credits<input type="number" min="0.5" max="30" step="0.5" value={form.credits} onChange={(event) => update('credits', event.target.value)} required /></label>{error && <div className="admin-form-error" role="alert">{error}</div>}</div><div className="admin-modal-foot"><button className="admin-secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="admin-primary-button" type="submit" disabled={saving}><FiCheck /> {saving ? 'Saving…' : subject ? 'Save changes' : 'Create subject'}</button></div></form></div>
 }
 
 export function AdminAccount({ mode = 'profile' }) {
