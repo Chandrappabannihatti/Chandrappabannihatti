@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import api, { DEMO_MODE } from '../lib/api'
+import api, { DEMO_MODE, setAuthToken } from '../lib/api'
 import { currentUser, parentUser, studentUser } from '../data/demo'
 
 const AuthContext = createContext(null)
@@ -11,14 +11,21 @@ const demoAccounts = {
   parent: { secret: parentUser.usn, password: 'Parent@123', user: parentUser },
 }
 
+function persistSession(next) {
+  try {
+    if (next) localStorage.setItem('camps_session', JSON.stringify(next))
+    else localStorage.removeItem('camps_session')
+  } catch { /* keep in-memory auth when storage is unavailable */ }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(() => {
     try { return JSON.parse(localStorage.getItem('camps_session')) || null } catch { return null }
   })
 
   useEffect(() => {
-    if (session) localStorage.setItem('camps_session', JSON.stringify(session))
-    else localStorage.removeItem('camps_session')
+    persistSession(session)
+    setAuthToken(session?.token || '')
   }, [session])
 
   const login = async ({ role, identifier, password, department }) => {
@@ -29,6 +36,8 @@ export function AuthProvider({ children }) {
         const result = await api.login({ role: normalizedRole, identifier, password, department: requestedDepartment })
         const user = { ...result.user, role: normalizedRole, department: normalizedRole === 'admin' ? requestedDepartment || result.user.department : result.user.department }
         const next = { token: result.token, user }
+        persistSession(next)
+        setAuthToken(next.token)
         setSession(next)
         return next.user
       } catch (apiError) {
@@ -47,6 +56,8 @@ export function AuthProvider({ children }) {
     }
     const user = { ...account.user, department: normalizedRole === 'admin' ? requestedDepartment || account.user.department : account.user.department }
     const next = { token: 'demo-session-token', user }
+    persistSession(next)
+    setAuthToken(next.token)
     setSession(next)
     return user
   }
@@ -55,6 +66,8 @@ export function AuthProvider({ children }) {
     if (!DEMO_MODE && session?.token) {
       try { await api.logout() } catch { /* local session is still cleared */ }
     }
+    persistSession(null)
+    setAuthToken('')
     setSession(null)
   }
 

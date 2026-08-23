@@ -3,6 +3,12 @@ import axios from 'axios'
 // API-first by default. Set VITE_DEMO_MODE=true when reviewing the UI without the Node service.
 export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
 
+let authToken = ''
+
+export function setAuthToken(token) {
+  authToken = token || ''
+}
+
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   timeout: 5000,
@@ -12,7 +18,8 @@ const client = axios.create({
 client.interceptors.request.use((config) => {
   try {
     const session = JSON.parse(localStorage.getItem('camps_session'))
-    if (session?.token) config.headers.Authorization = `Bearer ${session.token}`
+    const token = authToken || session?.token
+    if (token) config.headers.Authorization = `Bearer ${token}`
   } catch { /* ignore malformed local storage */ }
   return config
 })
