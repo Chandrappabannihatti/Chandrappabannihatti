@@ -1,4 +1,5 @@
 -- Demo data is inserted by `npm run db:seed` so password hashes are generated safely at runtime.
+-- The runtime seed also inserts representative scoped achievement records from src/data/demo.js.
 -- Demo credentials when USE_DEMO_DATA=true:
 -- admin@camps.edu / Admin@123
 -- teacher@camps.edu / Teacher@123

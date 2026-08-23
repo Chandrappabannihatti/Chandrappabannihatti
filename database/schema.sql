@@ -155,6 +155,28 @@ CREATE TABLE IF NOT EXISTS assignments (
   CONSTRAINT fk_assignment_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS achievements (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  student_id BIGINT UNSIGNED NOT NULL,
+  teacher_id BIGINT UNSIGNED NULL,
+  section_id BIGINT UNSIGNED NULL,
+  department_code VARCHAR(10) NOT NULL,
+  semester TINYINT UNSIGNED NOT NULL,
+  achievement_type VARCHAR(60) NOT NULL,
+  achievement_date DATE NOT NULL,
+  title VARCHAR(180) NOT NULL,
+  description TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_achievement_student_entry (student_id, achievement_date, title),
+  KEY idx_achievement_scope (department_code, semester, section_id, achievement_date),
+  KEY idx_achievement_student (student_id, achievement_date),
+  CONSTRAINT fk_achievement_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  CONSTRAINT fk_achievement_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL,
+  CONSTRAINT fk_achievement_section FOREIGN KEY (section_id) REFERENCES sections(section_id) ON DELETE SET NULL,
+  CONSTRAINT fk_achievement_department FOREIGN KEY (department_code) REFERENCES departments(code) ON DELETE RESTRICT,
+  CONSTRAINT chk_achievement_semester CHECK (semester BETWEEN 1 AND 8)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS remarks (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   student_id BIGINT UNSIGNED NOT NULL,

@@ -47,6 +47,8 @@ const api = {
   deleteAnnouncement: (id) => unwrap(client.delete(`/announcements/${id}`)),
   createRemark: (payload) => unwrap(client.post('/remarks', payload)),
   getRemarks: (params) => unwrap(client.get('/remarks', { params })),
+  getAchievements: (params) => unwrap(client.get('/achievements', { params })),
+  createAchievement: (payload) => unwrap(client.post('/achievements', payload)),
   predict: (payload) => unwrap(client.post('/ml/predict', payload)),
 }
 

@@ -77,6 +77,15 @@ export const demoRemarks = [
   { id: 3, studentId: 1, studentName: 'Aarav Bhat', label: 'Excellent Performance', note: 'Consistently strong work in distributed systems and peer mentoring.', date: '16 Aug 2026', author: 'Dr. Ananya Rao' },
 ]
 
+export const achievementTypes = ['Academic', 'Hackathon', 'Certification', 'Sports', 'Cultural', 'Leadership', 'Community service']
+
+export const demoAchievements = [
+  { id: 1, studentId: 4, studentName: 'Ishita Kulkarni', usn: '4PM21CS033', department: 'CSE', semester: 7, section: 'B', achievementType: 'Hackathon', date: '2026-08-12', title: 'Smart India Hackathon finalist', description: 'Selected as a finalist for the campus accessibility solution built during the national hackathon.', author: 'Dr. Ananya Rao' },
+  { id: 2, studentId: 5, studentName: 'Rohan Desai', usn: '4PM21CS041', department: 'CSE', semester: 7, section: 'B', achievementType: 'Certification', date: '2026-07-28', title: 'Cloud foundations certification', description: 'Completed the Cloud Foundations certification with a distinction.', author: 'Dr. Ananya Rao' },
+  { id: 3, studentId: 1, studentName: 'Aarav Bhat', usn: '4PM21CS001', department: 'CSE', semester: 7, section: 'A', achievementType: 'Leadership', date: '2026-08-05', title: 'Peer mentor for distributed systems', description: 'Led weekly peer-learning sessions for the distributed systems study group.', author: 'Dr. Ananya Rao' },
+  { id: 4, studentId: 7, studentName: 'Aditya Prabhu', usn: '4PM21CS064', department: 'CSE', semester: 7, section: 'C', achievementType: 'Sports', date: '2026-07-19', title: 'Inter-college badminton runner-up', description: 'Represented the institute at the inter-college badminton tournament.', author: 'Dr. Ananya Rao' },
+]
+
 export const attendanceTrend = [
   { month: 'Feb', attendance: 78, target: 75 },
   { month: 'Mar', attendance: 80, target: 75 },

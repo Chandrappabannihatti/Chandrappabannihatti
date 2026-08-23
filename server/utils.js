@@ -1,5 +1,6 @@
 export const validDepartments = ['CSE', 'AIML', 'CSDS', 'ECE', 'EEE', 'ME', 'CIVIL']
 export const validSemesters = [1, 2, 3, 4, 5, 6, 7, 8]
+export const validAchievementTypes = ['Academic', 'Hackathon', 'Certification', 'Sports', 'Cultural', 'Leadership', 'Community service']
 
 export function cleanString(value) {
   return String(value ?? '').trim()
@@ -22,6 +23,23 @@ export function riskFromFeatures({ attendance = 0, cgpa = 0, backlogs = 0 }) {
 export function passProbability({ attendance = 0, ia1 = 0, ia2 = 0, assignmentMarks = 0, previousSgpa = 0, cgpa = 0, backlogs = 0 }) {
   const score = Number(attendance) * 0.38 + ((Number(ia1) + Number(ia2)) / 2) * 0.25 + Number(assignmentMarks) * 0.12 + Number(previousSgpa) * 4 + Number(cgpa) * 3 - Number(backlogs) * 8
   return Math.max(24, Math.min(99, Math.round(score)))
+}
+
+export function validateAchievement(input) {
+  const errors = []
+  const studentId = Number(input.studentId)
+  const achievementType = cleanString(input.achievementType || input.type)
+  const date = cleanString(input.date || input.achievementDate)
+  const title = cleanString(input.title)
+  const description = cleanString(input.description)
+  if (!Number.isInteger(studentId) || studentId <= 0) errors.push('A student is required.')
+  if (!validAchievementTypes.includes(achievementType)) errors.push('Choose a valid achievement type.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) errors.push('A valid achievement date is required.')
+  if (!title) errors.push('Achievement title is required.')
+  if (title.length > 180) errors.push('Achievement title must be 180 characters or fewer.')
+  if (!description) errors.push('Achievement description is required.')
+  if (description.length > 4000) errors.push('Achievement description must be 4000 characters or fewer.')
+  return errors
 }
 
 export function validateStudent(input, existing = []) {

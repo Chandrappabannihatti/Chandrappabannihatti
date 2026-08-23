@@ -10,7 +10,7 @@ import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { demoStore, nextId } from './demoStore.js'
 import { getPool, query } from './db.js'
-import { cleanString, isEmail, isPhone, passProbability, riskFromFeatures, validDepartments, validSemesters, validateStudent } from './utils.js'
+import { cleanString, isEmail, isPhone, passProbability, riskFromFeatures, validDepartments, validSemesters, validateAchievement, validateStudent } from './utils.js'
 
 const app = express()
 const port = Number(process.env.PORT || 5000)
@@ -97,6 +97,10 @@ function mapRemarkRow(row) {
   return { ...row, studentId: row.studentId || row.student_id, studentName: row.studentName || row.student_name, date: row.date || row.created_at, author: row.author || row.teacher_name || 'Teacher' }
 }
 
+function mapAchievementRow(row) {
+  return { ...row, studentId: row.studentId ?? row.student_id, studentName: row.studentName || row.student_name, usn: row.usn, department: row.department || row.department_code, semester: Number(row.semester), section: row.section || row.sectionName, achievementType: row.achievementType || row.achievement_type, date: row.date || row.achievement_date, title: row.title, description: row.description, author: row.author || row.teacher_name || 'Teacher' }
+}
+
 async function findSection(department, semester, sectionName) {
   const rows = await query('SELECT section_id AS sectionId, department_code AS department, semester, section_name AS sectionName FROM sections WHERE department_code=:department AND semester=:semester AND section_name=:sectionName LIMIT 1', { department, semester: Number(semester), sectionName: cleanString(sectionName).toUpperCase() })
   return rows[0]
@@ -124,7 +128,7 @@ app.post('/api/auth/login', async (req, res, next) => {
     if (useDemoData) {
       const account = demoAccounts[role]
       if (!account || identifier.toLowerCase() !== account.secret.toLowerCase() || password !== account.password) return res.status(401).json({ message: 'Invalid demo credentials.' })
-      const user = { ...account, department: role === 'admin' ? 'ALL' : (req.body.department || account.department) }
+      const user = { ...account, department: role === 'admin' ? 'ALL' : account.department }
       return res.json({ token: sign(user), user: publicUser(user) })
     }
 
@@ -302,6 +306,72 @@ app.get('/api/students/export', authRequired, roleRequired('teacher', 'admin'), 
     res.setHeader('Content-Disposition', 'attachment; filename="camps-student-roster.xlsx"')
     res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buffer)
   } catch (error) { next(error) }
+})
+
+app.get('/api/achievements', authRequired, async (req, res, next) => {
+  try {
+    const requestedSemester = req.query.semester || (req.user.role === 'student' || req.user.role === 'parent' ? req.user.semester : undefined)
+    const requestedSection = req.query.section ? String(req.query.section).toUpperCase() : ''
+    const requestedDepartment = req.user.role === 'teacher' ? req.user.department : (req.query.department || (req.user.department === 'ALL' ? '' : req.user.department))
+    if (useDemoData) {
+      const items = demoStore.achievements.filter((achievement) => {
+        const student = demoStore.students.find((item) => item.id === Number(achievement.studentId))
+        if (!student || !scopeStudent(req, student)) return false
+        return (!requestedDepartment || requestedDepartment === 'all' || student.department === requestedDepartment) && (!requestedSemester || Number(student.semester) === Number(requestedSemester)) && (!requestedSection || String(student.section || '').toUpperCase() === requestedSection)
+      })
+      return res.json({ data: items })
+    }
+    const conditions = ['s.is_active = 1']
+    const params = {}
+    if (req.user.role === 'teacher') { conditions.push('s.department_code = :teacherDepartment'); params.teacherDepartment = req.user.department }
+    else if (req.user.role === 'student' || req.user.role === 'parent') { conditions.push('s.usn = :userUsn'); params.userUsn = req.user.usn }
+    else if (requestedDepartment) { conditions.push('s.department_code = :department'); params.department = requestedDepartment }
+    if (requestedSemester) { conditions.push('s.semester = :semester'); params.semester = Number(requestedSemester) }
+    if (requestedSection) { conditions.push('COALESCE(sec.section_name, s.section) = :section'); params.section = requestedSection }
+    const rows = await query(`SELECT a.id, a.student_id AS studentId, a.achievement_type AS achievementType, a.achievement_date AS date, a.title, a.description, a.created_at AS createdAt, s.usn, s.name AS studentName, s.department_code AS department, s.semester, COALESCE(sec.section_name, s.section) AS section, t.name AS teacher_name FROM achievements a JOIN students s ON s.id=a.student_id LEFT JOIN sections sec ON sec.section_id=COALESCE(a.section_id, s.section_id) LEFT JOIN teachers t ON t.id=a.teacher_id WHERE ${conditions.join(' AND ')} ORDER BY a.achievement_date DESC, a.created_at DESC`, params)
+    res.json({ data: rows.map(mapAchievementRow) })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/achievements', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+  try {
+    const input = req.body || {}
+    const errors = validateAchievement(input)
+    if (errors.length) return res.status(422).json({ message: 'Achievement validation failed.', errors })
+    const studentId = Number(input.studentId)
+    const requestedDepartment = cleanString(input.department).toUpperCase()
+    const requestedSemester = input.semester === undefined || input.semester === '' ? null : Number(input.semester)
+    const requestedSection = cleanString(input.section).toUpperCase()
+    if (requestedSemester !== null && !validSemesters.includes(requestedSemester)) return res.status(422).json({ message: 'Achievement semester must be between 1 and 8.' })
+    if (req.user.role === 'teacher' && (!requestedDepartment || requestedSemester === null || !requestedSection)) return res.status(422).json({ message: 'Department, semester and section scope are required for teacher achievements.' })
+    let student
+    if (useDemoData) student = demoStore.students.find((item) => Number(item.id) === studentId)
+    else {
+      const rows = await query('SELECT s.id, s.usn, s.name, s.department_code AS department, s.semester, s.section, s.section_id AS sectionId, sec.section_name AS sectionName FROM students s LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE s.id=:studentId AND s.is_active=1 LIMIT 1', { studentId })
+      student = rows[0]
+    }
+    if (!student) return res.status(404).json({ message: 'Student not found.' })
+    const scopedStudent = { ...student, department: student.department || student.department_code, section: student.sectionName || student.section }
+    if (!scopeStudent(req, scopedStudent)) return res.status(403).json({ message: 'Student is outside your access scope.' })
+    if (requestedDepartment && requestedDepartment !== scopedStudent.department) return res.status(403).json({ message: 'Achievement department does not match the student scope.' })
+    if (requestedSemester !== null && requestedSemester !== Number(scopedStudent.semester)) return res.status(403).json({ message: 'Achievement semester does not match the student scope.' })
+    if (requestedSection && requestedSection !== String(scopedStudent.section || '').toUpperCase()) return res.status(403).json({ message: 'Achievement section does not match the student scope.' })
+    let sectionId = student.sectionId || null
+    if (!useDemoData && !sectionId) { const sectionRow = await findSection(scopedStudent.department, scopedStudent.semester, scopedStudent.section); sectionId = sectionRow?.sectionId || null }
+    if (!useDemoData && !sectionId) return res.status(422).json({ message: 'The selected student is not linked to a valid section.' })
+    const achievement = { studentId, studentName: scopedStudent.name, usn: scopedStudent.usn, department: scopedStudent.department, semester: Number(scopedStudent.semester), section: String(scopedStudent.section || '').toUpperCase(), achievementType: cleanString(input.achievementType || input.type), date: cleanString(input.date || input.achievementDate), title: cleanString(input.title), description: cleanString(input.description), author: req.user.name }
+    if (useDemoData) {
+      const saved = { id: nextId(demoStore.achievements), ...achievement, createdAt: new Date().toISOString() }
+      demoStore.achievements.unshift(saved)
+      return res.status(201).json({ data: saved })
+    }
+    const result = await query('INSERT INTO achievements (student_id, teacher_id, section_id, department_code, semester, achievement_type, achievement_date, title, description) VALUES (:studentId, :teacherId, :sectionId, :department, :semester, :achievementType, :date, :title, :description)', { ...achievement, teacherId: req.user.role === 'teacher' ? req.user.sub : null, sectionId })
+    res.status(201).json({ data: { id: result.insertId, ...achievement } })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'This achievement is already recorded for the selected student and date.' })
+    if (error.code === 'ER_NO_REFERENCED_ROW_2') return res.status(422).json({ message: 'The selected student scope is no longer available.' })
+    next(error)
+  }
 })
 
 app.get('/api/messages', authRequired, async (req, res, next) => {

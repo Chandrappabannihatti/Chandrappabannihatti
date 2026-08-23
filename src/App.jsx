@@ -4,13 +4,14 @@ import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import SemesterSelection from './pages/SemesterSelection'
+import DepartmentSelection, { TeacherDepartment } from './pages/DepartmentSelection'
 import TeacherSemester, { TeacherStudentProfile } from './pages/TeacherSemester'
 
 function ProtectedRoute({ children, role }) {
   const { isAuthenticated, user } = useAuth()
   if (!isAuthenticated) return <Navigate to="/" replace />
-  if (role && user.role !== role) return <Navigate to={user.role === 'teacher' ? '/teacher/semesters' : '/app'} replace />
-  if (!role && user.role === 'teacher') return <Navigate to="/teacher/semesters" replace />
+  if (role && user.role !== role) return <Navigate to={user.role === 'teacher' ? '/teacher/departments' : '/app'} replace />
+  if (!role && user.role === 'teacher') return <Navigate to="/teacher/departments" replace />
   return children
 }
 
@@ -19,6 +20,8 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/teacher/departments" element={<ProtectedRoute role="teacher"><DepartmentSelection /></ProtectedRoute>} />
+      <Route path="/teacher/department/:department/*" element={<ProtectedRoute role="teacher"><TeacherDepartment /></ProtectedRoute>} />
       <Route path="/teacher/semesters" element={<ProtectedRoute role="teacher"><SemesterSelection /></ProtectedRoute>} />
       <Route path="/teacher/student/:usn" element={<ProtectedRoute role="teacher"><TeacherStudentProfile /></ProtectedRoute>} />
       <Route path="/teacher/semester/:semester/*" element={<ProtectedRoute role="teacher"><TeacherSemester /></ProtectedRoute>} />

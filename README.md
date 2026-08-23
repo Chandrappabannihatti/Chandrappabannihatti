@@ -6,12 +6,13 @@ A production-shaped academic monitoring workspace for **PES Institute of Technol
 
 - Premium university-style React/Vite frontend with React Router, Tailwind CSS, Axios, React Icons and Recharts.
 - Node.js + Express REST API with JWT authentication, department-level teacher access control and role-aware endpoints.
-- MySQL 8 schema covering departments, users, teachers, students, parents, attendance, internal marks, assignments, remarks, messages, announcements, predictions and notifications.
+- MySQL 8 schema covering departments, users, teachers, students, parents, attendance, internal marks, assignments, achievements, remarks, messages, announcements, predictions and notifications.
 - `.xlsx` / `.csv` upload pipeline with server-side validation, duplicate USN detection, preview/import workflow and Excel export.
 - Flask prediction service ready for a trained XGBoost `joblib` model. The API falls back to a transparent deterministic baseline when no model is mounted.
 - Demo data and four ready-to-use demo roles: admin, teacher, student and parent.
-- Teacher tools: a department → semester → section hierarchy. `/teacher/semester/:semester` lists the available sections and supports **+ Add Section**; section workspaces use `/teacher/semester/:semester/section/:section` and isolate students, attendance, internal marks, assignments, achievements, remarks, messages, announcements, analytics and predictions. Search/filter/sort, full-page student profiles at `/teacher/student/:usn`, section-scoped manual entry (`/teacher/semester/:semester/section/:section/students/new`) and Excel import (`/teacher/semester/:semester/section/:section/students/upload`) cannot mix department, semester or section records.
-- Read-only student and parent dashboards with attendance, marks, CGPA, prediction, remarks, messages and announcements.
+- Teacher tools: a department → semester → section hierarchy. Teacher sign-in opens `/teacher/departments`, where the account’s department permission is visible before the semester chooser. `/teacher/semester/:semester` lists the available sections and supports **+ Add Section**; section workspaces use `/teacher/semester/:semester/section/:section` and isolate students, attendance, internal marks, assignments, achievements, remarks, messages, announcements, analytics and predictions. Search/filter/sort, full-page student profiles at `/teacher/student/:usn`, section-scoped manual entry (`/teacher/semester/:semester/section/:section/students/new`) and Excel import (`/teacher/semester/:semester/section/:section/students/upload`) cannot mix department, semester or section records.
+- Teachers can add a student achievement from `/teacher/semester/:semester/section/:section/achievements`. The Student selector is built from the current section only; saved records retain department, semester, section and student ownership and are available as read-only student/parent academic records.
+- Read-only student and parent dashboards with attendance, marks, CGPA, prediction, achievements, remarks, messages and announcements.
 
 ## Run locally in demo mode
 
@@ -50,7 +51,7 @@ The default review setup uses the same demo credentials in both the API and the 
 | Student | `4PM21CS033` | `Student@123` |
 | Parent | `4PM21CS033` | `Parent@123` |
 
-A teacher is scoped to CSE in the demo. Teacher sign-in opens `/teacher/semesters`; choosing a semester opens its isolated route, such as `/teacher/semester/5`. The student and parent accounts open the read-only record for Ishita Kulkarni.
+A teacher is scoped to CSE in the demo. Teacher sign-in opens `/teacher/departments`; choose CSE to continue to the semester chooser, then open an isolated route such as `/teacher/semester/7/section/B`. Student and parent accounts open the read-only records for Ishita Kulkarni, including achievements.
 
 ## MySQL setup
 
@@ -104,6 +105,7 @@ All routes except login and health require `Authorization: Bearer <jwt>`.
 - `GET /api/messages`, `POST /api/messages/send`, `PUT /api/messages/:id/read`
 - `GET /api/announcements`, `POST /api/announcements`, `PUT /api/announcements/:id`, `DELETE /api/announcements/:id`
 - `GET /api/remarks`, `POST /api/remarks`
+- `GET /api/achievements?semester=7&section=B`, `POST /api/achievements` (teacher/admin create; student and parent responses are read-only and scoped to their linked record)
 - `POST /api/ml/predict`
 - `GET /api/health`
 

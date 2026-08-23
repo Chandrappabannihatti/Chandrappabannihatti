@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import dotenv from 'dotenv'
 import { getPool } from '../db.js'
-import { demoAnnouncements, demoRemarks, demoSections, demoStudents } from '../../src/data/demo.js'
+import { demoAchievements, demoAnnouncements, demoRemarks, demoSections, demoStudents } from '../../src/data/demo.js'
 
 dotenv.config()
 const pool = getPool()
@@ -39,5 +39,6 @@ for (const item of demoStudents) {
 }
 for (const item of demoAnnouncements) await pool.query('INSERT INTO announcements (title, body, visibility_type, department_code, semester, priority, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)', [item.title, item.body, item.type, item.department, item.semester, item.priority, teacherResult.insertId])
 for (const item of demoRemarks) { const [[student]] = await pool.query('SELECT id FROM students WHERE name=? LIMIT 1', [item.studentName]); if (student) await pool.query('INSERT INTO remarks (student_id, teacher_id, label, note) VALUES (?, ?, ?, ?)', [student.id, teacherId, item.label, item.note]) }
+for (const item of demoAchievements) { const [[student]] = await pool.query('SELECT id, section_id FROM students WHERE usn=? LIMIT 1', [item.usn]); if (student) await pool.query('INSERT INTO achievements (student_id, teacher_id, section_id, department_code, semester, achievement_type, achievement_date, title, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE description=VALUES(description), achievement_type=VALUES(achievement_type)', [student.id, teacherId, student.section_id, item.department, item.semester, item.achievementType, item.date, item.title, item.description]) }
 await pool.end()
 console.log('CAMPS demo data seeded.')
