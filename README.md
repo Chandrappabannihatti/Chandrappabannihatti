@@ -15,6 +15,8 @@ A production-shaped academic monitoring workspace for **PES Institute of Technol
 - Full student profiles include personal details, photo/avatar, DOB, blood group, address, parent/guardian details, academic information, achievements, certifications, skills, teacher remarks and XGBoost prediction context. Profile, Settings and Logout are available to every authenticated role.
 - Teachers can add a student achievement from `/teacher/semester/:semester/section/:section/achievements`. The Student selector is built from the current section only; saved records retain department, semester, section and student ownership and are available as read-only student/parent academic records.
 - Read-only student and parent dashboards with attendance, marks, CGPA, prediction, achievements, remarks, messages and announcements.
+- Admin subject management at `/admin/subjects`: choose Department → Semester, then add, edit or delete department/semester-owned subjects. The subject catalog is unique by `(department_code, semester, subject_code)` and the same active list is fetched by teacher, student and parent workspaces.
+- Subject changes are synchronized end to end: teachers get subject-specific attendance and internal-mark entry immediately at `/teacher/semester/:semester/section/:section/attendance` and `/marks`, while student/parent records show the same catalog. The API and demo fallback retain scoped subject records and validation without a second setup step.
 
 ## Run locally in demo mode
 
@@ -53,7 +55,7 @@ The default review setup uses the same demo credentials in both the API and the 
 | Student | `4PM21CS033` | `Student@123` |
 | Parent | `4PM21CS033` | `Parent@123` |
 
-The demo teacher account is scoped to CSE. Select CSE → Teacher on the entry page, sign in, then open an isolated route such as `/teacher/semester/7/section/B`. Student and parent accounts open the read-only records for Ishita Kulkarni, including achievements.
+The demo teacher account is scoped to CSE. Select CSE → Teacher on the entry page, sign in, then open an isolated route such as `/teacher/semester/7/section/B`. Student and parent accounts open the read-only records for Ishita Kulkarni, including achievements. Admin accounts open the Department → Semester subject hierarchy; for example, CSE → Semester 7 contains the bundled subject catalog and supports synchronized CRUD.
 
 ## MySQL setup
 
@@ -66,7 +68,7 @@ npm run db:init
 npm run db:seed
 ```
 
-The schema is in [`database/schema.sql`](database/schema.sql), with department seed notes in [`database/seed.sql`](database/seed.sql). `npm run db:init` also upgrades existing `students` tables with the expanded profile columns. Passwords are bcrypt-hashed by the seed script.
+The schema is in [`database/schema.sql`](database/schema.sql), with department and subject seed notes in [`database/seed.sql`](database/seed.sql). `npm run db:init` also upgrades existing `students` tables with the expanded profile columns and widens legacy record-table subject codes for the shared catalog. Passwords are bcrypt-hashed by the seed script.
 
 ## Prediction service
 
@@ -102,6 +104,9 @@ All routes except login and health require `Authorization: Bearer <jwt>`.
 
 - `POST /api/auth/login`, `POST /api/auth/logout`
 - `GET /api/sections?semester=7`, `POST /api/sections` (teacher department is enforced; the POST body accepts `sectionName`)
+- `GET /api/subjects?department=CSE&semester=7` (authenticated subject catalog for admin, teacher, student and parent scopes)
+- `POST /api/subjects`, `PUT /api/subjects/:subjectId`, `DELETE /api/subjects/:subjectId` (admin-only subject CRUD with scoped validation)
+- `GET /api/subjects/:subjectId/records`, `PUT /api/subjects/:subjectId/attendance`, `PUT /api/subjects/:subjectId/marks` (teacher/admin subject records and writes)
 - `GET /api/students?semester=7&section=B`, `POST /api/students`, `PUT /api/students/:id`, `DELETE /api/students/:id`
 - `POST /api/students/upload`, `GET /api/students/export` (imports accept an optional section scope)
 - `GET /api/messages`, `POST /api/messages/send`, `PUT /api/messages/:id/read`
@@ -111,7 +116,7 @@ All routes except login and health require `Authorization: Bearer <jwt>`.
 - `POST /api/ml/predict`
 - `GET /api/health`
 
-Logout clears the stored JWT session and redirects to `/login`.
+Logout clears the stored JWT/session state and redirects to the unauthenticated department chooser at `/`.
 
 ## Production notes
 

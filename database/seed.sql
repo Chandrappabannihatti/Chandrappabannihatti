@@ -25,3 +25,11 @@ CROSS JOIN (SELECT 1 AS semester UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
 CROSS JOIN (SELECT 'A' AS section_name UNION ALL SELECT 'B' UNION ALL SELECT 'C') section_names
 WHERE d.code = 'CSE'
 ON DUPLICATE KEY UPDATE section_name = VALUES(section_name);
+
+INSERT INTO subjects (department_code, semester, subject_code, subject_name, credits) VALUES
+('CSE', 7, 'CS701', 'Machine Learning', 4),
+('CSE', 7, 'CS702', 'Cloud Computing', 4),
+('CSE', 7, 'CS703', 'Distributed Systems', 3),
+('CSE', 7, 'CS704', 'Software Engineering', 3),
+('CSE', 7, 'CS705', 'Major Project', 6)
+ON DUPLICATE KEY UPDATE subject_name = VALUES(subject_name), credits = VALUES(credits), is_active = TRUE;

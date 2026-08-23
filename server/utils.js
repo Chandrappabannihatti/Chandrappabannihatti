@@ -42,6 +42,23 @@ export function validateAchievement(input) {
   return errors
 }
 
+export function validateSubject(input, existing = []) {
+  const errors = []
+  const department = cleanString(input.department).toUpperCase()
+  const semester = Number(input.semester)
+  const subjectCode = cleanString(input.subjectCode || input.subject_code).toUpperCase()
+  const subjectName = cleanString(input.subjectName || input.subject_name)
+  const credits = Number(input.credits)
+  if (!validDepartments.includes(department)) errors.push('Department must be one of CSE, AIML, CSDS, CE, ECE, EEE, ME or CIVIL.')
+  if (!validSemesters.includes(semester)) errors.push('Semester must be between 1 and 8.')
+  if (!/^[A-Z0-9][A-Z0-9 -]{1,29}$/.test(subjectCode)) errors.push('Subject code must be 2–30 letters, numbers or spaces.')
+  if (!subjectName) errors.push('Subject name is required.')
+  if (subjectName.length > 160) errors.push('Subject name must be 160 characters or fewer.')
+  if (!Number.isFinite(credits) || credits <= 0 || credits > 30) errors.push('Credits must be greater than 0 and no more than 30.')
+  if (existing.some((subject) => String(subject.department).toUpperCase() === department && Number(subject.semester) === semester && String(subject.subjectCode).toUpperCase() === subjectCode && String(subject.id || subject.subjectId) !== String(input.id || input.subjectId))) errors.push('That subject code already exists for this department and semester.')
+  return errors
+}
+
 export function validateStudent(input, existing = []) {
   const errors = []
   const usn = cleanString(input.usn).toUpperCase()

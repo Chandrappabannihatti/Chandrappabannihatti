@@ -10,7 +10,7 @@ import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { demoStore, nextId } from './demoStore.js'
 import { getPool, query } from './db.js'
-import { cleanString, isEmail, isPhone, passProbability, riskFromFeatures, validDepartments, validSemesters, validateAchievement, validateStudent } from './utils.js'
+import { cleanString, isEmail, isPhone, passProbability, riskFromFeatures, validDepartments, validSemesters, validateAchievement, validateStudent, validateSubject } from './utils.js'
 
 const app = express()
 const port = Number(process.env.PORT || 5000)
@@ -136,6 +136,20 @@ function mapStudentRow(row) {
   }
 }
 
+function mapSubjectRow(row) {
+  return {
+    ...row,
+    id: row.id ?? row.subjectId ?? row.subject_id,
+    subjectId: row.subjectId ?? row.subject_id ?? row.id,
+    department: row.department || row.department_code,
+    semester: Number(row.semester),
+    subjectCode: row.subjectCode || row.subject_code,
+    subjectName: row.subjectName || row.subject_name,
+    credits: Number(row.credits || 0),
+    isActive: row.isActive ?? row.is_active ?? true,
+  }
+}
+
 function mapMessageRow(row) {
   return { ...row, section: row.section || row.sectionName, sender: row.sender || row.sender_name, recipient: row.recipient || row.recipient_scope, time: row.time || row.created_at, read: Boolean(row.read || row.read_at), initials: row.initials || String(row.sender_name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
 }
@@ -159,6 +173,20 @@ async function findSection(department, semester, sectionName) {
 
 function demoSection(department, semester, sectionName) {
   return demoStore.sections.find((section) => section.department === department && Number(section.semester) === Number(semester) && section.sectionName === cleanString(sectionName).toUpperCase())
+}
+
+async function findSubject(subjectId, department, semester, subjectCode) {
+  if (useDemoData) {
+    return demoStore.subjects.find((subject) => (!subjectId || Number(subject.id || subject.subjectId) === Number(subjectId)) && (!department || subject.department === department) && (!semester || Number(subject.semester) === Number(semester)) && (!subjectCode || subject.subjectCode === subjectCode) && subject.isActive !== false)
+  }
+  const conditions = ['is_active = 1']
+  const params = {}
+  if (subjectId) { conditions.push('subject_id = :subjectId'); params.subjectId = Number(subjectId) }
+  if (department) { conditions.push('department_code = :department'); params.department = department }
+  if (semester) { conditions.push('semester = :semester'); params.semester = Number(semester) }
+  if (subjectCode) { conditions.push('subject_code = :subjectCode'); params.subjectCode = subjectCode }
+  const rows = await query(`SELECT subject_id AS subjectId, department_code AS department, semester, subject_code AS subjectCode, subject_name AS subjectName, credits, is_active AS isActive FROM subjects WHERE ${conditions.join(' AND ')} LIMIT 1`, params)
+  return rows[0]
 }
 
 app.get('/api/health', async (_req, res) => {
@@ -233,6 +261,167 @@ app.post('/api/sections', authRequired, roleRequired('teacher', 'admin'), async 
     if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'That section already exists for this semester.' })
     next(error)
   }
+})
+
+app.get('/api/subjects', authRequired, async (req, res, next) => {
+  try {
+    const learner = req.user.role === 'student' || req.user.role === 'parent'
+    const requestedDepartment = ['teacher', 'student', 'parent'].includes(req.user.role) ? req.user.department : cleanString(req.query.department).toUpperCase()
+    const requestedSemester = learner ? Number(req.user.semester) : Number(req.query.semester || 0)
+    if (requestedDepartment && requestedDepartment !== 'ALL' && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
+    if (requestedSemester && !validSemesters.includes(requestedSemester)) return res.status(422).json({ message: 'Semester must be between 1 and 8.' })
+    if (useDemoData) {
+      const data = demoStore.subjects.filter((subject) => subject.isActive !== false && (!requestedDepartment || requestedDepartment === 'ALL' || subject.department === requestedDepartment) && (!requestedSemester || Number(subject.semester) === requestedSemester))
+      return res.json({ data: data.map(mapSubjectRow) })
+    }
+    const conditions = ['is_active = 1']
+    const params = {}
+    if (requestedDepartment && requestedDepartment !== 'ALL') { conditions.push('department_code = :department'); params.department = requestedDepartment }
+    if (requestedSemester) { conditions.push('semester = :semester'); params.semester = requestedSemester }
+    const rows = await query(`SELECT subject_id AS subjectId, department_code AS department, semester, subject_code AS subjectCode, subject_name AS subjectName, credits, is_active AS isActive FROM subjects WHERE ${conditions.join(' AND ')} ORDER BY department_code, semester, subject_code`, params)
+    res.json({ data: rows.map(mapSubjectRow) })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/subjects', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const input = { ...req.body, department: cleanString(req.body.department).toUpperCase(), semester: Number(req.body.semester), subjectCode: cleanString(req.body.subjectCode || req.body.subject_code).toUpperCase(), subjectName: cleanString(req.body.subjectName || req.body.subject_name), credits: Number(req.body.credits) }
+    const existing = useDemoData ? demoStore.subjects : []
+    const errors = validateSubject(input, existing)
+    if (errors.length) return res.status(422).json({ message: 'Subject validation failed.', errors })
+    if (useDemoData) {
+      const subject = { id: nextId(demoStore.subjects), subjectId: nextId(demoStore.subjects), ...input, isActive: true, createdAt: new Date().toISOString() }
+      demoStore.subjects.push(subject)
+      return res.status(201).json({ data: mapSubjectRow(subject) })
+    }
+    const result = await query('INSERT INTO subjects (department_code, semester, subject_code, subject_name, credits) VALUES (:department, :semester, :subjectCode, :subjectName, :credits)', input)
+    res.status(201).json({ data: mapSubjectRow({ ...input, subjectId: result.insertId, isActive: true }) })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'That subject code already exists for this department and semester.' })
+    next(error)
+  }
+})
+
+app.put('/api/subjects/:subjectId', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const subjectId = Number(req.params.subjectId)
+    if (useDemoData) {
+      const index = demoStore.subjects.findIndex((subject) => Number(subject.id || subject.subjectId) === subjectId)
+      if (index < 0) return res.status(404).json({ message: 'Subject not found.' })
+      const merged = { ...demoStore.subjects[index], ...req.body, id: demoStore.subjects[index].id, subjectId }
+      merged.department = cleanString(merged.department).toUpperCase()
+      merged.semester = Number(merged.semester)
+      merged.subjectCode = cleanString(merged.subjectCode || merged.subject_code).toUpperCase()
+      merged.subjectName = cleanString(merged.subjectName || merged.subject_name)
+      merged.credits = Number(merged.credits)
+      const errors = validateSubject(merged, demoStore.subjects)
+      if (errors.length) return res.status(422).json({ message: 'Subject validation failed.', errors })
+      demoStore.subjects[index] = { ...merged, isActive: true }
+      return res.json({ data: mapSubjectRow(demoStore.subjects[index]) })
+    }
+    const existing = await findSubject(subjectId)
+    if (!existing) return res.status(404).json({ message: 'Subject not found.' })
+    const merged = { ...mapSubjectRow(existing), ...req.body, subjectId, id: subjectId, department: cleanString(req.body.department || existing.department).toUpperCase(), semester: Number(req.body.semester || existing.semester), subjectCode: cleanString(req.body.subjectCode || existing.subjectCode).toUpperCase(), subjectName: cleanString(req.body.subjectName || existing.subjectName), credits: Number(req.body.credits || existing.credits) }
+    const errors = validateSubject(merged, [])
+    if (errors.length) return res.status(422).json({ message: 'Subject validation failed.', errors })
+    await query('UPDATE subjects SET department_code=:department, semester=:semester, subject_code=:subjectCode, subject_name=:subjectName, credits=:credits WHERE subject_id=:subjectId AND is_active=1', merged)
+    res.json({ data: mapSubjectRow(merged) })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'That subject code already exists for this department and semester.' })
+    next(error)
+  }
+})
+
+app.delete('/api/subjects/:subjectId', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const subjectId = Number(req.params.subjectId)
+    if (useDemoData) {
+      const index = demoStore.subjects.findIndex((subject) => Number(subject.id || subject.subjectId) === subjectId)
+      if (index < 0) return res.status(404).json({ message: 'Subject not found.' })
+      demoStore.subjects.splice(index, 1)
+      return res.json({ ok: true })
+    }
+    const result = await query('DELETE FROM subjects WHERE subject_id=:subjectId', { subjectId })
+    if (!result.affectedRows) return res.status(404).json({ message: 'Subject not found.' })
+    res.json({ ok: true })
+  } catch (error) { next(error) }
+})
+
+app.get('/api/subjects/:subjectId/records', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+  try {
+    const department = req.user.role === 'teacher' ? req.user.department : cleanString(req.query.department).toUpperCase()
+    const semester = Number(req.query.semester)
+    const section = cleanString(req.query.section).toUpperCase()
+    const subject = await findSubject(Number(req.params.subjectId), department, semester)
+    if (!subject) return res.status(404).json({ message: 'Subject not found in the selected scope.' })
+    if (!validSemesters.includes(Number(subject.semester))) return res.status(422).json({ message: 'Subject semester is invalid.' })
+    if (useDemoData) {
+      const students = demoStore.students.filter((student) => scopeStudent(req, student) && student.department === subject.department && Number(student.semester) === Number(subject.semester) && (!section || String(student.section).toUpperCase() === section))
+      const data = students.map((student) => {
+        const record = demoStore.subjectRecords.find((item) => Number(item.subjectId) === Number(subject.id || subject.subjectId) && Number(item.studentId) === Number(student.id))
+        return { studentId: student.id, attendance: record?.attendance ?? 0, ia1: record?.ia1 ?? 0, ia2: record?.ia2 ?? 0 }
+      })
+      return res.json({ data })
+    }
+    const conditions = ['st.is_active=1', 'st.department_code=:department', 'st.semester=:semester']
+    const params = { department: subject.department, semester: Number(subject.semester), subjectCode: subject.subjectCode }
+    if (section) { conditions.push('COALESCE(sec.section_name, st.section)=:section'); params.section = section }
+    const rows = await query(`SELECT st.id AS studentId, COALESCE(att.attendance, 0) AS attendance, COALESCE(im.ia1, 0) AS ia1, COALESCE(im.ia2, 0) AS ia2 FROM students st LEFT JOIN sections sec ON sec.section_id=st.section_id LEFT JOIN (SELECT student_id, AVG(attendance_percentage) AS attendance FROM attendance WHERE subject_code=:subjectCode GROUP BY student_id) att ON att.student_id=st.id LEFT JOIN internal_marks im ON im.student_id=st.id AND im.subject_code=:subjectCode AND im.semester=:semester WHERE ${conditions.join(' AND ')} ORDER BY st.usn`, params)
+    res.json({ data: rows })
+  } catch (error) { next(error) }
+})
+
+async function subjectStudent(req, subject, input) {
+  const studentId = Number(input.studentId)
+  if (!Number.isInteger(studentId) || studentId <= 0) return null
+  if (useDemoData) return demoStore.students.find((student) => Number(student.id) === studentId && scopeStudent(req, student) && student.department === subject.department && Number(student.semester) === Number(subject.semester) && (!input.section || String(student.section).toUpperCase() === String(input.section).toUpperCase()))
+  const rows = await query('SELECT s.id, s.department_code AS department, s.semester, COALESCE(sec.section_name, s.section) AS section FROM students s LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE s.id=:studentId AND s.is_active=1 LIMIT 1', { studentId })
+  const student = rows[0]
+  if (!student || !scopeStudent(req, student) || student.department !== subject.department || Number(student.semester) !== Number(subject.semester) || (input.section && String(student.section).toUpperCase() !== String(input.section).toUpperCase())) return null
+  return student
+}
+
+app.put('/api/subjects/:subjectId/attendance', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+  try {
+    const semester = Number(req.body.semester)
+    const subject = await findSubject(Number(req.params.subjectId), req.user.role === 'teacher' ? req.user.department : cleanString(req.body.department).toUpperCase(), semester)
+    if (!subject) return res.status(404).json({ message: 'Subject not found in the selected scope.' })
+    const attendance = Number(req.body.attendance)
+    if (!Number.isFinite(attendance) || attendance < 0 || attendance > 100) return res.status(422).json({ message: 'Attendance must be between 0 and 100.' })
+    const student = await subjectStudent(req, subject, req.body)
+    if (!student) return res.status(403).json({ message: 'Student is outside the selected subject scope.' })
+    const section = cleanString(req.body.section).toUpperCase()
+    if (useDemoData) {
+      const subjectId = Number(subject.id || subject.subjectId)
+      const current = demoStore.subjectRecords.find((item) => Number(item.subjectId) === subjectId && Number(item.studentId) === Number(student.id))
+      if (current) current.attendance = attendance
+      else demoStore.subjectRecords.push({ subjectId, studentId: Number(student.id), attendance, ia1: 0, ia2: 0 })
+      return res.json({ data: { studentId: Number(student.id), attendance } })
+    }
+    await query('INSERT INTO attendance (student_id, subject_code, attendance_date, status, attendance_percentage, marked_by) VALUES (:studentId, :subjectCode, CURDATE(), :status, :attendance, :teacherId) ON DUPLICATE KEY UPDATE status=VALUES(status), attendance_percentage=VALUES(attendance_percentage), marked_by=VALUES(marked_by)', { studentId: Number(student.id), subjectCode: subject.subjectCode, status: cleanString(req.body.status) || 'Present', attendance, teacherId: req.user.sub })
+    res.json({ data: { studentId: Number(student.id), attendance } })
+  } catch (error) { next(error) }
+})
+
+app.put('/api/subjects/:subjectId/marks', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+  try {
+    const semester = Number(req.body.semester)
+    const subject = await findSubject(Number(req.params.subjectId), req.user.role === 'teacher' ? req.user.department : cleanString(req.body.department).toUpperCase(), semester)
+    if (!subject) return res.status(404).json({ message: 'Subject not found in the selected scope.' })
+    const ia1 = Number(req.body.ia1)
+    const ia2 = Number(req.body.ia2)
+    if (![ia1, ia2].every((value) => Number.isFinite(value) && value >= 0 && value <= 50)) return res.status(422).json({ message: 'IA marks must be between 0 and 50.' })
+    const student = await subjectStudent(req, subject, req.body)
+    if (!student) return res.status(403).json({ message: 'Student is outside the selected subject scope.' })
+    if (useDemoData) {
+      const subjectId = Number(subject.id || subject.subjectId)
+      const current = demoStore.subjectRecords.find((item) => Number(item.subjectId) === subjectId && Number(item.studentId) === Number(student.id))
+      if (current) { current.ia1 = ia1; current.ia2 = ia2 } else demoStore.subjectRecords.push({ subjectId, studentId: Number(student.id), attendance: 0, ia1, ia2 })
+      return res.json({ data: { studentId: Number(student.id), ia1, ia2 } })
+    }
+    await query('INSERT INTO internal_marks (student_id, subject_code, semester, ia1, ia2, cgpa, recorded_by) VALUES (:studentId, :subjectCode, :semester, :ia1, :ia2, NULL, :teacherId) ON DUPLICATE KEY UPDATE ia1=VALUES(ia1), ia2=VALUES(ia2), recorded_by=VALUES(recorded_by)', { studentId: Number(student.id), subjectCode: subject.subjectCode, semester: Number(subject.semester), ia1, ia2, teacherId: req.user.sub })
+    res.json({ data: { studentId: Number(student.id), ia1, ia2 } })
+  } catch (error) { next(error) }
 })
 
 app.get('/api/students', authRequired, async (req, res, next) => {

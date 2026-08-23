@@ -7,6 +7,7 @@ import SemesterSelection from './pages/SemesterSelection'
 import DepartmentSelection, { TeacherDepartment } from './pages/DepartmentSelection'
 import TeacherSemester, { TeacherStudentProfile } from './pages/TeacherSemester'
 import TeacherAccount from './pages/TeacherAccount'
+import AdminSubjectHierarchy, { AdminAccount, AdminSubjectManagement } from './pages/AdminSubjects'
 
 function ProtectedRoute({ children, role }) {
   const { isAuthenticated, user } = useAuth()
@@ -21,6 +22,10 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/admin/subjects" element={<ProtectedRoute role="admin"><AdminSubjectHierarchy /></ProtectedRoute>} />
+      <Route path="/admin/subjects/:department/:semester" element={<ProtectedRoute role="admin"><AdminSubjectManagement /></ProtectedRoute>} />
+      <Route path="/admin/profile" element={<ProtectedRoute role="admin"><AdminAccount mode="profile" /></ProtectedRoute>} />
+      <Route path="/admin/settings" element={<ProtectedRoute role="admin"><AdminAccount mode="settings" /></ProtectedRoute>} />
       <Route path="/teacher/departments" element={<ProtectedRoute role="teacher"><DepartmentSelection /></ProtectedRoute>} />
       <Route path="/teacher/department/:department/*" element={<ProtectedRoute role="teacher"><TeacherDepartment /></ProtectedRoute>} />
       <Route path="/teacher/semesters" element={<ProtectedRoute role="teacher"><SemesterSelection /></ProtectedRoute>} />

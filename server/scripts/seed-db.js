@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import dotenv from 'dotenv'
 import { getPool } from '../db.js'
-import { demoAchievements, demoAnnouncements, demoRemarks, demoSections, demoStudents } from '../../src/data/demo.js'
+import { demoAchievements, demoAnnouncements, demoRemarks, demoSections, demoStudents, demoSubjects } from '../../src/data/demo.js'
 
 dotenv.config()
 const pool = getPool()
@@ -21,6 +21,7 @@ for (const department of [
   ['CSE', 'Computer Science & Engineering'], ['AIML', 'Artificial Intelligence & ML'], ['CSDS', 'Computer Science & Data Science'], ['CE', 'Computer Engineering'], ['ECE', 'Electronics & Communication Engineering'], ['EEE', 'Electrical & Electronics Engineering'], ['ME', 'Mechanical Engineering'], ['CIVIL', 'Civil Engineering'],
 ]) await pool.query('INSERT INTO departments (code, name) VALUES (?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name)', department)
 for (const section of demoSections) await pool.query('INSERT INTO sections (department_code, semester, section_name) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE section_name=VALUES(section_name)', [section.department, section.semester, section.sectionName])
+for (const subject of demoSubjects) await pool.query('INSERT INTO subjects (department_code, semester, subject_code, subject_name, credits) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE subject_name=VALUES(subject_name), credits=VALUES(credits), is_active=1', [subject.department, subject.semester, subject.subjectCode, subject.subjectName, subject.credits])
 
 const [adminResult] = await pool.query('INSERT INTO users (role, display_name, email, password_hash) VALUES ("admin", "Kavya Menon", "admin@camps.edu", ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [hashes.admin])
 await pool.query('INSERT INTO admins (user_id, name, email, password_hash) VALUES (?, "Kavya Menon", "admin@camps.edu", ?) ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash)', [adminResult.insertId, hashes.admin])

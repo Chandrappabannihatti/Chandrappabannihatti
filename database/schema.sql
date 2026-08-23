@@ -21,6 +21,23 @@ CREATE TABLE IF NOT EXISTS sections (
   CONSTRAINT chk_section_semester CHECK (semester BETWEEN 1 AND 8)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS subjects (
+  subject_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  department_code VARCHAR(10) NOT NULL,
+  semester TINYINT UNSIGNED NOT NULL,
+  subject_code VARCHAR(30) NOT NULL,
+  subject_name VARCHAR(160) NOT NULL,
+  credits DECIMAL(3,1) NOT NULL DEFAULT 3.0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_subject_scope (department_code, semester, subject_code),
+  KEY idx_subject_scope (department_code, semester, is_active),
+  CONSTRAINT fk_subject_department FOREIGN KEY (department_code) REFERENCES departments(code) ON DELETE CASCADE,
+  CONSTRAINT chk_subject_semester CHECK (semester BETWEEN 1 AND 8),
+  CONSTRAINT chk_subject_credits CHECK (credits > 0 AND credits <= 30)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   role ENUM('admin', 'teacher', 'student', 'parent') NOT NULL,
@@ -118,7 +135,7 @@ CREATE TABLE IF NOT EXISTS parents (
 CREATE TABLE IF NOT EXISTS attendance (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   student_id BIGINT UNSIGNED NOT NULL,
-  subject_code VARCHAR(20) NULL,
+  subject_code VARCHAR(30) NULL,
   attendance_date DATE NOT NULL,
   status ENUM('Present', 'Absent', 'On Duty', 'Leave') NOT NULL,
   attendance_percentage DECIMAL(5,2) NULL,
@@ -133,7 +150,7 @@ CREATE TABLE IF NOT EXISTS attendance (
 CREATE TABLE IF NOT EXISTS internal_marks (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   student_id BIGINT UNSIGNED NOT NULL,
-  subject_code VARCHAR(20) NOT NULL,
+  subject_code VARCHAR(30) NOT NULL,
   semester TINYINT UNSIGNED NOT NULL,
   ia1 DECIMAL(5,2) NULL,
   ia2 DECIMAL(5,2) NULL,
@@ -151,7 +168,7 @@ CREATE TABLE IF NOT EXISTS internal_marks (
 CREATE TABLE IF NOT EXISTS assignments (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   student_id BIGINT UNSIGNED NOT NULL,
-  subject_code VARCHAR(20) NOT NULL,
+  subject_code VARCHAR(30) NOT NULL,
   title VARCHAR(160) NOT NULL,
   marks DECIMAL(5,2) NULL,
   max_marks DECIMAL(5,2) NOT NULL DEFAULT 20,

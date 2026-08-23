@@ -14,7 +14,7 @@ export default function SemesterSelection() {
 
   const signOut = async () => {
     await logout()
-    navigate('/login', { replace: true })
+    navigate('/', { replace: true })
   }
 
   return <main className="semester-selection-page">

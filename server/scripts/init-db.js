@@ -32,5 +32,10 @@ for (const [name, definition] of Object.entries(studentProfileColumns)) {
   if (!existingColumns.some((column) => column.name === name)) await connection.query(`ALTER TABLE students ADD COLUMN ${name} ${definition}`)
 }
 
+// Subject codes are shared by the subject catalog and record tables. Keep legacy tables wide enough for newly created subjects.
+await connection.query('ALTER TABLE attendance MODIFY COLUMN subject_code VARCHAR(30) NULL')
+await connection.query('ALTER TABLE internal_marks MODIFY COLUMN subject_code VARCHAR(30) NOT NULL')
+await connection.query('ALTER TABLE assignments MODIFY COLUMN subject_code VARCHAR(30) NOT NULL')
+
 await connection.end()
 console.log('CAMPS schema created or upgraded.')

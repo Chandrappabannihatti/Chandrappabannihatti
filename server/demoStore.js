@@ -1,7 +1,9 @@
-import { demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, demoStudents } from '../src/data/demo.js'
+import { demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, demoStudents, demoSubjects } from '../src/data/demo.js'
 
 export const demoStore = {
   sections: demoSections.map((section) => ({ ...section })),
+  subjects: demoSubjects.map((subject) => ({ ...subject })),
+  subjectRecords: [],
   students: demoStudents.map((student) => ({ ...student })),
   messages: demoMessages.map((message) => ({ ...message })),
   announcements: demoAnnouncements.map((announcement) => ({ ...announcement })),

@@ -47,7 +47,7 @@ export default function Login() {
     setError('')
     try {
       await login({ role, identifier, password, department })
-      navigate(role === 'teacher' ? '/teacher/semesters' : '/app', { replace: true })
+      navigate(role === 'teacher' ? '/teacher/semesters' : role === 'admin' ? '/admin/subjects' : '/app', { replace: true })
     } catch (loginError) {
       setError(loginError.response?.data?.message || loginError.message || 'We could not sign you in. Please check your details.')
     } finally {

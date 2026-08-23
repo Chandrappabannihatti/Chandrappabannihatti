@@ -11,6 +11,23 @@ export const departments = [
 
 export const semesters = [1, 2, 3, 4, 5, 6, 7, 8]
 
+export const demoSubjects = [
+  { id: 1, subjectId: 1, department: 'CSE', semester: 7, subjectCode: 'CS701', subjectName: 'Machine Learning', credits: 4, isActive: true },
+  { id: 2, subjectId: 2, department: 'CSE', semester: 7, subjectCode: 'CS702', subjectName: 'Cloud Computing', credits: 4, isActive: true },
+  { id: 3, subjectId: 3, department: 'CSE', semester: 7, subjectCode: 'CS703', subjectName: 'Distributed Systems', credits: 3, isActive: true },
+  { id: 4, subjectId: 4, department: 'CSE', semester: 7, subjectCode: 'CS704', subjectName: 'Software Engineering', credits: 3, isActive: true },
+  { id: 5, subjectId: 5, department: 'CSE', semester: 7, subjectCode: 'CS705', subjectName: 'Major Project', credits: 6, isActive: true },
+]
+
+export function getDemoSubjects() {
+  if (typeof window === 'undefined') return demoSubjects.map((subject) => ({ ...subject }))
+  try {
+    const stored = JSON.parse(window.localStorage.getItem('camps_subjects') || 'null')
+    if (Array.isArray(stored)) return stored
+  } catch { /* use bundled demo subjects */ }
+  return demoSubjects.map((subject) => ({ ...subject }))
+}
+
 export const demoSections = semesters.flatMap((semester) => ['A', 'B', 'C'].map((sectionName, index) => ({
   sectionId: `CSE-${semester}-${sectionName}`,
   department: 'CSE',

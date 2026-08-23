@@ -11,7 +11,7 @@ export default function DepartmentSelection() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const students = useMemo(() => cloneDemoStudents(), [])
-  const signOut = async () => { await logout(); navigate('/login', { replace: true }) }
+  const signOut = async () => { await logout(); navigate('/', { replace: true }) }
 
   return <main className="department-selection-page">
     <header className="department-selection-toolbar"><Brand /><div className="department-account"><span className="department-account-avatar">{user.initials}</span><span><strong>{user.name}</strong><small>{user.department} · Teacher</small></span><div className="department-account-links"><button type="button" onClick={() => navigate('/teacher/profile')}><FiUser /> Profile</button><button type="button" onClick={() => navigate('/teacher/settings')}><FiSettings /> Settings</button></div><button className="department-account-logout" type="button" onClick={signOut} aria-label="Sign out"><FiLogOut /></button></div></header>
