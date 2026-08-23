@@ -1,0 +1,48 @@
+import axios from 'axios'
+
+// API-first by default. Set VITE_DEMO_MODE=true when reviewing the UI without the Node service.
+export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
+
+const client = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: 5000,
+  headers: { 'Content-Type': 'application/json' },
+})
+
+client.interceptors.request.use((config) => {
+  try {
+    const session = JSON.parse(localStorage.getItem('camps_session'))
+    if (session?.token) config.headers.Authorization = `Bearer ${session.token}`
+  } catch { /* ignore malformed local storage */ }
+  return config
+})
+
+const unwrap = (request) => request.then((response) => response.data)
+
+const api = {
+  login: (payload) => unwrap(client.post('/auth/login', payload)),
+  logout: () => unwrap(client.post('/auth/logout')),
+  getStudents: (params) => unwrap(client.get('/students', { params })),
+  createStudent: (payload) => unwrap(client.post('/students', payload)),
+  updateStudent: (id, payload) => unwrap(client.put(`/students/${id}`, payload)),
+  deleteStudent: (id) => unwrap(client.delete(`/students/${id}`)),
+  uploadStudents: (file, commit = false) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('commit', String(commit))
+    return unwrap(client.post('/students/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
+  exportStudents: (params) => client.get('/students/export', { params, responseType: 'blob' }),
+  sendMessage: (payload) => unwrap(client.post('/messages/send', payload)),
+  getMessages: (params) => unwrap(client.get('/messages', { params })),
+  markMessageRead: (id) => unwrap(client.put(`/messages/${id}/read`)),
+  getAnnouncements: (params) => unwrap(client.get('/announcements', { params })),
+  createAnnouncement: (payload) => unwrap(client.post('/announcements', payload)),
+  updateAnnouncement: (id, payload) => unwrap(client.put(`/announcements/${id}`, payload)),
+  deleteAnnouncement: (id) => unwrap(client.delete(`/announcements/${id}`)),
+  createRemark: (payload) => unwrap(client.post('/remarks', payload)),
+  getRemarks: (params) => unwrap(client.get('/remarks', { params })),
+  predict: (payload) => unwrap(client.post('/ml/predict', payload)),
+}
+
+export default api
