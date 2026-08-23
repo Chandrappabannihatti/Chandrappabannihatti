@@ -26,10 +26,12 @@ const api = {
   createStudent: (payload) => unwrap(client.post('/students', payload)),
   updateStudent: (id, payload) => unwrap(client.put(`/students/${id}`, payload)),
   deleteStudent: (id) => unwrap(client.delete(`/students/${id}`)),
-  uploadStudents: (file, commit = false) => {
+  uploadStudents: (file, commit = false, scope = {}) => {
     const form = new FormData()
     form.append('file', file)
     form.append('commit', String(commit))
+    if (scope.department) form.append('department', scope.department)
+    if (scope.semester) form.append('semester', String(scope.semester))
     return unwrap(client.post('/students/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }))
   },
   exportStudents: (params) => client.get('/students/export', { params, responseType: 'blob' }),

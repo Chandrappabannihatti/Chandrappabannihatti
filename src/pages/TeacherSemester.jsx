@@ -46,10 +46,12 @@ import {
   FiTrash2,
   FiTrendingUp,
   FiUser,
+  FiUploadCloud,
   FiUsers,
   FiX,
   FiZap,
 } from 'react-icons/fi'
+import * as XLSX from 'xlsx'
 import { useAuth } from '../context/AuthContext'
 import { cloneDemoStudents, demoAnnouncements, demoMessages, demoRemarks } from '../data/demo'
 import api, { DEMO_MODE } from '../lib/api'
@@ -156,7 +158,7 @@ function SemesterStudents({ user, semester, students, onNavigate }) {
   const [risk, setRisk] = useState('all')
   const filtered = students.filter((student) => (risk === 'all' || student.risk === risk) && `${student.name} ${student.usn}`.toLowerCase().includes(query.toLowerCase()))
   const exportScope = () => { const header = 'USN,Name,Department,Semester,Section,Attendance,CGPA,Risk\n'; const body = students.map((student) => [student.usn, student.name, student.department, student.semester, student.section, student.attendance, student.cgpa, student.risk].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n'); const blob = new Blob([header + body], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${user.department}-semester-${semester}-students.csv`; link.click(); URL.revokeObjectURL(url) }
-  return <div className="dashboard-content"><ScopeIntro eyebrow={`${user.department} · Semester ${semester}`} title="Students" description={`Only student records belonging to ${user.department} Semester ${semester} are shown.`} actions={<><button className="button-ghost" type="button" onClick={exportScope}><FiDownload /> Export semester</button><button className="button-ghost" type="button" onClick={() => onNavigate('newStudent')}><FiPlus /> Add student</button><button className="button-primary" type="button" onClick={() => onNavigate('predictions')}><FiZap /> Predict risk</button></>} /><div className="semester-context-banner"><FiShield /><span>Scope locked to <strong>{user.department} · Semester {semester}</strong></span></div><div className="toolbar-card"><div className="search-field"><FiSearch /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this semester" aria-label="Search this semester" /></div><div className="toolbar-filters"><select value={risk} onChange={(event) => setRisk(event.target.value)} aria-label="Filter risk"><option value="all">All risk levels</option><option value="Low">Low risk</option><option value="Medium">Medium risk</option><option value="High">High risk</option></select><span className="scope-pill">{filtered.length} records</span></div></div><section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">Semester {semester} roster</h2><p className="card-description">{filtered.length} students · {user.department} only</p></div><span className="department-note"><FiShield /> No cross-semester records</span></div><SemesterTable students={filtered} onStudentClick={(student) => onNavigate('student', student.id)} /></section></div>
+  return <div className="dashboard-content"><ScopeIntro eyebrow={`${user.department} · Semester ${semester}`} title="Students" description={`Only student records belonging to ${user.department} Semester ${semester} are shown.`} actions={<><button className="button-ghost" type="button" onClick={exportScope}><FiDownload /> Export semester</button><button className="button-ghost" type="button" onClick={() => onNavigate('newStudent')}><FiPlus /> Add student</button><button className="button-ghost" type="button" onClick={() => onNavigate('uploadStudents')}><FiUploadCloud /> Upload Excel</button><button className="button-primary" type="button" onClick={() => onNavigate('predictions')}><FiZap /> Predict risk</button></>} /><div className="semester-context-banner"><FiShield /><span>Scope locked to <strong>{user.department} · Semester {semester}</strong></span></div><div className="toolbar-card"><div className="search-field"><FiSearch /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this semester" aria-label="Search this semester" /></div><div className="toolbar-filters"><select value={risk} onChange={(event) => setRisk(event.target.value)} aria-label="Filter risk"><option value="all">All risk levels</option><option value="Low">Low risk</option><option value="Medium">Medium risk</option><option value="High">High risk</option></select><span className="scope-pill">{filtered.length} records</span></div></div><section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">Semester {semester} roster</h2><p className="card-description">{filtered.length} students · {user.department} only</p></div><span className="department-note"><FiShield /> No cross-semester records</span></div><SemesterTable students={filtered} onStudentClick={(student) => onNavigate('student', student.id)} /></section></div>
 }
 
 function SemesterAttendance({ user, semester, students, onNavigate }) {
@@ -193,6 +195,69 @@ function SemesterMessages({ user, semester, messages, setMessages, notify }) {
 
 function FiMailIcon() {
   return <FiMessageCircle />
+}
+
+function UploadSemesterStudentsPage({ user, semester, students, onCancel, onImport }) {
+  const [file, setFile] = useState(null)
+  const [rows, setRows] = useState([])
+  const [errors, setErrors] = useState([])
+  const [reading, setReading] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const readSpreadsheet = (selectedFile) => {
+    setFile(selectedFile)
+    setRows([])
+    setErrors([])
+    setReading(true)
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const workbook = XLSX.read(event.target.result, { type: 'array' })
+        const sheet = workbook.Sheets[workbook.SheetNames[0]]
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+        const parsedRows = rawRows.map((row, index) => {
+          const departmentValue = String(row.Department || row.department || user.department).trim().toUpperCase()
+          const semesterValue = Number(row.Semester || row.semester || semester)
+          return { id: `${Date.now()}-${index}`, usn: String(row.USN || row.usn || '').trim().toUpperCase(), name: String(row.Name || row.name || '').trim(), department: departmentValue, semester: semesterValue, section: String(row.Section || row.section || 'A').trim().toUpperCase(), gender: String(row.Gender || row.gender || '').trim(), email: String(row.Email || row.email || '').trim().toLowerCase(), phone: String(row.Phone || row.phone || '').trim(), parentName: String(row['Parent Name'] || row.parentName || '').trim(), parentPhone: String(row['Parent Phone'] || row.parentPhone || '').trim(), attendance: Number(row.Attendance || row.attendance || 0), cgpa: Number(row.CGPA || row.cgpa || 0), ia1: Number(row.IA1 || row.ia1 || 0), ia2: Number(row.IA2 || row.ia2 || 0), assignmentMarks: Number(row['Assignment Marks'] || row.assignmentMarks || 0), previousSgpa: Number(row['Previous SGPA'] || row.previousSgpa || 0), backlogs: Number(row.Backlogs || row.backlogs || 0) }
+        })
+        const validation = []
+        const seen = new Set()
+        parsedRows.forEach((row, index) => {
+          if (!row.usn) validation.push(`Row ${index + 2}: USN is required.`)
+          if (!row.name) validation.push(`Row ${index + 2}: Name is required.`)
+          if (!row.email || !/^\S+@\S+\.\S+$/.test(row.email)) validation.push(`Row ${index + 2}: a valid email is required.`)
+          if (row.department !== user.department) validation.push(`Row ${index + 2}: department must be ${user.department}.`)
+          if (row.semester !== Number(semester)) validation.push(`Row ${index + 2}: semester must be ${semester}.`)
+          if (row.attendance < 0 || row.attendance > 100) validation.push(`Row ${index + 2}: attendance must be between 0 and 100.`)
+          if (row.cgpa < 0 || row.cgpa > 10) validation.push(`Row ${index + 2}: CGPA must be between 0 and 10.`)
+          if (row.phone && !/^\+?[0-9 ()-]{10,18}$/.test(row.phone)) validation.push(`Row ${index + 2}: phone number is invalid.`)
+          if (seen.has(row.usn)) validation.push(`Row ${index + 2}: duplicate USN in this file.`)
+          if (students.some((student) => student.usn.toUpperCase() === row.usn)) validation.push(`Row ${index + 2}: USN already exists in Semester ${semester}.`)
+          seen.add(row.usn)
+        })
+        setRows(parsedRows)
+        setErrors(validation)
+      } catch {
+        setRows([])
+        setErrors(['This file could not be read. Upload a valid .xlsx, .xls or .csv file.'])
+      } finally { setReading(false) }
+    }
+    reader.onerror = () => { setReading(false); setErrors(['The spreadsheet could not be opened. Please try again.']) }
+    reader.readAsArrayBuffer(selectedFile)
+  }
+  const downloadTemplate = () => {
+    const template = [{ USN: '4PM25CS101', Name: 'Sample Student', Department: user.department, Semester: semester, Section: 'A', Gender: 'Female', Email: 'sample@pestrust.edu.in', Phone: '+91 98450 00000', 'Parent Name': 'Parent Name', 'Parent Phone': '+91 98450 00001', Attendance: 80, CGPA: 7.5, IA1: 35, IA2: 36, 'Assignment Marks': 16, 'Previous SGPA': 7.4, Backlogs: 0 }]
+    const worksheet = XLSX.utils.json_to_sheet(template)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, `Semester ${semester}`)
+    XLSX.writeFile(workbook, `${user.department}-semester-${semester}-student-template.xlsx`)
+  }
+  const importRows = async () => {
+    if (!rows.length || errors.length || importing) return
+    setImporting(true)
+    await onImport(rows, file)
+    setImporting(false)
+  }
+  return <div className="dashboard-content upload-student-page"><button className="profile-back-link" type="button" onClick={onCancel}><FiArrowLeft /> Back to Semester {semester} students</button><ScopeIntro eyebrow={`${user.department} · Semester ${semester}`} title="Upload student roster" description="Add multiple students from an Excel or CSV file. The current department and semester are locked." actions={<button className="button-ghost" type="button" onClick={downloadTemplate}><FiDownload /> Download template</button>} /><div className="semester-context-banner"><FiShield /><span>Every imported row must belong to <strong>{user.department} · Semester {semester}</strong>. Other departments and semesters are rejected.</span></div><section className="content-card upload-workflow"><div className="upload-steps"><span className="active"><b>1</b> Upload</span><span><b>2</b> Preview &amp; validate</span><span><b>3</b> Import</span></div>{!file && <div className="dropzone"><FiUploadCloud /><div><strong>Upload the semester roster</strong><span>Accepted formats: .xlsx, .xls and .csv · Required columns: USN, Name, Email</span><label htmlFor="semester-roster-file">Choose Excel file<input id="semester-roster-file" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && readSpreadsheet(event.target.files[0])} /></label></div></div>}{file && <><div className="upload-summary"><span><FiFileText style={{ verticalAlign: 'middle', marginRight: 6 }} /> {file.name}</span>{reading ? <strong>Reading…</strong> : <strong>{rows.length} row{rows.length === 1 ? '' : 's'} found</strong>}</div>{!reading && errors.length > 0 && <div className="validation-error"><strong>Fix these validation errors before importing:</strong>{errors.slice(0, 5).map((error) => <div key={error}>{error}</div>)}{errors.length > 5 && <div>+ {errors.length - 5} more validation errors</div>}</div>}{!reading && rows.length > 0 && <div className="table-scroll upload-preview-table"><table className="student-table"><thead><tr><th>USN</th><th>Name</th><th>Department</th><th>Semester</th><th>Attendance</th><th>CGPA</th></tr></thead><tbody>{rows.slice(0, 8).map((row) => <tr key={row.id}><td>{row.usn || '—'}</td><td>{row.name || '—'}</td><td>{row.department}</td><td>{row.semester}</td><td>{row.attendance}%</td><td>{row.cgpa}</td></tr>)}</tbody></table></div>}{!reading && rows.length > 8 && <p className="upload-more">Showing first 8 rows of {rows.length}. All valid rows will be imported.</p>}</>}</section><div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setErrors([]) }}>Choose another file</button>}<button className="button-primary" type="button" disabled={!rows.length || errors.length > 0 || reading || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Validate & import ${rows.length || ''}`}</button></div></div>
 }
 
 function AddSemesterStudentPage({ user, semester, students, onCancel, onSave }) {
@@ -284,11 +349,13 @@ export default function TeacherSemester() {
   const signOut = async () => { await logout(); navigate('/', { replace: true }) }
   const navigateModule = (module, id) => { if (module === 'student') return navigate(`/teacher/semester/${semester}/student/${id}`); if (module === 'newStudent') return navigate(`/teacher/semester/${semester}/students/new`); navigate(module === 'dashboard' ? `/teacher/semester/${semester}` : `/teacher/semester/${semester}/${module}`) }
   const saveNewStudent = async (input) => { const risk = input.attendance < 70 || input.cgpa < 6.5 ? 'High' : input.attendance < 78 || input.cgpa < 7.2 || input.backlogs > 0 ? 'Medium' : 'Low'; const localRecord = { ...input, id: Date.now(), risk, passProbability: risk === 'Low' ? 92 : risk === 'Medium' ? 73 : 51, initials: input.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() }; let saved = localRecord; if (!DEMO_MODE) { try { const response = await api.createStudent(input); saved = response.data || localRecord } catch { notify('API unavailable · student saved locally for this session') } } setStudents((current) => [saved, ...current]); notify(`${saved.name} added to Semester ${semester}`); navigateModule('students') }
+  const saveImportedStudents = async (rows, file) => { const localRecords = rows.map((row, index) => { const risk = row.attendance < 70 || row.cgpa < 6.5 ? 'High' : row.attendance < 78 || row.cgpa < 7.2 || row.backlogs > 0 ? 'Medium' : 'Low'; return { ...row, id: Date.now() + index, department: user.department, semester, risk, passProbability: risk === 'Low' ? 92 : risk === 'Medium' ? 73 : 51, initials: row.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() } }); let savedRecords = localRecords; if (!DEMO_MODE) { try { const response = await api.uploadStudents(file, true, { department: user.department, semester }); savedRecords = (response.data || localRecords).filter((row) => row.department === user.department && Number(row.semester) === semester) } catch (error) { if (error.response?.status === 422) { notify(error.response.data?.message || 'Upload validation failed on the server'); return false } notify('API unavailable · roster imported for this session') } } setStudents((current) => [...savedRecords, ...current]); notify(`${savedRecords.length} student${savedRecords.length === 1 ? '' : 's'} imported to Semester ${semester}`); navigateModule('students'); return true }
   const studentId = Number(location.pathname.split('/')[5])
   const sidebarModule = activeModule === 'student' ? 'students' : activeModule
   let content
   if (activeModule === 'student') content = <StudentProfilePage user={user} semester={semester} student={students.find((item) => Number(item.id) === studentId)} remarks={remarks} onNavigate={navigateModule} />
   else if (activeModule === 'students' && studentSubroute === 'new') content = <AddSemesterStudentPage user={user} semester={semester} students={students} onCancel={() => navigateModule('students')} onSave={saveNewStudent} />
+  else if (activeModule === 'students' && studentSubroute === 'upload') content = <UploadSemesterStudentsPage user={user} semester={semester} students={students} onCancel={() => navigateModule('students')} onImport={saveImportedStudents} />
   else if (activeModule === 'students') content = <SemesterStudents user={user} semester={semester} students={students} onNavigate={navigateModule} />
   else if (activeModule === 'attendance') content = <SemesterAttendance user={user} semester={semester} students={students} onNavigate={navigateModule} />
   else if (activeModule === 'marks') content = <SemesterMarks user={user} semester={semester} students={students} onNavigate={navigateModule} />

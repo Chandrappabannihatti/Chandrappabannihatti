@@ -897,3 +897,23 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .add-student-form { padding: 16px; }
   .add-form-section-heading { margin-top: 23px; padding-top: 18px; }
 }
+
+/* Semester-scoped Excel import */
+.upload-student-page .page-intro { margin-bottom: 18px; }
+.upload-workflow { padding: 22px; }
+.upload-steps { display: flex; align-items: center; gap: 22px; margin-bottom: 21px; border-bottom: 1px solid #efeee9; padding-bottom: 14px; color: #a0aaa6; font-size: 10px; font-weight: 800; }
+.upload-steps span { display: inline-flex; align-items: center; gap: 7px; }
+.upload-steps b { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; color: #84938d; background: #edf2ee; font-size: 9px; }
+.upload-steps .active { color: var(--ink); }
+.upload-steps .active b { color: #fff; background: var(--coral); }
+.upload-preview-table { margin-top: 16px; border: 1px solid #e9e8e2; border-radius: 10px; }
+.upload-preview-table .student-table { min-width: 680px; }
+.upload-more { margin: 9px 0 0; color: #9aa4a1; font-size: 9px; }
+.upload-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 13px; }
+@media (max-width: 560px) {
+  .upload-workflow { padding: 15px; }
+  .upload-steps { justify-content: space-between; gap: 5px; font-size: 9px; }
+  .upload-steps span { gap: 4px; }
+  .upload-page-actions { align-items: stretch; flex-direction: column-reverse; }
+  .upload-page-actions button { width: 100%; }
+}

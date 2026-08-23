@@ -226,6 +226,7 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
     rows.forEach((row, index) => {
       const rowErrors = validateStudent(row, [...existing, ...rows.slice(0, index)])
       if (req.user.role === 'teacher' && row.department !== req.user.department) rowErrors.push(`Department must be ${req.user.department} for this teacher.`)
+      if (req.body.semester && Number(row.semester) !== Number(req.body.semester)) rowErrors.push(`Semester must be ${Number(req.body.semester)} for this upload.`)
       if (seen.has(row.usn)) rowErrors.push('Duplicate USN in upload.')
       seen.add(row.usn)
       rowErrors.forEach((message) => errors.push(`Row ${index + 2}: ${message}`))
