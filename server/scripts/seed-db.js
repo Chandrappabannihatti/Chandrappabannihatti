@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import dotenv from 'dotenv'
 import { getPool } from '../db.js'
-import { demoAnnouncements, demoRemarks, demoStudents } from '../../src/data/demo.js'
+import { demoAnnouncements, demoRemarks, demoSections, demoStudents } from '../../src/data/demo.js'
 
 dotenv.config()
 const pool = getPool()
@@ -20,6 +20,7 @@ const hashes = {
 for (const department of [
   ['CSE', 'Computer Science & Engineering'], ['AIML', 'Artificial Intelligence & ML'], ['CSDS', 'Computer Science & Data Science'], ['ECE', 'Electronics & Communication'], ['EEE', 'Electrical & Electronics'], ['ME', 'Mechanical Engineering'], ['CIVIL', 'Civil Engineering'],
 ]) await pool.query('INSERT INTO departments (code, name) VALUES (?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name)', department)
+for (const section of demoSections) await pool.query('INSERT INTO sections (department_code, semester, section_name) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE section_name=VALUES(section_name)', [section.department, section.semester, section.sectionName])
 
 const [adminResult] = await pool.query('INSERT INTO users (role, display_name, email, password_hash) VALUES ("admin", "Kavya Menon", "admin@camps.edu", ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [hashes.admin])
 await pool.query('INSERT INTO admins (user_id, name, email, password_hash) VALUES (?, "Kavya Menon", "admin@camps.edu", ?) ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash)', [adminResult.insertId, hashes.admin])
@@ -28,7 +29,8 @@ const [teacherTableResult] = await pool.query('INSERT INTO teachers (user_id, em
 const teacherId = teacherTableResult.insertId
 
 for (const item of demoStudents) {
-  const [studentResult] = await pool.query('INSERT INTO students (usn, name, department_code, semester, section, gender, email, phone, parent_name, parent_phone, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [item.usn, item.name, item.department, item.semester, item.section, item.gender, item.email, item.phone, item.parentName, item.parentPhone, hashes.student])
+  const [[sectionRow]] = await pool.query('SELECT section_id FROM sections WHERE department_code=? AND semester=? AND section_name=? LIMIT 1', [item.department, item.semester, item.section])
+  const [studentResult] = await pool.query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, email, phone, parent_name, parent_phone, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), section_id=VALUES(section_id)', [item.usn, item.name, item.department, item.semester, item.section, sectionRow?.section_id || null, item.gender, item.email, item.phone, item.parentName, item.parentPhone, hashes.student])
   const studentId = studentResult.insertId
   await pool.query('INSERT INTO users (role, display_name, email, password_hash) VALUES ("student", ?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [item.name, item.email, hashes.student])
   if (item.usn === '4PM21CS033') await pool.query('INSERT INTO parents (student_id, name, phone, password_hash, relationship) VALUES (?, ?, ?, ?, "Parent") ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash)', [studentId, item.parentName, item.parentPhone, hashes.parent])

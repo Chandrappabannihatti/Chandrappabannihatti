@@ -15,3 +15,11 @@ INSERT INTO departments (code, name) VALUES
 ('ME', 'Mechanical Engineering'),
 ('CIVIL', 'Civil Engineering')
 ON DUPLICATE KEY UPDATE name = VALUES(name);
+
+INSERT INTO sections (department_code, semester, section_name)
+SELECT d.code, semesters.semester, section_names.section_name
+FROM departments d
+CROSS JOIN (SELECT 1 AS semester UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8) semesters
+CROSS JOIN (SELECT 'A' AS section_name UNION ALL SELECT 'B' UNION ALL SELECT 'C') section_names
+WHERE d.code = 'CSE'
+ON DUPLICATE KEY UPDATE section_name = VALUES(section_name);

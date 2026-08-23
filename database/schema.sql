@@ -9,6 +9,18 @@ CREATE TABLE IF NOT EXISTS departments (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS sections (
+  section_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  department_code VARCHAR(10) NOT NULL,
+  semester TINYINT UNSIGNED NOT NULL,
+  section_name VARCHAR(20) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_section_scope (department_code, semester, section_name),
+  KEY idx_section_scope (department_code, semester),
+  CONSTRAINT fk_section_department FOREIGN KEY (department_code) REFERENCES departments(code) ON DELETE CASCADE,
+  CONSTRAINT chk_section_semester CHECK (semester BETWEEN 1 AND 8)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   role ENUM('admin', 'teacher', 'student', 'parent') NOT NULL,
@@ -59,7 +71,8 @@ CREATE TABLE IF NOT EXISTS students (
   name VARCHAR(120) NOT NULL,
   department_code VARCHAR(10) NOT NULL,
   semester TINYINT UNSIGNED NOT NULL,
-  section VARCHAR(5) NOT NULL DEFAULT 'A',
+  section VARCHAR(20) NOT NULL DEFAULT 'A',
+  section_id BIGINT UNSIGNED NULL,
   gender ENUM('Male', 'Female', 'Other') NULL,
   email VARCHAR(160) NOT NULL,
   phone VARCHAR(24) NULL,
@@ -72,8 +85,10 @@ CREATE TABLE IF NOT EXISTS students (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_student_usn (usn),
   KEY idx_student_scope (department_code, semester, section, is_active),
+  KEY idx_student_section (section_id, semester, is_active),
   KEY idx_student_name (name),
   CONSTRAINT fk_student_department FOREIGN KEY (department_code) REFERENCES departments(code),
+  CONSTRAINT fk_student_section FOREIGN KEY (section_id) REFERENCES sections(section_id) ON DELETE SET NULL,
   CONSTRAINT chk_student_semester CHECK (semester BETWEEN 1 AND 8)
 ) ENGINE=InnoDB;
 
@@ -161,6 +176,7 @@ CREATE TABLE IF NOT EXISTS messages (
   student_id BIGINT UNSIGNED NULL,
   department_code VARCHAR(10) NULL,
   semester TINYINT UNSIGNED NULL,
+  section_id BIGINT UNSIGNED NULL,
   audience ENUM('Student', 'Parent', 'Students', 'Parents', 'Class group') NOT NULL DEFAULT 'Student',
   subject VARCHAR(180) NOT NULL,
   body TEXT NOT NULL,
@@ -168,10 +184,12 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_message_recipient (recipient_user_id, read_at, created_at),
   KEY idx_message_scope (recipient_scope, department_code, semester, created_at),
+  KEY idx_message_section (section_id, created_at),
   CONSTRAINT fk_message_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE RESTRICT,
   CONSTRAINT fk_message_recipient FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_message_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL,
   CONSTRAINT fk_message_department FOREIGN KEY (department_code) REFERENCES departments(code) ON DELETE SET NULL,
+  CONSTRAINT fk_message_section FOREIGN KEY (section_id) REFERENCES sections(section_id) ON DELETE SET NULL,
   CONSTRAINT chk_message_semester CHECK (semester IS NULL OR semester BETWEEN 1 AND 8)
 ) ENGINE=InnoDB;
 
@@ -182,13 +200,16 @@ CREATE TABLE IF NOT EXISTS announcements (
   visibility_type ENUM('College', 'Department', 'Semester') NOT NULL,
   department_code VARCHAR(10) NULL,
   semester TINYINT UNSIGNED NULL,
+  section_id BIGINT UNSIGNED NULL,
   priority ENUM('Normal', 'Medium', 'High') NOT NULL DEFAULT 'Normal',
   author_id BIGINT UNSIGNED NULL,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   published_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_announcement_visibility (visibility_type, department_code, semester, is_active, published_at),
+  KEY idx_announcement_section (section_id, published_at),
   CONSTRAINT fk_announcement_department FOREIGN KEY (department_code) REFERENCES departments(code) ON DELETE SET NULL,
+  CONSTRAINT fk_announcement_section FOREIGN KEY (section_id) REFERENCES sections(section_id) ON DELETE SET NULL,
   CONSTRAINT fk_announcement_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT chk_announcement_semester CHECK (semester IS NULL OR semester BETWEEN 1 AND 8)
 ) ENGINE=InnoDB;

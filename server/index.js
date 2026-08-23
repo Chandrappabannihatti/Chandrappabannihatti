@@ -82,19 +82,28 @@ function normalizeStudent(input, id) {
 }
 
 function mapStudentRow(row) {
-  return { ...row, department: row.department || row.department_code, parentName: row.parentName || row.parent_name, parentPhone: row.parentPhone || row.parent_phone, passProbability: row.passProbability ?? row.pass_probability, initials: row.initials || String(row.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
+  return { ...row, section: row.section || row.sectionName, department: row.department || row.department_code, parentName: row.parentName || row.parent_name, parentPhone: row.parentPhone || row.parent_phone, ia1: row.ia1 ?? row.ia_1 ?? 0, ia2: row.ia2 ?? row.ia_2 ?? 0, assignmentMarks: row.assignmentMarks ?? row.assignment_marks ?? 0, previousSgpa: row.previousSgpa ?? row.previous_sgpa ?? 0, backlogs: row.backlogs ?? 0, passProbability: row.passProbability ?? row.pass_probability, initials: row.initials || String(row.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
 }
 
 function mapMessageRow(row) {
-  return { ...row, sender: row.sender || row.sender_name, recipient: row.recipient || row.recipient_scope, time: row.time || row.created_at, read: Boolean(row.read || row.read_at), initials: row.initials || String(row.sender_name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
+  return { ...row, section: row.section || row.sectionName, sender: row.sender || row.sender_name, recipient: row.recipient || row.recipient_scope, time: row.time || row.created_at, read: Boolean(row.read || row.read_at), initials: row.initials || String(row.sender_name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
 }
 
 function mapAnnouncementRow(row) {
-  return { ...row, type: row.type || row.visibility_type, department: row.department || row.department_code, date: row.date || row.published_at, author: row.author || row.author_name || 'Academic Office' }
+  return { ...row, section: row.section || row.sectionName, type: row.type || row.visibility_type, department: row.department || row.department_code, date: row.date || row.published_at, author: row.author || row.author_name || 'Academic Office' }
 }
 
 function mapRemarkRow(row) {
   return { ...row, studentId: row.studentId || row.student_id, studentName: row.studentName || row.student_name, date: row.date || row.created_at, author: row.author || row.teacher_name || 'Teacher' }
+}
+
+async function findSection(department, semester, sectionName) {
+  const rows = await query('SELECT section_id AS sectionId, department_code AS department, semester, section_name AS sectionName FROM sections WHERE department_code=:department AND semester=:semester AND section_name=:sectionName LIMIT 1', { department, semester: Number(semester), sectionName: cleanString(sectionName).toUpperCase() })
+  return rows[0]
+}
+
+function demoSection(department, semester, sectionName) {
+  return demoStore.sections.find((section) => section.department === department && Number(section.semester) === Number(semester) && section.sectionName === cleanString(sectionName).toUpperCase())
 }
 
 app.get('/api/health', async (_req, res) => {
@@ -133,12 +142,46 @@ app.post('/api/auth/login', async (req, res, next) => {
 
 app.post('/api/auth/logout', authRequired, (_req, res) => res.json({ ok: true, message: 'Signed out.' }))
 
+app.get('/api/sections', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+  try {
+    const requestedDepartment = req.user.role === 'teacher' ? req.user.department : (req.query.department || req.user.department)
+    const semester = Number(req.query.semester)
+    if (!validSemesters.includes(semester)) return res.status(422).json({ message: 'Semester must be between 1 and 8.' })
+    if (useDemoData) {
+      const data = demoStore.sections.filter((section) => section.department === requestedDepartment && Number(section.semester) === semester).map((section) => ({ ...section, studentCount: demoStore.students.filter((student) => student.department === requestedDepartment && Number(student.semester) === semester && student.section === section.sectionName).length }))
+      return res.json({ data })
+    }
+    const rows = await query('SELECT s.section_id AS sectionId, s.department_code AS department, s.semester, s.section_name AS sectionName, s.created_at AS createdAt, COUNT(st.id) AS studentCount FROM sections s LEFT JOIN students st ON st.section_id=s.section_id AND st.is_active=1 WHERE s.department_code=:department AND s.semester=:semester GROUP BY s.section_id ORDER BY s.section_name', { department: requestedDepartment, semester })
+    res.json({ data: rows })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/sections', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+  try {
+    const department = req.user.role === 'teacher' ? req.user.department : cleanString(req.body.department).toUpperCase()
+    const semester = Number(req.body.semester)
+    const sectionName = cleanString(req.body.sectionName || req.body.section_name || req.body.section).toUpperCase()
+    if (!validDepartments.includes(department) || !validSemesters.includes(semester) || !sectionName || !/^[A-Z0-9][A-Z0-9 -]{0,9}$/.test(sectionName)) return res.status(422).json({ message: 'Department, semester and a valid section name are required.' })
+    if (useDemoData) {
+      if (demoStore.sections.some((section) => section.department === department && Number(section.semester) === semester && section.sectionName === sectionName)) return res.status(409).json({ message: `Section ${sectionName} already exists for this semester.` })
+      const section = { sectionId: `${department}-${semester}-${sectionName}-${Date.now()}`, department, semester, sectionName, studentCount: 0, createdAt: new Date().toISOString() }
+      demoStore.sections.push(section)
+      return res.status(201).json({ data: section })
+    }
+    const result = await query('INSERT INTO sections (department_code, semester, section_name) VALUES (:department, :semester, :sectionName)', { department, semester, sectionName })
+    res.status(201).json({ data: { sectionId: result.insertId, department, semester, sectionName, studentCount: 0 } })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'That section already exists for this semester.' })
+    next(error)
+  }
+})
+
 app.get('/api/students', authRequired, async (req, res, next) => {
   try {
-    const { search = '', semester, department, risk, page = 1, limit = 25, sortBy = 'usn', sortOrder = 'asc' } = req.query
+    const { search = '', semester, section, department, risk, page = 1, limit = 25, sortBy = 'usn', sortOrder = 'asc' } = req.query
     if (useDemoData) {
       const requestedDepartment = req.user.role === 'teacher' ? req.user.department : (department || 'all')
-      let items = demoStore.students.filter((student) => scopeStudent(req, student) && (requestedDepartment === 'all' || student.department === requestedDepartment) && (!semester || String(student.semester) === String(semester)) && (!risk || student.risk === risk) && `${student.name} ${student.usn}`.toLowerCase().includes(String(search).toLowerCase()))
+      let items = demoStore.students.filter((student) => scopeStudent(req, student) && (requestedDepartment === 'all' || student.department === requestedDepartment) && (!semester || String(student.semester) === String(semester)) && (!section || String(student.section).toUpperCase() === String(section).toUpperCase()) && (!risk || student.risk === risk) && `${student.name} ${student.usn}`.toLowerCase().includes(String(search).toLowerCase()))
       items.sort((a, b) => { const left = String(a[sortBy] ?? ''); const right = String(b[sortBy] ?? ''); return (left.localeCompare(right, undefined, { numeric: true }) * (sortOrder === 'desc' ? -1 : 1)) })
       const total = items.length
       const start = (Number(page) - 1) * Number(limit)
@@ -154,10 +197,11 @@ app.get('/api/students', authRequired, async (req, res, next) => {
     else if (req.user.role === 'student' || req.user.role === 'parent') { conditions.push('s.usn = :userUsn'); params.userUsn = req.user.usn }
     else if (department && department !== 'all') { conditions.push('s.department_code = :department'); params.department = department }
     if (semester) { conditions.push('s.semester = :semester'); params.semester = Number(semester) }
+    if (section) { conditions.push('COALESCE(sec.section_name, s.section) = :section'); params.section = String(section).toUpperCase() }
     if (risk) { conditions.push('pr.risk = :risk'); params.risk = risk }
     if (search) { conditions.push('(s.name LIKE :search OR s.usn LIKE :search)'); params.search = `%${search}%` }
     const where = conditions.join(' AND ')
-    const rows = await query(`SELECT s.*, COALESCE(a.attendance_percentage, 0) AS attendance, COALESCE(im.cgpa, 0) AS cgpa, pr.risk, pr.pass_probability AS passProbability FROM students s LEFT JOIN (SELECT student_id, AVG(attendance_percentage) AS attendance_percentage FROM attendance GROUP BY student_id) a ON a.student_id = s.id LEFT JOIN (SELECT student_id, MAX(cgpa) AS cgpa FROM internal_marks GROUP BY student_id) im ON im.student_id = s.id LEFT JOIN (SELECT p1.* FROM predictions p1 INNER JOIN (SELECT student_id, MAX(created_at) AS created_at FROM predictions GROUP BY student_id) latest ON latest.student_id = p1.student_id AND latest.created_at = p1.created_at) pr ON pr.student_id = s.id WHERE ${where} ORDER BY ${dbSort[safeSort]} ${order} LIMIT :limit OFFSET :offset`, { ...params, limit: Number(limit), offset: (Number(page) - 1) * Number(limit) })
+    const rows = await query(`SELECT s.*, sec.section_name AS sectionName, COALESCE(a.attendance_percentage, 0) AS attendance, COALESCE(im.cgpa, 0) AS cgpa, COALESCE(pr.ia1, im.ia1, 0) AS ia1, COALESCE(pr.ia2, im.ia2, 0) AS ia2, COALESCE(ass.assignmentMarks, 0) AS assignmentMarks, COALESCE(pr.previous_sgpa, 0) AS previousSgpa, COALESCE(pr.backlogs, 0) AS backlogs, pr.risk, pr.pass_probability AS passProbability FROM students s LEFT JOIN sections sec ON sec.section_id=s.section_id LEFT JOIN (SELECT student_id, AVG(attendance_percentage) AS attendance_percentage FROM attendance GROUP BY student_id) a ON a.student_id = s.id LEFT JOIN (SELECT student_id, MAX(cgpa) AS cgpa, MAX(ia1) AS ia1, MAX(ia2) AS ia2 FROM internal_marks GROUP BY student_id) im ON im.student_id = s.id LEFT JOIN (SELECT student_id, SUM(COALESCE(marks, 0)) AS assignmentMarks FROM assignments GROUP BY student_id) ass ON ass.student_id = s.id LEFT JOIN (SELECT p1.* FROM predictions p1 INNER JOIN (SELECT student_id, MAX(created_at) AS created_at FROM predictions GROUP BY student_id) latest ON latest.student_id = p1.student_id AND latest.created_at = p1.created_at) pr ON pr.student_id = s.id WHERE ${where} ORDER BY ${dbSort[safeSort]} ${order} LIMIT :limit OFFSET :offset`, { ...params, limit: Number(limit), offset: (Number(page) - 1) * Number(limit) })
     res.json({ data: rows.map(mapStudentRow), pagination: { page: Number(page), limit: Number(limit), total: rows.length, pages: 1 } })
   } catch (error) { next(error) }
 })
@@ -170,9 +214,11 @@ app.post('/api/students', authRequired, roleRequired('teacher', 'admin'), async 
     const errors = validateStudent(input, existing)
     if (errors.length) return res.status(422).json({ message: 'Student validation failed.', errors })
     const student = normalizeStudent(input)
-    if (useDemoData) { demoStore.students.unshift(student); return res.status(201).json({ data: student }) }
-    const result = await query('INSERT INTO students (usn, name, department_code, semester, section, gender, email, phone, parent_name, parent_phone) VALUES (:usn, :name, :department, :semester, :section, :gender, :email, :phone, :parentName, :parentPhone)', student)
-    res.status(201).json({ data: { ...student, id: result.insertId } })
+    if (useDemoData) { if (!demoSection(student.department, student.semester, student.section)) return res.status(422).json({ message: `Section ${student.section} does not exist for ${student.department} Semester ${student.semester}.` }); demoStore.students.unshift(student); return res.status(201).json({ data: student }) }
+    const sectionRow = await findSection(student.department, student.semester, student.section)
+    if (!sectionRow) return res.status(422).json({ message: `Section ${student.section} does not exist for ${student.department} Semester ${student.semester}.` })
+    const result = await query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, email, phone, parent_name, parent_phone) VALUES (:usn, :name, :department, :semester, :section, :sectionId, :gender, :email, :phone, :parentName, :parentPhone)', { ...student, sectionId: sectionRow.sectionId })
+    res.status(201).json({ data: { ...student, id: result.insertId, sectionId: sectionRow.sectionId } })
   } catch (error) { next(error) }
 })
 
@@ -191,10 +237,13 @@ app.put('/api/students/:id', authRequired, roleRequired('teacher', 'admin'), asy
     }
     const rows = await query('SELECT * FROM students WHERE id = :id AND is_active = 1 LIMIT 1', { id })
     if (!rows[0] || !scopeStudent(req, { ...rows[0], department: rows[0].department_code })) return res.status(404).json({ message: 'Student not found.' })
-    const errors = validateStudent({ ...rows[0], ...req.body, department: req.body.department || rows[0].department_code }, [])
+    const merged = { ...rows[0], ...req.body, department: req.body.department || rows[0].department_code, section: req.body.section || rows[0].section || 'A' }
+    const errors = validateStudent(merged, [])
     if (errors.length) return res.status(422).json({ message: 'Student validation failed.', errors })
-    await query('UPDATE students SET usn=:usn, name=:name, department_code=:department, semester=:semester, section=:section, gender=:gender, email=:email, phone=:phone, parent_name=:parentName, parent_phone=:parentPhone WHERE id=:id', { ...req.body, id, department: req.body.department || rows[0].department_code })
-    res.json({ data: { ...rows[0], ...req.body, id } })
+    const sectionRow = await findSection(merged.department, merged.semester, merged.section)
+    if (!sectionRow) return res.status(422).json({ message: `Section ${merged.section} does not exist for ${merged.department} Semester ${merged.semester}.` })
+    await query('UPDATE students SET usn=:usn, name=:name, department_code=:department, semester=:semester, section=:section, section_id=:sectionId, gender=:gender, email=:email, phone=:phone, parent_name=:parentName, parent_phone=:parentPhone WHERE id=:id', { ...merged, id, sectionId: sectionRow.sectionId })
+    res.json({ data: { ...rows[0], ...merged, id, sectionId: sectionRow.sectionId } })
   } catch (error) { next(error) }
 })
 
@@ -219,24 +268,27 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
-    const rows = rawRows.map((row, index) => normalizeStudent({ ...row, usn: row.USN || row.usn, name: row.Name || row.name, department: row.Department || row.department, semester: row.Semester || row.semester, section: row.Section || row.section, email: row.Email || row.email, phone: row.Phone || row.phone, parentName: row['Parent Name'] || row.parentName, parentPhone: row['Parent Phone'] || row.parentPhone, attendance: row.Attendance || row.attendance, cgpa: row.CGPA || row.cgpa }, Date.now() + index))
+    const rows = rawRows.map((row, index) => normalizeStudent({ ...row, usn: row.USN || row.usn, name: row.Name || row.name, department: row.Department || row.department || req.body.department || req.user.department, semester: row.Semester || row.semester || req.body.semester, section: row.Section || row.section || req.body.section || 'A', email: row.Email || row.email, phone: row.Phone || row.phone, parentName: row['Parent Name'] || row.parentName, parentPhone: row['Parent Phone'] || row.parentPhone, attendance: row.Attendance || row.attendance, cgpa: row.CGPA || row.cgpa }, Date.now() + index))
     const existing = useDemoData ? demoStore.students : []
     const errors = []
     const seen = new Set()
-    rows.forEach((row, index) => {
+    for (const [index, row] of rows.entries()) {
       const rowErrors = validateStudent(row, [...existing, ...rows.slice(0, index)])
       if (req.user.role === 'teacher' && row.department !== req.user.department) rowErrors.push(`Department must be ${req.user.department} for this teacher.`)
+      if (req.body.department && row.department !== String(req.body.department).toUpperCase()) rowErrors.push(`Department must be ${String(req.body.department).toUpperCase()} for this upload.`)
       if (req.body.semester && Number(row.semester) !== Number(req.body.semester)) rowErrors.push(`Semester must be ${Number(req.body.semester)} for this upload.`)
+      if (req.body.section && row.section !== String(req.body.section).toUpperCase()) rowErrors.push(`Section must be ${String(req.body.section).toUpperCase()} for this upload.`)
+      if (useDemoData) { if (!demoSection(row.department, row.semester, row.section)) rowErrors.push(`Section ${row.section} does not exist for ${row.department} Semester ${row.semester}.`) } else { const sectionRow = await findSection(row.department, row.semester, row.section); if (!sectionRow) rowErrors.push(`Section ${row.section} does not exist for ${row.department} Semester ${row.semester}.`) }
       if (seen.has(row.usn)) rowErrors.push('Duplicate USN in upload.')
       seen.add(row.usn)
       rowErrors.forEach((message) => errors.push(`Row ${index + 2}: ${message}`))
-    })
+    }
     const preview = rows.map(({ id, initials, ...row }) => row)
     if (String(req.body.commit) !== 'true') return res.json({ preview, errors, valid: errors.length === 0, rowCount: rows.length })
     if (errors.length) return res.status(422).json({ message: 'Upload has validation errors. Fix them before importing.', errors, preview })
     if (useDemoData) demoStore.students.unshift(...rows)
-    else for (const row of rows) await query('INSERT INTO students (usn, name, department_code, semester, section, gender, email, phone, parent_name, parent_phone) VALUES (:usn, :name, :department, :semester, :section, :gender, :email, :phone, :parentName, :parentPhone)', row)
-    res.status(201).json({ imported: rows.length, data: rows })
+    else for (const row of rows) { const sectionRow = await findSection(row.department, row.semester, row.section); await query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, email, phone, parent_name, parent_phone) VALUES (:usn, :name, :department, :semester, :section, :sectionId, :gender, :email, :phone, :parentName, :parentPhone)', { ...row, sectionId: sectionRow.sectionId }) }
+    res.status(201).json({ imported: rows.length, data: rows.map((row) => useDemoData ? row : ({ ...row })) })
   } catch (error) { next(error) }
 })
 
@@ -256,30 +308,34 @@ app.get('/api/messages', authRequired, async (req, res, next) => {
   try {
     const requestedDepartment = req.user.role === 'teacher' ? req.user.department : (req.query.department || req.user.department)
     const requestedSemester = req.query.semester || req.user.semester
+    const requestedSection = req.query.section ? String(req.query.section).toUpperCase() : ''
     if (useDemoData) {
       const messages = (req.user.role === 'teacher' || req.user.role === 'admin'
         ? demoStore.messages
         : demoStore.messages.filter((message) => String(message.recipient).toLowerCase().includes(String(req.user.name || req.user.usn).toLowerCase()) || message.audience === 'Students'))
-        .filter((message) => (!requestedDepartment || message.department === requestedDepartment) && (!requestedSemester || Number(message.semester) === Number(requestedSemester)))
+        .filter((message) => (!requestedDepartment || message.department === requestedDepartment) && (!requestedSemester || Number(message.semester) === Number(requestedSemester)) && (!requestedSection || String(message.section || '').toUpperCase() === requestedSection))
       return res.json({ data: messages })
     }
-    const conditions = ['(m.recipient_user_id = :userId OR m.recipient_scope = :scope)']
+    const conditions = ['(m.recipient_user_id = :userId OR m.recipient_scope = :scope OR m.sender_id = :userId)']
     const params = { userId: req.user.sub, scope: requestedDepartment || 'ALL' }
     if (requestedDepartment) { conditions.push('m.department_code = :department'); params.department = requestedDepartment }
     if (requestedSemester) { conditions.push('m.semester = :semester'); params.semester = Number(requestedSemester) }
-    const rows = await query(`SELECT m.*, u.display_name AS sender_name FROM messages m LEFT JOIN users u ON u.id = m.sender_id WHERE ${conditions.join(' AND ')} ORDER BY m.created_at DESC`, params)
+    if (requestedSection) { conditions.push('sec.section_name = :section'); params.section = requestedSection }
+    const rows = await query(`SELECT m.*, sec.section_name AS sectionName, u.display_name AS sender_name FROM messages m LEFT JOIN sections sec ON sec.section_id=m.section_id LEFT JOIN users u ON u.id = m.sender_id WHERE ${conditions.join(' AND ')} ORDER BY m.created_at DESC`, params)
     res.json({ data: rows.map(mapMessageRow) })
   } catch (error) { next(error) }
 })
 
 app.post('/api/messages/send', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
   try {
-    const { recipient, audience, subject, body, studentId, department, semester } = req.body
+    const { recipient, audience, subject, body, studentId, department, semester, section } = req.body
     if (!subject || !body) return res.status(422).json({ message: 'Subject and message body are required.' })
     if (req.user.role === 'teacher' && department && department !== req.user.department) return res.status(403).json({ message: 'Teachers may only message their department.' })
-    const message = { id: useDemoData ? nextId(demoStore.messages) : undefined, sender: req.user.name, recipient: recipient || audience || 'Academic community', audience: audience || 'Student', department: department || req.user.department, semester: Number(semester || req.user.semester || 0) || null, subject: cleanString(subject), body: cleanString(body), time: 'Just now', createdAt: new Date().toISOString(), read: false, initials: (req.user.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(), studentId }
+    const normalizedSection = cleanString(section).toUpperCase() || undefined
+    const message = { id: useDemoData ? nextId(demoStore.messages) : undefined, sender: req.user.name, recipient: recipient || audience || 'Academic community', audience: audience || 'Student', department: department || req.user.department, semester: Number(semester || req.user.semester || 0) || null, section: normalizedSection, subject: cleanString(subject), body: cleanString(body), time: 'Just now', createdAt: new Date().toISOString(), read: false, initials: (req.user.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(), studentId }
+    if (normalizedSection) { const sectionRow = useDemoData ? demoSection(message.department, message.semester, normalizedSection) : await findSection(message.department, message.semester, normalizedSection); if (!sectionRow) return res.status(422).json({ message: `Section ${normalizedSection} does not exist for ${message.department} Semester ${message.semester}.` }); message.sectionId = sectionRow.sectionId }
     if (useDemoData) demoStore.messages.unshift(message)
-    else await query('INSERT INTO messages (sender_id, recipient_scope, student_id, department_code, semester, audience, subject, body) VALUES (:senderId, :recipientScope, :studentId, :department, :semester, :audience, :subject, :body)', { senderId: req.user.sub, recipientScope: recipient || audience || 'Academic community', studentId: studentId || null, department: message.department, semester: message.semester, audience: message.audience, subject: message.subject, body: message.body })
+    else await query('INSERT INTO messages (sender_id, recipient_scope, student_id, department_code, semester, section_id, audience, subject, body) VALUES (:senderId, :recipientScope, :studentId, :department, :semester, :sectionId, :audience, :subject, :body)', { senderId: req.user.sub, recipientScope: recipient || audience || 'Academic community', studentId: studentId || null, department: message.department, semester: message.semester, sectionId: message.sectionId || null, audience: message.audience, subject: message.subject, body: message.body })
     res.status(201).json({ data: message })
   } catch (error) { next(error) }
 })
@@ -295,26 +351,30 @@ app.get('/api/announcements', authRequired, async (req, res, next) => {
   try {
     const requestedDepartment = req.user.role === 'teacher' ? req.user.department : (req.query.department || req.user.department)
     const requestedSemester = req.query.semester || req.user.semester
+    const requestedSection = req.query.section ? String(req.query.section).toUpperCase() : ''
     if (useDemoData) {
-      const items = demoStore.announcements.filter((item) => (!requestedDepartment || item.department === requestedDepartment) && (!requestedSemester || Number(item.semester) === Number(requestedSemester)))
+      const items = demoStore.announcements.filter((item) => (!requestedDepartment || item.department === requestedDepartment) && (!requestedSemester || Number(item.semester) === Number(requestedSemester)) && (!requestedSection || String(item.section || '').toUpperCase() === requestedSection))
       return res.json({ data: items })
     }
     const conditions = ['is_active = 1', 'department_code = :department']
     const params = { department: requestedDepartment }
     if (requestedSemester) { conditions.push('semester = :semester'); params.semester = Number(requestedSemester) }
-    const rows = await query(`SELECT * FROM announcements WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`, params)
+    if (requestedSection) { conditions.push('sec.section_name = :section'); params.section = requestedSection }
+    const rows = await query(`SELECT a.*, sec.section_name AS sectionName FROM announcements a LEFT JOIN sections sec ON sec.section_id=a.section_id WHERE ${conditions.join(' AND ')} ORDER BY a.created_at DESC`, params)
     res.json({ data: rows.map(mapAnnouncementRow) })
   } catch (error) { next(error) }
 })
 
 app.post('/api/announcements', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
   try {
-    const { title, body, type = 'Department', department, semester, priority = 'Normal' } = req.body
+    const { title, body, type = 'Department', department, semester, section, priority = 'Normal' } = req.body
     if (!title || !body) return res.status(422).json({ message: 'Title and body are required.' })
     if (req.user.role === 'teacher' && department && department !== req.user.department) return res.status(403).json({ message: 'Teachers may only publish in their department.' })
-    const item = { id: useDemoData ? nextId(demoStore.announcements) : undefined, title: cleanString(title), body: cleanString(body), type, department: type === 'College' ? null : department || req.user.department, semester: type === 'Semester' ? Number(semester) : null, priority, author: req.user.name, date: 'Just now' }
+    const normalizedSection = cleanString(section).toUpperCase() || undefined
+    const item = { id: useDemoData ? nextId(demoStore.announcements) : undefined, title: cleanString(title), body: cleanString(body), type, department: type === 'College' ? null : department || req.user.department, semester: type === 'Semester' ? Number(semester) : null, section: normalizedSection, priority, author: req.user.name, date: 'Just now' }
+    if (normalizedSection) { const sectionRow = useDemoData ? demoSection(item.department, item.semester, normalizedSection) : await findSection(item.department, item.semester, normalizedSection); if (!sectionRow) return res.status(422).json({ message: `Section ${normalizedSection} does not exist for ${item.department} Semester ${item.semester}.` }); item.sectionId = sectionRow.sectionId }
     if (useDemoData) demoStore.announcements.unshift(item)
-    else await query('INSERT INTO announcements (title, body, visibility_type, department_code, semester, priority, author_id) VALUES (:title, :body, :type, :department, :semester, :priority, :authorId)', { ...item, authorId: req.user.sub })
+    else await query('INSERT INTO announcements (title, body, visibility_type, department_code, semester, section_id, priority, author_id) VALUES (:title, :body, :type, :department, :semester, :sectionId, :priority, :authorId)', { ...item, sectionId: item.sectionId || null, authorId: req.user.sub })
     res.status(201).json({ data: item })
   } catch (error) { next(error) }
 })
@@ -338,17 +398,19 @@ app.delete('/api/announcements/:id', authRequired, roleRequired('teacher', 'admi
 app.get('/api/remarks', authRequired, async (req, res, next) => {
   try {
     const requestedSemester = req.query.semester || req.user.semester
+    const requestedSection = req.query.section ? String(req.query.section).toUpperCase() : ''
     if (useDemoData) {
       const items = (req.user.role === 'teacher' || req.user.role === 'admin' ? demoStore.remarks : demoStore.remarks.filter((remark) => remark.studentId === 4)).filter((remark) => {
         const student = demoStore.students.find((item) => item.id === remark.studentId)
-        return student && student.department === req.user.department && (!requestedSemester || Number(student.semester) === Number(requestedSemester))
+        return student && student.department === req.user.department && (!requestedSemester || Number(student.semester) === Number(requestedSemester)) && (!requestedSection || String(student.section || '').toUpperCase() === requestedSection)
       })
       return res.json({ data: items })
     }
     const conditions = ['s.department_code=:department']
     const params = { department: req.user.department }
     if (requestedSemester) { conditions.push('s.semester=:semester'); params.semester = Number(requestedSemester) }
-    const rows = await query(`SELECT r.*, s.name AS student_name FROM remarks r JOIN students s ON s.id=r.student_id WHERE ${conditions.join(' AND ')} ORDER BY r.created_at DESC`, params); res.json({ data: rows.map(mapRemarkRow) })
+    if (requestedSection) { conditions.push('COALESCE(sec.section_name, s.section)=:section'); params.section = requestedSection }
+    const rows = await query(`SELECT r.*, s.name AS student_name FROM remarks r JOIN students s ON s.id=r.student_id LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE ${conditions.join(' AND ')} ORDER BY r.created_at DESC`, params); res.json({ data: rows.map(mapRemarkRow) })
   } catch (error) { next(error) }
 })
 

@@ -10,7 +10,18 @@ export const departments = [
 
 export const semesters = [1, 2, 3, 4, 5, 6, 7, 8]
 
+export const demoSections = semesters.flatMap((semester) => ['A', 'B', 'C'].map((sectionName, index) => ({
+  sectionId: `CSE-${semester}-${sectionName}`,
+  department: 'CSE',
+  semester,
+  sectionName,
+  studentCount: 0,
+  createdAt: '2026-06-01',
+  sortOrder: index,
+})))
+
 export const demoStudents = [
+
   { id: 1, usn: '4PM21CS001', name: 'Aarav Bhat', department: 'CSE', semester: 7, section: 'A', gender: 'Male', email: 'aarav.bhat@pestrust.edu.in', phone: '+91 98452 10341', parentName: 'Vikram Bhat', parentPhone: '+91 98450 77120', attendance: 92, cgpa: 8.9, ia1: 43, ia2: 45, assignmentMarks: 18, previousSgpa: 8.6, backlogs: 0, risk: 'Low', passProbability: 97, initials: 'AB' },
   { id: 2, usn: '4PM21CS014', name: 'Diya Rao', department: 'CSE', semester: 7, section: 'A', gender: 'Female', email: 'diya.rao@pestrust.edu.in', phone: '+91 98806 14229', parentName: 'Shilpa Rao', parentPhone: '+91 98451 92134', attendance: 88, cgpa: 8.4, ia1: 39, ia2: 42, assignmentMarks: 17, previousSgpa: 8.1, backlogs: 0, risk: 'Low', passProbability: 94, initials: 'DR' },
   { id: 3, usn: '4PM21CS027', name: 'Nikhil Shetty', department: 'CSE', semester: 7, section: 'A', gender: 'Male', email: 'nikhil.shetty@pestrust.edu.in', phone: '+91 97315 40985', parentName: 'Mahesh Shetty', parentPhone: '+91 98452 44019', attendance: 76, cgpa: 7.1, ia1: 31, ia2: 34, assignmentMarks: 14, previousSgpa: 7.3, backlogs: 1, risk: 'Medium', passProbability: 78, initials: 'NS' },
@@ -34,8 +45,8 @@ export const demoStudents = [
 ]
 
 export const demoMessages = [
-  { id: 1, department: 'CSE', semester: 7, sender: 'Dr. Ananya Rao', recipient: 'Ishita Kulkarni', audience: 'Student', subject: 'Let us make a plan for your attendance', body: 'I noticed your attendance has dipped this month. Please meet me after class so we can make a simple recovery plan.', time: 'Today, 09:42 AM', read: false, initials: 'AR' },
-  { id: 2, department: 'CSE', semester: 7, sender: 'Dr. Ananya Rao', recipient: 'Suresh Kulkarni', audience: 'Parent', subject: 'A quick academic update for Ishita', body: 'Ishita would benefit from a little extra support with attendance and the upcoming internal assessment.', time: 'Yesterday, 04:18 PM', read: true, initials: 'SK' },
+  { id: 1, department: 'CSE', semester: 7, section: 'B', sender: 'Dr. Ananya Rao', recipient: 'Ishita Kulkarni', audience: 'Student', subject: 'Let us make a plan for your attendance', body: 'I noticed your attendance has dipped this month. Please meet me after class so we can make a simple recovery plan.', time: 'Today, 09:42 AM', read: false, initials: 'AR' },
+  { id: 2, department: 'CSE', semester: 7, section: 'B', sender: 'Dr. Ananya Rao', recipient: 'Suresh Kulkarni', audience: 'Parent', subject: 'A quick academic update for Ishita', body: 'Ishita would benefit from a little extra support with attendance and the upcoming internal assessment.', time: 'Yesterday, 04:18 PM', read: true, initials: 'SK' },
   { id: 3, department: 'CSE', semester: 7, sender: 'Placement Cell', recipient: 'CSE · Semester 7', audience: 'Students', subject: 'Product engineering orientation', body: 'An industry mentor joins us on Friday at 2 PM in Seminar Hall 2. Bring your updated resume.', time: '18 Aug 2026', read: true, initials: 'PC' },
   { id: 4, department: 'CSE', semester: 7, sender: 'Dr. Ananya Rao', recipient: 'All CSE students', audience: 'Students', subject: 'Project review checkpoints', body: 'Please keep your problem statement and sprint board ready for the review next Tuesday.', time: '15 Aug 2026', read: true, initials: 'AR' },
   { id: 5, department: 'CSE', semester: 1, sender: 'Academic Office', recipient: 'CSE · Semester 1', audience: 'Students', subject: 'Welcome to your first semester', body: 'Your mentor introduction and foundation course orientation are scheduled for this week.', time: '19 Aug 2026', read: true, initials: 'AO' },
@@ -48,8 +59,8 @@ export const demoMessages = [
 ]
 
 export const demoAnnouncements = [
-  { id: 1, title: 'Project review checkpoints', body: 'Project review 2 is scheduled for Tuesday, 25 August. Teams should carry their sprint board and current build.', type: 'Department', department: 'CSE', semester: 7, author: 'Dr. Ananya Rao', date: '24 Aug 2026', priority: 'High' },
-  { id: 2, title: 'Internal examination schedule published', body: 'The Semester 7 internal assessment timetable is now available. Check the academic calendar for room details.', type: 'Semester', department: 'CSE', semester: 7, author: 'Academic Office', date: '22 Aug 2026', priority: 'Medium' },
+  { id: 1, title: 'Project review checkpoints', section: 'B', body: 'Project review 2 is scheduled for Tuesday, 25 August. Teams should carry their sprint board and current build.', type: 'Department', department: 'CSE', semester: 7, author: 'Dr. Ananya Rao', date: '24 Aug 2026', priority: 'High' },
+  { id: 2, title: 'Internal examination schedule published', section: 'B', body: 'The Semester 7 internal assessment timetable is now available. Check the academic calendar for room details.', type: 'Semester', department: 'CSE', semester: 7, author: 'Academic Office', date: '22 Aug 2026', priority: 'Medium' },
   { id: 4, title: 'Foundation course orientation', body: 'Meet your mentor and bring your questions about the first semester learning plan.', type: 'Semester', department: 'CSE', semester: 1, author: 'Academic Office', date: '20 Aug 2026', priority: 'Normal' },
   { id: 5, title: 'Programming lab checklist', body: 'Review the arrays and functions checklist before the upcoming programming lab.', type: 'Semester', department: 'CSE', semester: 2, author: 'CSE Department', date: '20 Aug 2026', priority: 'Normal' },
   { id: 6, title: 'Database design clinic', body: 'Join the guided database design clinic after class on Thursday.', type: 'Semester', department: 'CSE', semester: 3, author: 'CSE Department', date: '19 Aug 2026', priority: 'Normal' },

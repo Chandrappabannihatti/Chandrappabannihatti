@@ -22,6 +22,8 @@ const unwrap = (request) => request.then((response) => response.data)
 const api = {
   login: (payload) => unwrap(client.post('/auth/login', payload)),
   logout: () => unwrap(client.post('/auth/logout')),
+  getSections: (params) => unwrap(client.get('/sections', { params })),
+  createSection: (payload) => unwrap(client.post('/sections', payload)),
   getStudents: (params) => unwrap(client.get('/students', { params })),
   createStudent: (payload) => unwrap(client.post('/students', payload)),
   updateStudent: (id, payload) => unwrap(client.put(`/students/${id}`, payload)),
@@ -32,6 +34,7 @@ const api = {
     form.append('commit', String(commit))
     if (scope.department) form.append('department', scope.department)
     if (scope.semester) form.append('semester', String(scope.semester))
+    if (scope.section) form.append('section', scope.section)
     return unwrap(client.post('/students/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }))
   },
   exportStudents: (params) => client.get('/students/export', { params, responseType: 'blob' }),

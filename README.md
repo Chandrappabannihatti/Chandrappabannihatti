@@ -10,7 +10,7 @@ A production-shaped academic monitoring workspace for **PES Institute of Technol
 - `.xlsx` / `.csv` upload pipeline with server-side validation, duplicate USN detection, preview/import workflow and Excel export.
 - Flask prediction service ready for a trained XGBoost `joblib` model. The API falls back to a transparent deterministic baseline when no model is mounted.
 - Demo data and four ready-to-use demo roles: admin, teacher, student and parent.
-- Teacher tools: a dedicated semester selection page followed by isolated semester routes (`/teacher/semester/1` through `/teacher/semester/8`), each with its own roster, attendance, marks, analytics, messages, announcements and prediction desk. Search/filter/sort, full-page student profiles, semester-scoped manual student entry (`/teacher/semester/:semester/students/new`) and shared remarks are scoped to that semester.
+- Teacher tools: a department → semester → section hierarchy. `/teacher/semester/:semester` lists the available sections and supports **+ Add Section**; section workspaces use `/teacher/semester/:semester/section/:section` and isolate students, attendance, internal marks, assignments, achievements, remarks, messages, announcements, analytics and predictions. Search/filter/sort, full-page student profiles at `/teacher/student/:usn`, section-scoped manual entry (`/teacher/semester/:semester/section/:section/students/new`) and Excel import (`/teacher/semester/:semester/section/:section/students/upload`) cannot mix department, semester or section records.
 - Read-only student and parent dashboards with attendance, marks, CGPA, prediction, remarks, messages and announcements.
 
 ## Run locally in demo mode
@@ -98,8 +98,9 @@ Set `ML_SERVICE_URL=http://127.0.0.1:8000` in the Node `.env`. To use a trained 
 All routes except login and health require `Authorization: Bearer <jwt>`.
 
 - `POST /api/auth/login`, `POST /api/auth/logout`
-- `GET /api/students`, `POST /api/students`, `PUT /api/students/:id`, `DELETE /api/students/:id`
-- `POST /api/students/upload`, `GET /api/students/export`
+- `GET /api/sections?semester=7`, `POST /api/sections` (teacher department is enforced; the POST body accepts `sectionName`)
+- `GET /api/students?semester=7&section=B`, `POST /api/students`, `PUT /api/students/:id`, `DELETE /api/students/:id`
+- `POST /api/students/upload`, `GET /api/students/export` (imports accept an optional section scope)
 - `GET /api/messages`, `POST /api/messages/send`, `PUT /api/messages/:id/read`
 - `GET /api/announcements`, `POST /api/announcements`, `PUT /api/announcements/:id`, `DELETE /api/announcements/:id`
 - `GET /api/remarks`, `POST /api/remarks`

@@ -917,3 +917,64 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .upload-page-actions { align-items: stretch; flex-direction: column-reverse; }
   .upload-page-actions button { width: 100%; }
 }
+
+/* Teacher section hierarchy */
+.section-selection-page { min-height: 100vh; color: #fff; background: var(--ink); }
+.section-selection-page .brand-wordmark strong { color: #fff; }
+.section-selection-page .brand-wordmark small { color: #8ea2ad; }
+.section-selection-page .brand-mark { color: var(--ink); background: #fff; }
+.section-selection-content { max-width: 840px; padding-top: 52px; }
+.selection-back-link { display: inline-flex; align-items: center; gap: 7px; border: 0; padding: 0; color: #8ea2ad; background: transparent; font-size: 10px; font-weight: 800; }
+.selection-back-link:hover { color: #fff; }
+.selection-back-link svg { color: var(--coral); }
+.section-selection-title { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 26px 0 13px; }
+.section-selection-title h2 { margin: 0; color: #fff; font-family: 'Manrope', sans-serif; font-size: 21px; letter-spacing: -.05em; }
+.simple-kicker { margin: 0 0 5px; color: var(--mint); font-size: 9px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.section-add-button, .section-add-save { display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(188,231,215,.2); border-radius: 9px; padding: 9px 11px; color: var(--ink); background: var(--mint); font-size: 10px; font-weight: 800; white-space: nowrap; }
+.section-add-button:hover, .section-add-save:hover { background: #d9f4e7; }
+.section-add-form { position: relative; display: flex; align-items: flex-end; gap: 10px; margin-bottom: 12px; border: 1px solid rgba(188,231,215,.18); border-radius: 12px; padding: 13px 42px 13px 14px; background: rgba(188,231,215,.06); }
+.section-add-form > div { flex: 1; }
+.section-add-form label { display: block; margin-bottom: 6px; color: #d4e7e0; font-size: 10px; font-weight: 800; }
+.section-add-form input { width: 100%; border: 1px solid rgba(188,231,215,.22); border-radius: 8px; padding: 9px 10px; outline: 0; color: #fff; background: rgba(0,0,0,.15); font-size: 11px; }
+.section-add-form input:focus { border-color: var(--mint); }
+.section-add-form span { display: block; margin-top: 5px; color: #829b9f; font-size: 9px; }
+.section-add-error { position: absolute; left: 14px; bottom: -19px; margin: 0; color: #f2a18e; font-size: 9px; }
+.section-add-close { position: absolute; top: 9px; right: 10px; display: grid; place-items: center; width: 25px; height: 25px; border: 0; border-radius: 7px; color: #8ea2ad; background: rgba(255,255,255,.05); }
+.section-add-close:hover { color: #fff; background: rgba(255,255,255,.12); }
+.section-list { display: grid; gap: 8px; }
+.section-list-row { display: grid; grid-template-columns: 35px 52px minmax(0, 1fr) 18px; align-items: center; gap: 14px; width: 100%; border: 1px solid rgba(255,255,255,.1); border-radius: 13px; padding: 11px 15px 11px 12px; color: #fff; background: rgba(255,255,255,.045); text-align: left; transition: all .18s ease; }
+.section-list-row:hover { border-color: var(--coral); background: rgba(255,255,255,.09); transform: translateX(4px); }
+.section-list-index { color: #718895; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.section-list-badge { display: grid; place-items: center; width: 45px; height: 37px; border-radius: 10px; color: var(--ink); background: var(--mint); font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 800; }
+.section-list-row:nth-child(1) .section-list-badge { background: #f3d7c9; }
+.section-list-row:nth-child(2) .section-list-badge { background: #d4efe4; }
+.section-list-row:nth-child(3) .section-list-badge { background: #d8edf5; }
+.section-list-row:nth-child(4) .section-list-badge { background: #e3e2f5; }
+.section-list-copy strong { display: block; color: #fff; font-size: 13px; font-weight: 800; }
+.section-list-copy small { display: block; margin-top: 4px; color: #879ba5; font-size: 9px; }
+.section-list-chevron { color: #718895; font-size: 15px; }
+.section-list-row:hover .section-list-chevron { color: var(--coral); transform: translateX(3px); }
+.section-empty { display: flex; align-items: center; gap: 9px; border: 1px dashed rgba(188,231,215,.2); border-radius: 12px; padding: 20px; color: #8ea2ad; background: rgba(255,255,255,.03); font-size: 10px; }
+.section-empty svg { color: var(--mint); }
+.section-selection-content .selection-note { margin-top: 18px; }
+.section-achievement-list { margin-top: 14px; }
+.section-achievement-row, .section-remark-row { display: flex; align-items: center; gap: 11px; width: 100%; border: 0; border-bottom: 1px solid #efeee9; padding: 12px 0; color: inherit; background: transparent; text-align: left; }
+.section-achievement-row:last-of-type, .section-remark-row:last-of-type { border-bottom: 0; }
+.section-achievement-row:hover strong, .section-remark-row:hover strong { color: var(--coral-dark); }
+.section-achievement-row > span:not(.avatar), .section-remark-row > span:nth-child(2) { min-width: 0; flex: 1; }
+.section-achievement-row strong, .section-remark-row strong { display: block; color: var(--ink); font-size: 11px; }
+.section-achievement-row small { display: block; margin-top: 4px; overflow: hidden; color: #8d9b99; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.section-achievement-row > svg, .section-remark-row > svg { flex: 0 0 auto; color: #a9b4b0; }
+.section-remarks-list { margin-top: 4px; }
+.section-remark-row { border-left: 2px solid var(--coral); padding: 12px 0 12px 10px; }
+.section-remark-row .remark-label { flex: 0 0 auto; align-self: flex-start; }
+.section-remark-row p { margin: 4px 0; color: #7f8c8d; font-size: 10px; line-height: 1.5; }
+.section-remark-row small { color: #a4adab; font-size: 9px; }
+@media (max-width: 560px) {
+  .section-selection-content { padding-top: 38px; }
+  .section-selection-title { align-items: flex-start; flex-direction: column; }
+  .section-add-form { align-items: stretch; flex-direction: column; }
+  .section-add-save { justify-content: center; }
+  .section-list-row { grid-template-columns: 24px 43px minmax(0, 1fr) 15px; gap: 9px; padding-right: 10px; }
+  .section-list-badge { width: 39px; height: 35px; }
+}

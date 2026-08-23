@@ -4,7 +4,7 @@ import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import SemesterSelection from './pages/SemesterSelection'
-import TeacherSemester from './pages/TeacherSemester'
+import TeacherSemester, { TeacherStudentProfile } from './pages/TeacherSemester'
 
 function ProtectedRoute({ children, role }) {
   const { isAuthenticated, user } = useAuth()
@@ -20,6 +20,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/teacher/semesters" element={<ProtectedRoute role="teacher"><SemesterSelection /></ProtectedRoute>} />
+      <Route path="/teacher/student/:usn" element={<ProtectedRoute role="teacher"><TeacherStudentProfile /></ProtectedRoute>} />
       <Route path="/teacher/semester/:semester/*" element={<ProtectedRoute role="teacher"><TeacherSemester /></ProtectedRoute>} />
       <Route path="/app/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
