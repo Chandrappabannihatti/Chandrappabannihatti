@@ -1,0 +1,85 @@
+{
+  "algorithm": "XGBoost (XGBClassifier + XGBRegressor)",
+  "samples": 2500,
+  "train_samples": 2000,
+  "test_samples": 500,
+  "classes": [
+    "High",
+    "Low",
+    "Medium"
+  ],
+  "features": [
+    "attendance_percentage",
+    "assignment_marks",
+    "previous_sem_sgpa",
+    "cgpa",
+    "backlogs",
+    "ia1",
+    "ia2",
+    "avg_ia"
+  ],
+  "classifier": {
+    "accuracy": 0.868,
+    "precision_weighted": 0.869,
+    "recall_weighted": 0.868,
+    "f1_weighted": 0.8684,
+    "confusion_matrix": [
+      [
+        68,
+        0,
+        10
+      ],
+      [
+        0,
+        204,
+        26
+      ],
+      [
+        8,
+        22,
+        162
+      ]
+    ],
+    "report": "              precision    recall  f1-score   support\n\n        High       0.89      0.87      0.88        78\n         Low       0.90      0.89      0.89       230\n      Medium       0.82      0.84      0.83       192\n\n    accuracy                           0.87       500\n   macro avg       0.87      0.87      0.87       500\nweighted avg       0.87      0.87      0.87       500\n"
+  },
+  "regressor": {
+    "target": "pass_probability",
+    "mae": 3.025,
+    "rmse": 3.78,
+    "r2": 0.9451
+  },
+  "feature_importance": [
+    {
+      "feature": "cgpa",
+      "importance": 0.3203
+    },
+    {
+      "feature": "previous_sem_sgpa",
+      "importance": 0.2479
+    },
+    {
+      "feature": "attendance_percentage",
+      "importance": 0.1129
+    },
+    {
+      "feature": "backlogs",
+      "importance": 0.0916
+    },
+    {
+      "feature": "ia1",
+      "importance": 0.0668
+    },
+    {
+      "feature": "assignment_marks",
+      "importance": 0.063
+    },
+    {
+      "feature": "avg_ia",
+      "importance": 0.05
+    },
+    {
+      "feature": "ia2",
+      "importance": 0.0474
+    }
+  ]
+}
