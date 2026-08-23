@@ -94,12 +94,18 @@ export function AdminSubjectManagement() {
   const saveSubject = async (form) => {
     const payload = { department: departmentDetails.code, semester, subjectCode: form.subjectCode.trim().toUpperCase(), subjectName: form.subjectName.trim(), credits: Number(form.credits) }
     let saved
+    let usedLocalFallback = DEMO_MODE
     if (!DEMO_MODE) {
       try {
         const response = editing ? await api.updateSubject(editing.subjectId || editing.id, payload) : await api.createSubject(payload)
         saved = response.data
       } catch (error) {
-        if (error.response) { setNotice(error.response.data?.errors?.join(' ') || error.response.data?.message || 'Subject could not be saved.'); return false }
+        const status = error.response?.status
+        const message = error.response?.data?.errors?.join(' ') || error.response?.data?.message || 'Subject could not be saved.'
+        const canUseLocalFallback = !error.response || status >= 500 || (!editing && status === 404)
+        if (!canUseLocalFallback) { setNotice(message); return { ok: false, message } }
+        usedLocalFallback = true
+        setNotice('API unavailable · saving this subject to the local review cache')
       }
     }
     const localBase = getDemoSubjects()
@@ -116,7 +122,7 @@ export function AdminSubjectManagement() {
     setSubjects((current) => editing ? current.map((item) => Number(item.id || item.subjectId) === Number(editing.id || editing.subjectId) ? saved : item) : [...current, saved])
     setFormOpen(false)
     setEditing(null)
-    setNotice(`${saved.subjectCode} ${editing ? 'updated' : 'created'} · dashboards are now in sync`)
+    setNotice(usedLocalFallback ? `${saved.subjectCode} ${editing ? 'updated' : 'created'} · saved locally and synced to dashboard views` : `${saved.subjectCode} ${editing ? 'updated' : 'created'} · dashboards are now in sync`)
     return true
   }
 
@@ -146,7 +152,7 @@ function SubjectForm({ subject, department, semester, onClose, onSave }) {
     if (!form.subjectName.trim()) { setError('Enter a subject name.'); return }
     if (Number(form.credits) <= 0 || Number(form.credits) > 30) { setError('Credits must be greater than 0 and no more than 30.'); return }
     const saved = await onSave(form)
-    if (!saved) setError('We could not save this subject. Check the details and try again.')
+    if (!saved || saved.ok === false) setError(saved?.message || 'We could not save this subject. Check the details and try again.')
   }
   return <div className="admin-modal-backdrop"><form className="admin-subject-modal" onSubmit={submit}><div className="admin-modal-head"><div><p>{department.label} · Semester {semester}</p><h2>{subject ? 'Edit subject' : 'Add subject'}</h2></div><button type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="admin-modal-body"><label>Subject code<input value={form.subjectCode} onChange={(event) => update('subjectCode', event.target.value.toUpperCase())} placeholder="CS706" maxLength="30" required /></label><label>Subject name<input value={form.subjectName} onChange={(event) => update('subjectName', event.target.value)} placeholder="Advanced Web Technologies" maxLength="160" required /></label><label>Credits<input type="number" min="0.5" max="30" step="0.5" value={form.credits} onChange={(event) => update('credits', event.target.value)} required /></label>{error && <div className="admin-form-error">{error}</div>}</div><div className="admin-modal-foot"><button className="admin-secondary-button" type="button" onClick={onClose}>Cancel</button><button className="admin-primary-button" type="submit"><FiCheck /> {subject ? 'Save changes' : 'Create subject'}</button></div></form></div>
 }
