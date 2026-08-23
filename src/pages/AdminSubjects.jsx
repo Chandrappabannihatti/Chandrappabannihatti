@@ -97,9 +97,13 @@ export function AdminSubjectManagement() {
     if (!saved) {
       const id = editing ? (editing.id || editing.subjectId) : nextDemoSubjectId(localBase)
       saved = { ...payload, id, subjectId: id, isActive: true }
-      const nextLocal = editing ? localBase.map((item) => (Number(item.id || item.subjectId) === Number(id) ? { ...item, ...saved } : item)) : [...localBase, saved]
-      persistDemoSubjects(nextLocal)
     }
+    const savedId = saved.id || saved.subjectId
+    const hasLocalSubject = localBase.some((item) => Number(item.id || item.subjectId) === Number(savedId))
+    const nextLocal = editing && hasLocalSubject
+      ? localBase.map((item) => (Number(item.id || item.subjectId) === Number(savedId) ? { ...item, ...saved } : item))
+      : hasLocalSubject ? localBase.map((item) => (Number(item.id || item.subjectId) === Number(savedId) ? { ...item, ...saved } : item)) : [...localBase, saved]
+    persistDemoSubjects(nextLocal)
     setSubjects((current) => editing ? current.map((item) => Number(item.id || item.subjectId) === Number(editing.id || editing.subjectId) ? saved : item) : [...current, saved])
     setFormOpen(false)
     setEditing(null)
