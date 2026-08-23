@@ -58,7 +58,7 @@ export default function Login() {
   return <main className="erp-login-page">
     <header className="erp-login-header"><Brand /><button className="erp-back-button" type="button" onClick={() => navigate('/')}><FiArrowLeft /> Change department</button></header>
     <section className="erp-login-shell" aria-labelledby="login-heading">
-      <div className="erp-login-step"><span className="erp-step-label">Step 3</span><p>{departmentDetails.label} <span aria-hidden="true">→</span> {details.title}</p></div>
+      <div className="erp-login-step"><span className="erp-step-label">Step 2</span><p>{departmentDetails.label} <span aria-hidden="true">→</span> Choose role and sign in</p></div>
       <div className="erp-login-card">
         <div className="erp-login-card-heading"><span className={`erp-login-icon ${departmentDetails.tone}`}>{departmentDetails.icon}</span><div><span className="erp-login-department">{departmentDetails.label} · {departmentDetails.name}</span><h1 id="login-heading">{details.portal}</h1><p>{details.title} for the CAMPS academic workspace.</p></div></div>
         <div className="erp-login-role-tabs" aria-label="Choose login role">{roleOptions.map(({ label, value, icon: Icon }) => <button key={value} type="button" className={role === value ? 'active' : ''} onClick={() => changeRole(value)}><Icon /><span>{label}</span></button>)}</div>
