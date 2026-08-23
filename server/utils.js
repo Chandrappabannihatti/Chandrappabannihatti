@@ -1,4 +1,4 @@
-export const validDepartments = ['CSE', 'AIML', 'CSDS', 'ECE', 'EEE', 'ME', 'CIVIL']
+export const validDepartments = ['CSE', 'AIML', 'CSDS', 'CE', 'ECE', 'EEE', 'ME', 'CIVIL']
 export const validSemesters = [1, 2, 3, 4, 5, 6, 7, 8]
 export const validAchievementTypes = ['Academic', 'Hackathon', 'Certification', 'Sports', 'Cultural', 'Leadership', 'Community service']
 
@@ -53,7 +53,7 @@ export function validateStudent(input, existing = []) {
   const phone = cleanString(input.phone)
   if (!usn) errors.push('USN is required.')
   if (!name) errors.push('Name is required.')
-  if (!validDepartments.includes(department)) errors.push('Department must be one of CSE, AIML, CSDS, ECE, EEE, ME or CIVIL.')
+  if (!validDepartments.includes(department)) errors.push('Department must be one of CSE, AIML, CSDS, CE, ECE, EEE, ME or CIVIL.')
   if (!validSemesters.includes(semester)) errors.push('Semester must be between 1 and 8.')
   if (!/^[A-Z0-9][A-Z0-9 -]{0,9}$/.test(section)) errors.push('Section must be a valid section name.')
   if (!isEmail(email)) errors.push('A valid email is required.')

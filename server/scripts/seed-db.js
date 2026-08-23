@@ -18,7 +18,7 @@ const hashes = {
 }
 
 for (const department of [
-  ['CSE', 'Computer Science & Engineering'], ['AIML', 'Artificial Intelligence & ML'], ['CSDS', 'Computer Science & Data Science'], ['ECE', 'Electronics & Communication'], ['EEE', 'Electrical & Electronics'], ['ME', 'Mechanical Engineering'], ['CIVIL', 'Civil Engineering'],
+  ['CSE', 'Computer Science & Engineering'], ['AIML', 'Artificial Intelligence & ML'], ['CSDS', 'Computer Science & Data Science'], ['CE', 'Computer Engineering'], ['ECE', 'Electronics & Communication Engineering'], ['EEE', 'Electrical & Electronics Engineering'], ['ME', 'Mechanical Engineering'], ['CIVIL', 'Civil Engineering'],
 ]) await pool.query('INSERT INTO departments (code, name) VALUES (?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name)', department)
 for (const section of demoSections) await pool.query('INSERT INTO sections (department_code, semester, section_name) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE section_name=VALUES(section_name)', [section.department, section.semester, section.sectionName])
 
@@ -30,7 +30,7 @@ const teacherId = teacherTableResult.insertId
 
 for (const item of demoStudents) {
   const [[sectionRow]] = await pool.query('SELECT section_id FROM sections WHERE department_code=? AND semester=? AND section_name=? LIMIT 1', [item.department, item.semester, item.section])
-  const [studentResult] = await pool.query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, email, phone, parent_name, parent_phone, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), section_id=VALUES(section_id)', [item.usn, item.name, item.department, item.semester, item.section, sectionRow?.section_id || null, item.gender, item.email, item.phone, item.parentName, item.parentPhone, hashes.student])
+  const [studentResult] = await pool.query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, date_of_birth, blood_group, address, email, phone, parent_name, father_name, mother_name, parent_phone, parent_email, certifications, skills, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), section_id=VALUES(section_id), date_of_birth=VALUES(date_of_birth), blood_group=VALUES(blood_group), address=VALUES(address), father_name=VALUES(father_name), mother_name=VALUES(mother_name), parent_email=VALUES(parent_email), certifications=VALUES(certifications), skills=VALUES(skills)', [item.usn, item.name, item.department, item.semester, item.section, sectionRow?.section_id || null, item.gender, item.dateOfBirth || null, item.bloodGroup || null, item.address || null, item.email, item.phone, item.parentName, item.fatherName || item.parentName, item.motherName || null, item.parentPhone, item.parentEmail || null, JSON.stringify(item.certifications || []), JSON.stringify(item.skills || []), hashes.student])
   const studentId = studentResult.insertId
   await pool.query('INSERT INTO users (role, display_name, email, password_hash) VALUES ("student", ?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [item.name, item.email, hashes.student])
   if (item.usn === '4PM21CS033') await pool.query('INSERT INTO parents (student_id, name, phone, password_hash, relationship) VALUES (?, ?, ?, ?, "Parent") ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash)', [studentId, item.parentName, item.parentPhone, hashes.parent])

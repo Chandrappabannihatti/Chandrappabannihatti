@@ -11,8 +11,9 @@ INSERT INTO departments (code, name) VALUES
 ('CSE', 'Computer Science & Engineering'),
 ('AIML', 'Artificial Intelligence & ML'),
 ('CSDS', 'Computer Science & Data Science'),
-('ECE', 'Electronics & Communication'),
-('EEE', 'Electrical & Electronics'),
+('CE', 'Computer Engineering'),
+('ECE', 'Electronics & Communication Engineering'),
+('EEE', 'Electrical & Electronics Engineering'),
 ('ME', 'Mechanical Engineering'),
 ('CIVIL', 'Civil Engineering')
 ON DUPLICATE KEY UPDATE name = VALUES(name);

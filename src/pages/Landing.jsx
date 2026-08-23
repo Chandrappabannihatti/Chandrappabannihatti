@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FiArrowRight, FiCheck, FiChevronRight, FiLock, FiUser, FiUsers } from 'react-icons/fi'
-import { departments } from '../data/demo'
+import { departmentCards } from '../data/departments'
 
 const roles = [
   { label: 'Teacher', value: 'teacher', icon: FiUser },
@@ -25,63 +25,31 @@ function Brand({ light = false }) {
 export default function Landing() {
   const navigate = useNavigate()
   const [selectedDepartment, setSelectedDepartment] = useState(null)
+  const [selectedRole, setSelectedRole] = useState('')
 
-  const goToLogin = (role = '') => {
-    const params = new URLSearchParams()
-    if (selectedDepartment) params.set('department', selectedDepartment.code)
-    if (role) params.set('role', role)
-    navigate(`/login${params.toString() ? `?${params.toString()}` : ''}`)
+  const goToLogin = (role = selectedRole) => {
+    if (!selectedDepartment || !role) return
+    const params = new URLSearchParams({ department: selectedDepartment.code, role })
+    navigate(`/login?${params.toString()}`)
   }
 
   const chooseDepartment = (department) => {
     setSelectedDepartment(department)
+    setSelectedRole('')
     window.setTimeout(() => document.getElementById('role-chooser')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 30)
   }
 
   return (
-    <main className="simple-landing">
-      <header className="simple-college-header">
-        <div className="simple-header-brand"><Brand /></div>
-        <div className="simple-college-copy">
-          <p className="simple-overline">CAMPS · Academic portal</p>
-          <h1>PES Institute of Technology and Management</h1>
-          <p className="simple-address">NH-206, Sagar Road, Shivamogga - 577204</p>
+    <main className="erp-entry-page">
+      <header className="erp-entry-header"><Brand /><span className="erp-entry-badge"><i /> Secure university ERP</span></header>
+      <section className="erp-department-section" aria-labelledby="department-heading">
+        <div className="erp-step-heading"><span className="erp-step-label">Step 1</span><h1 id="department-heading">Select Your Department</h1><p>Choose your department to continue</p></div>
+        <div className="erp-department-grid">
+          {departmentCards.map((department) => <button key={department.code} type="button" className={`erp-department-card ${selectedDepartment?.code === department.code ? 'selected' : ''}`} onClick={() => chooseDepartment(department)}><span className="erp-card-orbit" aria-hidden="true" /><span className={`erp-department-icon ${department.tone}`} aria-hidden="true">{department.icon}</span><span className="erp-department-copy"><span className="erp-department-code">{department.label}</span><strong>{department.name}</strong><small>{department.tagline}</small></span><span className="erp-department-action">Choose Department <FiArrowRight /></span></button>)}
         </div>
-      </header>
-
-      <section className="simple-department-section">
-        <div className="simple-section-intro">
-          <p className="simple-kicker">Academic portal</p>
-          <h2>Select your department</h2>
-          <p>Choose a department to continue to the right CAMPS workspace.</p>
-        </div>
-        <div className="simple-department-list">
-          {departments.map((department, index) => (
-            <button key={department.code} type="button" className={`simple-department-row ${selectedDepartment?.code === department.code ? 'selected' : ''}`} onClick={() => chooseDepartment(department)}>
-              <span className="simple-department-number">0{index + 1}</span>
-              <span className="simple-department-icon">{department.icon}</span>
-              <span className="simple-department-name"><strong>{department.short}</strong><small>{department.name}</small></span>
-              <span className="simple-student-count">{department.count} students</span>
-              <FiChevronRight className="simple-row-arrow" />
-            </button>
-          ))}
-        </div>
-
-        {selectedDepartment && (
-          <div className="simple-role-chooser" id="role-chooser">
-            <div>
-              <p className="simple-kicker">Department selected</p>
-              <h3>{selectedDepartment.code} <span>·</span> Choose your role</h3>
-              <p>Continue as a teacher, student, parent or administrator.</p>
-            </div>
-            <div className="simple-role-list">
-              {roles.map(({ label, value, icon: Icon }) => <button key={value} type="button" onClick={() => goToLogin(value)}><Icon /><span>{label}</span><FiArrowRight /></button>)}
-            </div>
-          </div>
-        )}
+        {selectedDepartment && <section className="erp-role-section" id="role-chooser" aria-labelledby="role-heading"><div className="erp-role-copy"><span className="erp-step-label">Step 2</span><h2 id="role-heading">Choose your role</h2><p>Selected Department: <strong>{selectedDepartment.label}</strong></p></div><div className="erp-role-tabs" role="tablist" aria-label="Choose your role">{roles.map(({ label, value, icon: Icon }) => <button key={value} type="button" role="tab" aria-selected={selectedRole === value} className={selectedRole === value ? 'active' : ''} onClick={() => setSelectedRole(value)}><Icon /><span>{label}</span></button>)}</div>{selectedRole && <div className="erp-login-continue"><span><strong>{selectedDepartment.label}</strong> <FiChevronRight /> {roles.find((role) => role.value === selectedRole)?.label} Login</span><button type="button" onClick={() => goToLogin()}><span>Continue to login</span><FiArrowRight /></button></div>}</section>}
       </section>
-
-      <footer className="simple-footer"><span><FiCheck /> Secure, department-scoped access</span><span>© 2026 PES Institute of Technology and Management</span></footer>
+      <footer className="erp-entry-footer"><span><FiCheck /> Department-scoped access</span><span>© 2026 PES Institute of Technology and Management</span></footer>
     </main>
   )
 }

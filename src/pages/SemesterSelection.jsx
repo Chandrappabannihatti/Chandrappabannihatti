@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FiArrowLeft, FiArrowRight, FiCheckCircle, FiChevronRight, FiLogOut, FiShield } from 'react-icons/fi'
+import { FiArrowLeft, FiArrowRight, FiCheckCircle, FiChevronRight, FiLogOut, FiSettings, FiShield, FiUser } from 'react-icons/fi'
 import { cloneDemoStudents, semesters } from '../data/demo'
 import { useAuth } from '../context/AuthContext'
 import { Brand } from './Landing'
@@ -14,11 +14,11 @@ export default function SemesterSelection() {
 
   const signOut = async () => {
     await logout()
-    navigate('/', { replace: true })
+    navigate('/login', { replace: true })
   }
 
   return <main className="semester-selection-page">
-    <header className="selection-topbar"><Brand light /><div className="selection-user"><span className="selection-user-avatar">{user.initials}</span><span><strong>{user.name}</strong><small>{user.department} · Teacher</small></span><button className="selection-logout" type="button" onClick={signOut} aria-label="Sign out"><FiLogOut /></button></div></header>
+    <header className="selection-topbar"><Brand light /><div className="selection-user"><span className="selection-user-avatar">{user.initials}</span><span><strong>{user.name}</strong><small>{user.department} · Teacher</small></span><div className="selection-account-links"><button type="button" onClick={() => navigate('/teacher/profile')}><FiUser /> Profile</button><button type="button" onClick={() => navigate('/teacher/settings')}><FiSettings /> Settings</button></div><button className="selection-logout" type="button" onClick={signOut} aria-label="Sign out"><FiLogOut /></button></div></header>
     <section className="selection-content">
       <button className="selection-back-link" type="button" onClick={() => navigate('/teacher/departments')}><FiArrowLeft /> Change department</button>
       <div className="selection-heading"><div><p className="page-eyebrow">Teacher workspace · {user.department}</p><h1>Select a semester</h1><p>Choose one semester to open its dedicated academic dashboard. Your view is limited to {user.department} students.</p></div><span className="selection-scope"><FiShield /> Department-scoped access</span></div>

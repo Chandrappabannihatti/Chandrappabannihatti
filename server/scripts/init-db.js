@@ -14,5 +14,23 @@ const connection = await mysql.createConnection({
 })
 const schema = await fs.readFile(path.resolve('database/schema.sql'), 'utf8')
 await connection.query(schema)
+
+// CREATE TABLE IF NOT EXISTS does not change an already-initialised students table.
+// Add the expanded profile columns when upgrading an existing CAMPS database.
+const [existingColumns] = await connection.query("SELECT COLUMN_NAME AS name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'students'")
+const studentProfileColumns = {
+  date_of_birth: 'DATE NULL',
+  blood_group: 'VARCHAR(8) NULL',
+  address: 'VARCHAR(255) NULL',
+  father_name: 'VARCHAR(120) NULL',
+  mother_name: 'VARCHAR(120) NULL',
+  parent_email: 'VARCHAR(160) NULL',
+  certifications: 'JSON NULL',
+  skills: 'JSON NULL',
+}
+for (const [name, definition] of Object.entries(studentProfileColumns)) {
+  if (!existingColumns.some((column) => column.name === name)) await connection.query(`ALTER TABLE students ADD COLUMN ${name} ${definition}`)
+}
+
 await connection.end()
-console.log('CAMPS schema created.')
+console.log('CAMPS schema created or upgraded.')

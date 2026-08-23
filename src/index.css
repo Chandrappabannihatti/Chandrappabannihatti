@@ -1264,3 +1264,362 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 @media (min-width: 761px) {
   .department-selection-toolbar { display: none; }
 }
+
+/* Exact department → role → login entry flow */
+.erp-entry-page,
+.erp-login-page {
+  min-height: 100vh;
+  color: #071d4a;
+  background: #f6f9fc;
+}
+.erp-entry-header,
+.erp-login-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 18px 50px;
+}
+.erp-entry-header .brand-mark,
+.erp-login-header .brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  color: #fff;
+  background: #071d4a;
+  box-shadow: 0 8px 18px rgba(7, 29, 74, .12);
+}
+.erp-entry-header .brand-mark span,
+.erp-login-header .brand-mark span { font-size: 14px; }
+.erp-entry-header .brand-wordmark strong,
+.erp-login-header .brand-wordmark strong { color: #071d4a; font-size: 13px; }
+.erp-entry-header .brand-wordmark small,
+.erp-login-header .brand-wordmark small { color: #8291a7; font-size: 8px; }
+.erp-entry-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #dfe9f4;
+  border-radius: 999px;
+  padding: 8px 11px;
+  color: #64809f;
+  background: rgba(255,255,255,.72);
+  font-size: 9px;
+  font-weight: 800;
+}
+.erp-entry-badge i { width: 6px; height: 6px; border-radius: 50%; background: #2db6a9; box-shadow: 0 0 0 4px rgba(45,182,169,.12); }
+.erp-department-section {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 28px 50px 34px;
+}
+.erp-step-heading { margin: 4px auto 27px; text-align: center; }
+.erp-step-label {
+  display: inline-block;
+  margin-bottom: 9px;
+  color: #0eaaa9;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+.erp-step-heading h1 {
+  margin: 0;
+  color: #071d4a;
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(30px, 4vw, 46px);
+  font-weight: 800;
+  letter-spacing: -.065em;
+  line-height: 1.05;
+}
+.erp-step-heading p { margin: 10px 0 0; color: #71819a; font-size: 13px; }
+.erp-department-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+.erp-department-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 288px;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 1px solid rgba(224, 233, 243, .9);
+  border-radius: 20px;
+  padding: 28px 24px 24px;
+  color: #071d4a;
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 14px 30px rgba(37, 68, 103, .075);
+  overflow: hidden;
+  text-align: left;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.erp-department-card::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: -39px;
+  right: -6px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: #edf4fd;
+}
+.erp-department-card:hover,
+.erp-department-card.selected {
+  border-color: #a8d0fb;
+  box-shadow: 0 19px 36px rgba(37, 84, 141, .13);
+  transform: translateY(-3px);
+}
+.erp-department-card.selected::after { background: #e5f7f5; }
+.erp-department-card:focus-visible { outline: 3px solid rgba(67, 140, 233, .26); outline-offset: 3px; }
+.erp-card-orbit { position: absolute; z-index: 0; }
+.erp-department-icon {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 45px;
+  height: 45px;
+  color: #071d4a;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  font-size: 31px;
+  line-height: 1;
+}
+.erp-department-copy { position: relative; z-index: 1; display: block; min-width: 0; margin-top: 20px; }
+.erp-department-code {
+  display: block;
+  margin-bottom: 8px;
+  color: #0aadaa;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+.erp-department-copy strong {
+  display: block;
+  max-width: 250px;
+  color: #071d4a;
+  font-family: 'Manrope', sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -.045em;
+  line-height: 1.38;
+}
+.erp-department-copy small { display: block; margin-top: 17px; color: #70809a; font-size: 12px; line-height: 1.4; }
+.erp-department-action {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 18px;
+  color: #071d4a;
+  font-size: 12px;
+  font-weight: 800;
+}
+.erp-department-action svg { color: #315d98; font-size: 14px; transition: transform .18s ease; }
+.erp-department-card:hover .erp-department-action svg { transform: translateX(3px); }
+.erp-role-section {
+  margin-top: 22px;
+  border: 1px solid #cde7df;
+  border-radius: 18px;
+  padding: 20px 22px;
+  background: rgba(230, 248, 241, .84);
+  box-shadow: 0 13px 25px rgba(37, 93, 83, .06);
+  animation: slide-in .24s ease both;
+}
+.erp-role-copy h2 { margin: 0; color: #071d4a; font-family: 'Manrope', sans-serif; font-size: 21px; letter-spacing: -.05em; }
+.erp-role-copy p { margin: 7px 0 0; color: #71877f; font-size: 11px; }
+.erp-role-copy p strong { color: #118e8d; }
+.erp-role-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 17px; }
+.erp-role-tabs button,
+.erp-login-role-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid rgba(7, 29, 74, .1);
+  border-radius: 10px;
+  color: #234267;
+  background: rgba(255,255,255,.76);
+  font-size: 11px;
+  font-weight: 800;
+  transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.erp-role-tabs button svg,
+.erp-login-role-tabs button svg { color: #ef7c5b; font-size: 15px; }
+.erp-role-tabs button:hover,
+.erp-role-tabs button.active,
+.erp-login-role-tabs button:hover,
+.erp-login-role-tabs button.active { border-color: #0ba9a7; color: #071d4a; background: #fff; transform: translateY(-1px); }
+.erp-role-tabs button.active { box-shadow: 0 6px 15px rgba(20, 146, 139, .1); }
+.erp-login-continue { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-top: 15px; border-top: 1px solid rgba(31, 126, 111, .13); padding-top: 14px; }
+.erp-login-continue > span { display: inline-flex; align-items: center; gap: 7px; color: #67827c; font-size: 11px; font-weight: 700; }
+.erp-login-continue > span strong { color: #071d4a; }
+.erp-login-continue > span svg { color: #eb7a5a; font-size: 13px; }
+.erp-login-continue button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 13px;
+  color: #fff;
+  background: #071d4a;
+  font-size: 10px;
+  font-weight: 800;
+}
+.erp-login-continue button:hover { background: #113462; }
+.erp-entry-footer { display: flex; align-items: center; justify-content: space-between; max-width: 1280px; margin: 0 auto; border-top: 1px solid #e2e9f1; padding: 17px 50px 24px; color: #8c9bb0; font-size: 9px; }
+.erp-entry-footer span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.erp-entry-footer svg { color: #2aaca0; }
+
+/* Clean, non-promotional role login */
+.erp-back-button { display: inline-flex; align-items: center; gap: 7px; border: 0; color: #627996; background: transparent; font-size: 10px; font-weight: 800; }
+.erp-back-button:hover { color: #071d4a; }
+.erp-login-shell { width: min(100% - 40px, 540px); margin: 17px auto 48px; }
+.erp-login-step { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.erp-login-step .erp-step-label { margin: 0; }
+.erp-login-step p { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: #70819b; font-size: 10px; font-weight: 700; }
+.erp-login-step p svg { color: #ef7c5b; font-size: 13px; }
+.erp-login-card {
+  border: 1px solid rgba(219, 229, 240, .96);
+  border-radius: 22px;
+  padding: 28px;
+  background: rgba(255,255,255,.9);
+  box-shadow: 0 22px 45px rgba(37, 68, 103, .1);
+}
+.erp-login-card-heading { display: flex; align-items: flex-start; gap: 14px; }
+.erp-login-icon { display: grid; place-items: center; flex: 0 0 auto; width: 47px; height: 47px; border-radius: 14px; font-family: 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif; font-size: 30px; background: #e6f7f5; }
+.erp-login-department { display: block; color: #09aaa9; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.erp-login-card h1 { margin: 6px 0 0; color: #071d4a; font-family: 'Manrope', sans-serif; font-size: 25px; letter-spacing: -.06em; line-height: 1.05; }
+.erp-login-card-heading p { margin: 8px 0 0; color: #7b8ba1; font-size: 11px; }
+.erp-login-role-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 24px 0 23px; }
+.erp-login-role-tabs button { min-height: 36px; gap: 5px; border-radius: 8px; font-size: 10px; }
+.erp-login-role-tabs button svg { font-size: 13px; }
+.erp-login-form { display: grid; gap: 17px; }
+.erp-login-field label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; color: #263f62; font-size: 10px; font-weight: 800; }
+.erp-login-field label span { color: #a4afbd; font-size: 8px; font-weight: 600; }
+.erp-login-input { display: flex; align-items: center; border: 1px solid #dfe7ef; border-radius: 10px; background: #fbfcfd; transition: border-color .18s ease, box-shadow .18s ease; }
+.erp-login-input:focus-within { border-color: #82caca; box-shadow: 0 0 0 3px rgba(43, 175, 170, .1); }
+.erp-login-input > svg { flex: 0 0 auto; margin-left: 13px; color: #8fa0b4; font-size: 15px; }
+.erp-login-input input { width: 100%; min-height: 44px; border: 0; outline: 0; padding: 0 12px; color: #071d4a; background: transparent; font-size: 12px; }
+.erp-login-input input::placeholder { color: #a8b2bf; }
+.erp-password-toggle { display: grid; place-items: center; flex: 0 0 auto; width: 35px; height: 35px; margin-right: 4px; border: 0; color: #899aaf; background: transparent; }
+.erp-login-error { border: 1px solid #f1c8bb; border-radius: 8px; padding: 10px; color: #ae513a; background: #fff5f1; font-size: 10px; line-height: 1.4; }
+.erp-login-submit { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 46px; margin-top: 2px; border: 0; border-radius: 10px; color: #fff; background: #071d4a; font-size: 12px; font-weight: 800; box-shadow: 0 10px 18px rgba(7, 29, 74, .16); transition: transform .18s ease, background .18s ease; }
+.erp-login-submit:hover { background: #113462; transform: translateY(-1px); }
+.erp-login-submit:disabled { cursor: wait; opacity: .72; transform: none; }
+.erp-demo-hint { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 17px; border-top: 1px solid #edf0f3; padding-top: 14px; color: #8795a7; font-size: 9px; }
+.erp-demo-hint span { display: inline-flex; align-items: center; gap: 5px; }
+.erp-demo-hint svg { color: #e5a74e; }
+.erp-demo-hint button { border: 0; padding: 0; color: #0c9b9c; background: transparent; font-size: 9px; font-weight: 800; }
+.erp-login-security { display: flex; align-items: center; justify-content: center; gap: 5px; margin: 17px 0 0; color: #8495a9; font-size: 9px; }
+.erp-login-security svg { color: #2aaca0; }
+@media (max-width: 1050px) {
+  .erp-entry-header, .erp-login-header { padding-right: 30px; padding-left: 30px; }
+  .erp-department-section { padding-right: 30px; padding-left: 30px; }
+  .erp-entry-footer { padding-right: 30px; padding-left: 30px; }
+}
+@media (max-width: 980px) {
+  .erp-entry-header, .erp-login-header { padding: 16px 20px; }
+  .erp-department-section { padding: 25px 20px 30px; }
+  .erp-department-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .erp-department-card { min-height: 245px; padding: 22px 18px 20px; }
+  .erp-department-copy { margin-top: 14px; }
+  .erp-department-copy strong { font-size: 14px; }
+  .erp-department-copy small { margin-top: 13px; font-size: 10px; }
+  .erp-role-section { padding: 17px; }
+  .erp-entry-footer { align-items: flex-start; flex-direction: column; gap: 8px; padding: 17px 20px 24px; }
+}
+@media (max-width: 520px) {
+  .erp-entry-header .brand-wordmark, .erp-login-header .brand-wordmark { display: none; }
+  .erp-entry-badge { font-size: 8px; }
+  .erp-step-heading { margin-bottom: 21px; }
+  .erp-step-heading h1 { font-size: 32px; }
+  .erp-department-grid { grid-template-columns: 1fr; gap: 12px; }
+  .erp-department-card { min-height: 196px; }
+  .erp-role-tabs, .erp-login-role-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .erp-login-continue { align-items: stretch; flex-direction: column; }
+  .erp-login-continue button { justify-content: center; }
+  .erp-login-shell { width: min(100% - 28px, 540px); margin-top: 10px; }
+  .erp-login-card { padding: 19px; }
+  .erp-login-step { align-items: flex-start; flex-direction: column; gap: 5px; }
+}
+
+/* Full profile extras and teacher account */
+.profile-detail-wide { grid-column: 1 / -1; }
+.profile-tag-group { margin-top: 18px; }
+.profile-tag-group > span { display: block; margin-bottom: 8px; color: #8a9795; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.profile-tag-group > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.profile-tag-group em { border-radius: 999px; padding: 7px 9px; color: #467865; background: #edf7f1; font-size: 9px; font-style: normal; font-weight: 700; }
+.profile-tag-group small { color: #9aa4a2; font-size: 10px; }
+
+.teacher-account-page { min-height: 100vh; color: #fff; background: var(--ink); }
+.teacher-account-header { display: flex; align-items: center; justify-content: space-between; max-width: 1080px; margin: 0 auto; padding: 24px 25px; }
+.teacher-account-header .brand-wordmark strong { color: #fff; }
+.teacher-account-header .brand-wordmark small { color: #8ea2ad; }
+.teacher-account-header .brand-mark { color: var(--ink); background: #fff; }
+.teacher-account-header-actions { display: flex; align-items: center; gap: 8px; }
+.teacher-account-header-actions button { display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 9px 11px; color: #9dafb7; background: rgba(255,255,255,.05); font-size: 10px; font-weight: 800; }
+.teacher-account-header-actions button:hover { color: #fff; border-color: rgba(188,231,215,.35); background: rgba(255,255,255,.1); }
+.teacher-account-header-actions button:last-child { padding: 9px; }
+.teacher-account-content { max-width: 720px; margin: 0 auto; padding: 70px 25px 70px; }
+.teacher-account-heading { margin-bottom: 23px; }
+.teacher-account-eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--mint); font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.teacher-account-heading h1 { margin: 12px 0 0; color: #fff; font-family: 'Manrope', sans-serif; font-size: 42px; letter-spacing: -.07em; line-height: 1; }
+.teacher-account-heading p { margin: 10px 0 0; color: #8ea2ad; font-size: 12px; }
+.teacher-account-card { border: 1px solid rgba(255,255,255,.11); border-radius: 18px; padding: 23px; background: rgba(255,255,255,.06); box-shadow: 0 20px 45px rgba(0,0,0,.12); }
+.teacher-account-card-head { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(255,255,255,.1); padding-bottom: 20px; }
+.teacher-account-avatar { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 13px; color: var(--ink); background: var(--mint); font-size: 18px; }
+.teacher-account-card-head h2 { margin: 0; color: #fff; font-family: 'Manrope', sans-serif; font-size: 17px; letter-spacing: -.04em; }
+.teacher-account-card-head p { margin: 5px 0 0; color: #91a4ac; font-size: 10px; }
+.teacher-account-status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; border: 1px solid rgba(188,231,215,.17); border-radius: 999px; padding: 7px 9px; color: var(--mint); background: rgba(188,231,215,.06); font-size: 9px; font-weight: 800; }
+.teacher-account-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--mint); }
+.teacher-account-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; padding: 22px 0; }
+.teacher-account-details span, .teacher-settings-list span { display: block; margin-bottom: 5px; color: #8398a1; font-size: 9px; }
+.teacher-account-details strong { color: #e7eeee; font-size: 11px; }
+.teacher-settings-list { display: grid; gap: 0; padding: 17px 0; }
+.teacher-settings-list > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid rgba(255,255,255,.08); padding: 13px 0; }
+.teacher-settings-list > div:last-child { border-bottom: 0; }
+.teacher-settings-list span { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.teacher-settings-list span svg { color: var(--mint); }
+.teacher-settings-list strong { color: #e7eeee; font-size: 10px; text-align: right; }
+.teacher-account-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid rgba(255,255,255,.1); padding-top: 18px; }
+.teacher-account-actions .button-ghost { color: #a5b7bc; border-color: rgba(255,255,255,.13); background: rgba(255,255,255,.05); }
+@media (max-width: 560px) {
+  .teacher-account-header { padding: 20px; }
+  .teacher-account-header .brand-wordmark { display: none; }
+  .teacher-account-content { padding: 42px 15px 45px; }
+  .teacher-account-heading h1 { font-size: 36px; }
+  .teacher-account-card { padding: 17px; }
+  .teacher-account-details { grid-template-columns: 1fr; gap: 15px; }
+  .teacher-account-card-head { align-items: flex-start; }
+  .teacher-account-status { margin-left: 0; }
+  .teacher-account-actions { align-items: stretch; flex-direction: column-reverse; }
+  .teacher-account-actions button { width: 100%; }
+}
+
+.selection-account-links,
+.department-account-links { display: flex; align-items: center; gap: 5px; margin-left: 12px; }
+.selection-account-links button,
+.department-account-links button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid rgba(255,255,255,.11); border-radius: 8px; padding: 7px 8px; color: #92a6ae; background: rgba(255,255,255,.05); font-size: 9px; font-weight: 800; }
+.selection-account-links button:hover,
+.department-account-links button:hover { color: #fff; background: rgba(255,255,255,.12); }
+.selection-account-links svg,
+.department-account-links svg { font-size: 11px; }
+.department-account { display: flex; align-items: center; }
+@media (max-width: 620px) {
+  .selection-account-links,
+  .department-account-links { margin-left: 7px; }
+  .selection-account-links button,
+  .department-account-links button { padding: 7px; }
+  .selection-account-links button span,
+  .department-account-links button span { display: none; }
+  .selection-account-links button { font-size: 0; }
+  .department-account-links button { font-size: 0; }
+}

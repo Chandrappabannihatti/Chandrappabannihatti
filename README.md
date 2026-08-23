@@ -10,7 +10,9 @@ A production-shaped academic monitoring workspace for **PES Institute of Technol
 - `.xlsx` / `.csv` upload pipeline with server-side validation, duplicate USN detection, preview/import workflow and Excel export.
 - Flask prediction service ready for a trained XGBoost `joblib` model. The API falls back to a transparent deterministic baseline when no model is mounted.
 - Demo data and four ready-to-use demo roles: admin, teacher, student and parent.
-- Teacher tools: a department → semester → section hierarchy. Teacher sign-in opens `/teacher/departments`, where the account’s department permission is visible before the semester chooser. `/teacher/semester/:semester` lists the available sections and supports **+ Add Section**; section workspaces use `/teacher/semester/:semester/section/:section` and isolate students, attendance, internal marks, assignments, achievements, remarks, messages, announcements, analytics and predictions. Search/filter/sort, full-page student profiles at `/teacher/student/:usn`, section-scoped manual entry (`/teacher/semester/:semester/section/:section/students/new`) and Excel import (`/teacher/semester/:semester/section/:section/students/upload`) cannot mix department, semester or section records.
+- The entry flow is department → role → login. The root page presents responsive department cards, then tab-style Teacher/Student/Parent/Admin selection, followed by a clean role-specific login page. Marketing hero/promotional content is not used in the sign-in flow.
+- Teacher tools: a department → semester → section hierarchy. After teacher login, `/teacher/semester/:semester` lists the available sections and supports **+ Add Section**; section workspaces use `/teacher/semester/:semester/section/:section` and isolate students, attendance, internal marks, assignments, achievements, remarks, messages, announcements, analytics and predictions. Search/filter/sort, full-page student profiles at `/teacher/student/:usn`, section-scoped manual entry (`/teacher/semester/:semester/section/:section/students/new`) and Excel import (`/teacher/semester/:semester/section/:section/students/upload`) cannot mix department, semester or section records.
+- Full student profiles include personal details, photo/avatar, DOB, blood group, address, parent/guardian details, academic information, achievements, certifications, skills, teacher remarks and XGBoost prediction context. Profile, Settings and Logout are available to every authenticated role.
 - Teachers can add a student achievement from `/teacher/semester/:semester/section/:section/achievements`. The Student selector is built from the current section only; saved records retain department, semester, section and student ownership and are available as read-only student/parent academic records.
 - Read-only student and parent dashboards with attendance, marks, CGPA, prediction, achievements, remarks, messages and announcements.
 
@@ -51,7 +53,7 @@ The default review setup uses the same demo credentials in both the API and the 
 | Student | `4PM21CS033` | `Student@123` |
 | Parent | `4PM21CS033` | `Parent@123` |
 
-A teacher is scoped to CSE in the demo. Teacher sign-in opens `/teacher/departments`; choose CSE to continue to the semester chooser, then open an isolated route such as `/teacher/semester/7/section/B`. Student and parent accounts open the read-only records for Ishita Kulkarni, including achievements.
+The demo teacher account is scoped to CSE. Select CSE → Teacher on the entry page, sign in, then open an isolated route such as `/teacher/semester/7/section/B`. Student and parent accounts open the read-only records for Ishita Kulkarni, including achievements.
 
 ## MySQL setup
 
@@ -64,7 +66,7 @@ npm run db:init
 npm run db:seed
 ```
 
-The schema is in [`database/schema.sql`](database/schema.sql), with department seed notes in [`database/seed.sql`](database/seed.sql). Passwords are bcrypt-hashed by the seed script.
+The schema is in [`database/schema.sql`](database/schema.sql), with department seed notes in [`database/seed.sql`](database/seed.sql). `npm run db:init` also upgrades existing `students` tables with the expanded profile columns. Passwords are bcrypt-hashed by the seed script.
 
 ## Prediction service
 
@@ -108,6 +110,8 @@ All routes except login and health require `Authorization: Bearer <jwt>`.
 - `GET /api/achievements?semester=7&section=B`, `POST /api/achievements` (teacher/admin create; student and parent responses are read-only and scoped to their linked record)
 - `POST /api/ml/predict`
 - `GET /api/health`
+
+Logout clears the stored JWT session and redirects to `/login`.
 
 ## Production notes
 

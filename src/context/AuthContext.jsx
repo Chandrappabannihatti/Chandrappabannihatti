@@ -40,7 +40,11 @@ export function AuthProvider({ children }) {
     if (!account || identifier.trim().toLowerCase() !== account.secret.toLowerCase() || password !== account.password) {
       throw new Error(`Use the demo ${normalizedRole} credentials shown below to continue.`)
     }
-    const user = { ...account.user, department: normalizedRole === 'admin' ? 'ALL' : (department || account.user.department) }
+    const requestedDepartment = String(department || '').trim().toUpperCase()
+    if (normalizedRole !== 'admin' && requestedDepartment && requestedDepartment !== account.user.department) {
+      throw new Error(`This demo ${normalizedRole} account is scoped to ${account.user.department}. Choose that department to continue.`)
+    }
+    const user = { ...account.user, department: normalizedRole === 'admin' ? 'ALL' : account.user.department }
     const next = { token: 'demo-session-token', user }
     setSession(next)
     return user
