@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { departmentCards } from '../data/departments'
 import { getDemoSubjects } from '../data/demo'
 import { Brand } from './Landing'
-import api, { DEMO_MODE } from '../lib/api'
+import api, { DEMO_MODE, LOCAL_SESSION_TOKEN } from '../lib/api'
 
 function persistDemoSubjects(subjects) {
   if (typeof window === 'undefined') return
@@ -36,7 +36,8 @@ const adminSemesters = [1, 2, 3, 4, 5, 6, 7, 8]
 
 export default function AdminSubjectHierarchy() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, token } = useAuth()
+  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
   const department = useMemo(() => departmentCards.find((item) => item.code === user.department) || departmentCards[0], [user.department])
   const [subjectCounts, setSubjectCounts] = useState(() => Object.fromEntries(adminSemesters.map((semester) => [semester, scopedLocalSubjects(department.code, semester).length])))
 
@@ -44,21 +45,22 @@ export default function AdminSubjectHierarchy() {
     let mounted = true
     const loadCounts = async () => {
       let subjects = scopedLocalSubjects(department.code)
-      if (!DEMO_MODE) {
+      if (apiSession) {
         try { const response = await api.getSubjects({ department: department.code }); subjects = response.data || [] } catch { /* local fallback keeps the hierarchy usable */ }
       }
       if (mounted) setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, subjects.filter((subject) => Number(subject.semester) === semester).length])))
     }
     loadCounts()
     return () => { mounted = false }
-  }, [department.code])
+  }, [department.code, apiSession])
 
   return <AdminShell crumb="Semester hierarchy"><section className="admin-control-content"><button className="admin-back-link" type="button" onClick={() => navigate('/app')}><FiArrowLeft /> Back to administration</button><AdminPageIntro eyebrow={`${department.label} · Academic structure`} title="Semester hierarchy" description={`Select a semester to manage the subjects shared by every ${department.label} academic portal.`} actions={<span className="admin-scope-pill"><FiGrid /> Selected at login · {department.label}</span>} /><div className="admin-selected-scope"><span className={`admin-department-orb ${department.tone}`}>{department.icon}</span><div><span>Selected department</span><strong>{department.label}</strong><small>{department.name}</small></div><em><FiShield /> Department is fixed for this session</em></div><section className="admin-structure-card admin-semester-card admin-semester-dashboard"><div className="admin-card-heading"><div><h2>Semesters 1–8</h2><p>{department.label} · Choose a semester to open Subject Management.</p></div><FiBookOpen /></div><div className="admin-semester-grid">{adminSemesters.map((semester) => <button type="button" className="admin-semester-option" key={semester} onClick={() => navigate(`/admin/subjects/${department.code}/${semester}`)}><span className="admin-semester-number">{String(semester).padStart(2, '0')}</span><span><strong>Semester {semester}</strong><small>{subjectCounts[semester] || 0} subjects configured</small></span><FiArrowRight /></button>)}</div><div className="admin-hierarchy-note"><FiCheck /><span>Subjects added here sync automatically to Teacher, Student and Parent dashboards for {department.label} Semester 1–8.</span></div></section></section></AdminShell>
 }
 
 export function AdminSubjectManagement() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, token } = useAuth()
+  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
   const { department: departmentParam, semester: semesterParam } = useParams()
   const routeDepartment = String(departmentParam || '').toUpperCase()
   const department = user.department !== 'ALL' ? user.department : routeDepartment
@@ -67,7 +69,7 @@ export function AdminSubjectManagement() {
   const scopeMismatch = user.department !== 'ALL' && routeDepartment !== user.department
   const validSemester = Number.isInteger(semester) && semester >= 1 && semester <= 8
   const [subjects, setSubjects] = useState(() => validSemester ? scopedLocalSubjects(departmentDetails.code, semester) : [])
-  const [loading, setLoading] = useState(!DEMO_MODE)
+  const [loading, setLoading] = useState(Boolean(apiSession))
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [notice, setNotice] = useState('')
@@ -80,22 +82,22 @@ export function AdminSubjectManagement() {
     if (!validSemester) return
     setLoading(true)
     let next = scopedLocalSubjects(departmentDetails.code, semester)
-    if (!DEMO_MODE) {
+    if (apiSession) {
       try { const response = await api.getSubjects({ department: departmentDetails.code, semester }); next = response.data || [] } catch { setNotice('API unavailable · showing locally saved subjects') }
     }
     setSubjects(next)
     setLoading(false)
   }
 
-  useEffect(() => { loadSubjects() }, [departmentDetails.code, semester, validSemester])
+  useEffect(() => { loadSubjects() }, [departmentDetails.code, semester, validSemester, apiSession])
 
   const openAdd = () => { setEditing(null); setFormOpen(true); setNotice('') }
   const openEdit = (subject) => { setEditing(subject); setFormOpen(true); setNotice('') }
   const saveSubject = async (form) => {
     const payload = { department: departmentDetails.code, semester, subjectCode: form.subjectCode.trim().toUpperCase(), subjectName: form.subjectName.trim(), credits: Number(form.credits) }
     let saved
-    let usedLocalFallback = DEMO_MODE
-    if (!DEMO_MODE) {
+    let usedLocalFallback = !apiSession
+    if (apiSession) {
       try {
         const response = editing ? await api.updateSubject(editing.subjectId || editing.id, payload) : await api.createSubject(payload)
         saved = response.data
@@ -129,7 +131,7 @@ export function AdminSubjectManagement() {
   const removeSubject = async (subject) => {
     const id = subject.subjectId || subject.id
     if (!window.confirm(`Delete ${subject.subjectCode} from ${departmentDetails.label} Semester ${semester}?`)) return
-    if (!DEMO_MODE) {
+    if (apiSession) {
       try { await api.deleteSubject(id) } catch (error) { setNotice(error.response?.data?.message || 'Subject could not be deleted.'); return }
     }
     const next = getDemoSubjects().filter((item) => Number(item.id || item.subjectId) !== Number(id))

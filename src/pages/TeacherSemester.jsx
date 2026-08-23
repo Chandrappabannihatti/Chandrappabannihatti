@@ -55,7 +55,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useAuth } from '../context/AuthContext'
 import { achievementTypes, cloneDemoStudents, demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, getDemoSubjects } from '../data/demo'
-import api, { DEMO_MODE } from '../lib/api'
+import api, { DEMO_MODE, LOCAL_SESSION_TOKEN } from '../lib/api'
 import { Brand } from './Landing'
 import SectionSelection from './SectionSelection'
 
@@ -224,6 +224,8 @@ function SubjectCatalog({ subjects, scope, compact = false }) {
 }
 
 function SubjectEntryPanel({ mode, user, semester, section = '', students, subjects, notify }) {
+  const { token } = useAuth()
+  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
   const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.subjectId || subjects[0]?.id || '')
   const [records, setRecords] = useState({})
   const [savingStudent, setSavingStudent] = useState('')
@@ -237,7 +239,7 @@ function SubjectEntryPanel({ mode, user, semester, section = '', students, subje
   useEffect(() => {
     if (!selectedSubject || !selectedSubjectId) return undefined
     let mounted = true
-    if (DEMO_MODE) {
+    if (!apiSession) {
       const stored = readLocalSubjectRecords().filter((item) => Number(item.subjectId) === Number(selectedSubjectId))
       if (mounted && stored.length) setRecords((current) => {
         const next = { ...current }
@@ -246,6 +248,7 @@ function SubjectEntryPanel({ mode, user, semester, section = '', students, subje
       })
       return undefined
     }
+    if (!apiSession) return undefined
     api.getSubjectRecords(selectedSubjectId, { department: user.department, semester, section }).then((response) => {
       if (!mounted) return
       setRecords((current) => {
@@ -255,7 +258,7 @@ function SubjectEntryPanel({ mode, user, semester, section = '', students, subje
       })
     }).catch(() => { /* aggregate roster values remain available */ })
     return () => { mounted = false }
-  }, [selectedSubjectId, selectedSubject, user.department, semester, section, mode])
+  }, [selectedSubjectId, selectedSubject, user.department, semester, section, mode, apiSession])
   const updateAttendance = (studentId, value) => setRecords((current) => ({ ...current, [studentId]: Number(value) }))
   const updateMark = (studentId, key, value) => setRecords((current) => ({ ...current, [studentId]: { ...(current[studentId] || { ia1: 0, ia2: 0 }), [key]: Number(value) } }))
   const save = async (student) => {
@@ -264,7 +267,7 @@ function SubjectEntryPanel({ mode, user, semester, section = '', students, subje
     const subjectId = selectedSubject.subjectId || selectedSubject.id
     const value = records[student.id]
     try {
-      if (!DEMO_MODE) {
+      if (apiSession) {
         if (mode === 'attendance') await api.saveSubjectAttendance(subjectId, { studentId: student.id, attendance: Number(value), department: user.department, semester, section })
         else await api.saveSubjectMarks(subjectId, { studentId: student.id, ia1: Number(value?.ia1 || 0), ia2: Number(value?.ia2 || 0), department: user.department, semester, section })
       }
@@ -530,7 +533,8 @@ function SemesterPredictions({ user, semester, section = '', students, notify })
 }
 
 export default function TeacherSemester() {
-  const { user, logout } = useAuth()
+  const { user, logout, token } = useAuth()
+  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
   const { semester: semesterParam } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -553,7 +557,7 @@ export default function TeacherSemester() {
   const [toast, setToast] = useState('')
 
   useEffect(() => {
-    if (!valid || DEMO_MODE) return undefined
+    if (!valid || !apiSession) return undefined
     let mounted = true
     Promise.allSettled([
       api.getSections({ department: user.department, semester }),
@@ -574,20 +578,20 @@ export default function TeacherSemester() {
       if (subjectResult.status === 'fulfilled' && subjectResult.value?.data) setSubjects(scopedSubjects(subjectResult.value.data, user.department, semester))
     })
     return () => { mounted = false }
-  }, [valid, user.department, semester, section])
+  }, [valid, user.department, semester, section, apiSession])
 
   useEffect(() => {
-    if (!valid || !DEMO_MODE) return
+    if (!valid || apiSession) return
     setStudents(scopedStudents(cloneDemoStudents(), user.department, semester).filter((student) => !section || student.section === section))
     setAnnouncements(section ? scopedSectionAnnouncements(demoAnnouncements, user.department, semester, section) : scopedAnnouncements(demoAnnouncements, user.department, semester))
     setMessages(section ? scopedSectionMessages(demoMessages, user.department, semester, section) : scopedMessages(demoMessages, user.department, semester))
     setRemarks(demoRemarks.filter((remark) => cloneDemoStudents().some((student) => student.id === remark.studentId && student.department === user.department && Number(student.semester) === semester && (!section || student.section === section))))
     setAchievements(scopedAchievements(demoAchievements, user.department, semester, section))
     setSubjects(scopedSubjects(getDemoSubjects(), user.department, semester))
-  }, [valid, user.department, semester, section])
+  }, [valid, user.department, semester, section, apiSession])
 
   useEffect(() => {
-    if (!valid || !DEMO_MODE) return undefined
+    if (!valid || apiSession) return undefined
     const syncSubjects = () => setSubjects(scopedSubjects(getDemoSubjects(), user.department, semester))
     window.addEventListener('storage', syncSubjects)
     window.addEventListener('camps-subjects-updated', syncSubjects)
@@ -616,7 +620,7 @@ export default function TeacherSemester() {
     const risk = scopedInput.attendance < 70 || scopedInput.cgpa < 6.5 ? 'High' : scopedInput.attendance < 78 || scopedInput.cgpa < 7.2 || scopedInput.backlogs > 0 ? 'Medium' : 'Low'
     const localRecord = { ...scopedInput, id: Date.now(), risk, passProbability: risk === 'Low' ? 92 : risk === 'Medium' ? 73 : 51, initials: scopedInput.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
     let saved = localRecord
-    if (!DEMO_MODE) {
+    if (apiSession) {
       try { const response = await api.createStudent(scopedInput); saved = response.data || localRecord } catch (error) { if (error.response) { notify(error.response.data?.message || 'Student could not be saved in this section'); return false } notify('API unavailable · student saved locally for this session') }
     }
     setStudents((current) => [saved, ...current])
@@ -627,7 +631,7 @@ export default function TeacherSemester() {
     const scopedRows = rows.map((row) => ({ ...row, department: user.department, semester: Number(semester), section: section || row.section }))
     const localRecords = scopedRows.map((row, index) => { const risk = row.attendance < 70 || row.cgpa < 6.5 ? 'High' : row.attendance < 78 || row.cgpa < 7.2 || row.backlogs > 0 ? 'Medium' : 'Low'; return { ...row, id: Date.now() + index, risk, passProbability: risk === 'Low' ? 92 : risk === 'Medium' ? 73 : 51, initials: row.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() } })
     let savedRecords = localRecords
-    if (!DEMO_MODE) {
+    if (apiSession) {
       try { const response = await api.uploadStudents(file, true, { department: user.department, semester, section }); savedRecords = (response.data || localRecords).filter((row) => row.department === user.department && Number(row.semester) === semester && (!section || row.section === section)) } catch (error) { if (error.response) { notify(error.response.data?.message || 'Upload validation failed on the server'); return false } notify('API unavailable · roster imported for this session') }
     }
     setStudents((current) => [...savedRecords, ...current])
@@ -643,7 +647,7 @@ export default function TeacherSemester() {
     }
     const localRecord = { id: Date.now(), studentId: Number(student.id), studentName: student.name, usn: student.usn, department: user.department, semester, section, achievementType: input.achievementType, date: input.date, title: input.title.trim(), description: input.description.trim(), author: user.name, createdAt: new Date().toISOString() }
     let saved = localRecord
-    if (!DEMO_MODE) {
+    if (apiSession) {
       try { const response = await api.createAchievement({ ...input, studentId: Number(student.id), department: user.department, semester, section }); saved = response.data || localRecord } catch (error) { if (error.response) { notify(error.response.data?.message || 'Achievement could not be saved in this section'); return false } notify('API unavailable · achievement saved locally for this session') }
     }
     setAchievements((current) => [saved, ...current])
@@ -653,7 +657,7 @@ export default function TeacherSemester() {
   const createSection = async (sectionName) => {
     const localSection = { sectionId: `${user.department}-${semester}-${sectionName}-${Date.now()}`, department: user.department, semester, sectionName, studentCount: 0, createdAt: new Date().toISOString() }
     let created = localSection
-    if (!DEMO_MODE) {
+    if (apiSession) {
       try { const response = await api.createSection({ semester, sectionName }); created = response.data || localSection } catch (error) { notify(error.response?.data?.message || 'Could not create this section'); return false }
     }
     setSections((current) => current.some((item) => item.sectionName === created.sectionName) ? current : [...current, created])

@@ -2,6 +2,7 @@ import axios from 'axios'
 
 // API-first by default. Set VITE_DEMO_MODE=true when reviewing the UI without the Node service.
 export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
+export const LOCAL_SESSION_TOKEN = 'demo-session-token'
 
 let authToken = ''
 

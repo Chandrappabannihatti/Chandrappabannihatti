@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import api, { DEMO_MODE, setAuthToken } from '../lib/api'
+import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, setAuthToken } from '../lib/api'
 import { currentUser, parentUser, studentUser } from '../data/demo'
 
 const AuthContext = createContext(null)
@@ -55,7 +55,7 @@ export function AuthProvider({ children }) {
       throw new Error(`This demo ${normalizedRole} account is scoped to ${account.user.department}. Choose that department to continue.`)
     }
     const user = { ...account.user, department: normalizedRole === 'admin' ? requestedDepartment || account.user.department : account.user.department }
-    const next = { token: 'demo-session-token', user }
+    const next = { token: LOCAL_SESSION_TOKEN, user }
     persistSession(next)
     setAuthToken(next.token)
     setSession(next)
