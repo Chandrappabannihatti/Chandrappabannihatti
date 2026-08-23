@@ -16,6 +16,9 @@ export function AuthProvider({ children }) {
     const { data } = await api.post("/auth/login", { email, password });
     localStorage.setItem("camps_token", data.access_token);
     localStorage.setItem("camps_user", JSON.stringify(data.user));
+    // Cookie fallback: the Vite proxy can rebuild the Authorization header
+    // from this if the hosting proxy strips it. See vite.config.js.
+    document.cookie = `camps_token=${encodeURIComponent(data.access_token)}; path=/; SameSite=Lax`;
     setUser(data.user);
     return data.user;
   }, []);
@@ -28,6 +31,7 @@ export function AuthProvider({ children }) {
     }
     localStorage.removeItem("camps_token");
     localStorage.removeItem("camps_user");
+    document.cookie = "camps_token=; path=/; max-age=0";
     setUser(null);
   }, []);
 

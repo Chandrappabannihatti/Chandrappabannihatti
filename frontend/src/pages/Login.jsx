@@ -26,7 +26,12 @@ export default function Login() {
       const user = await login(email.trim(), password);
       navigate(`/${user.role}`);
     } catch (err) {
-      setError(err.response?.data?.error || "Login failed. Check your credentials.");
+      setError(
+        err.response?.data?.error ||
+          (err.request
+            ? "Cannot reach the server. Please wait a few seconds and try again."
+            : "Login failed. Check your credentials.")
+      );
     } finally {
       setLoading(false);
     }

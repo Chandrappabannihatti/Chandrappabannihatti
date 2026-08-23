@@ -41,7 +41,17 @@ def create_app(config_class=Config):
 
     @jwt.unauthorized_loader
     def missing_token(reason):
+        app.logger.warning("JWT rejected request: %s", reason)
         return jsonify({"error": "Missing or invalid token", "detail": reason}), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token(reason):
+        app.logger.warning("JWT invalid: %s", reason)
+        return jsonify({"error": "Invalid token", "detail": reason}), 401
+
+    @jwt.expired_token_loader
+    def expired_token(jwt_header, jwt_payload):
+        return jsonify({"error": "Token has expired"}), 401
 
     with app.app_context():
         db.create_all()
