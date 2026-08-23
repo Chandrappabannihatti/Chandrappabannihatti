@@ -21,7 +21,7 @@ function AdminShell({ children, crumb = 'Administration' }) {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const signOut = async () => { await logout(); navigate('/', { replace: true }) }
-  return <main className="admin-control-page"><header className="admin-control-topbar"><Brand light /><div className="admin-control-account"><span className="admin-account-avatar">{user.initials || 'KM'}</span><span className="admin-control-user"><strong>{user.name}</strong><small>Administrator · All departments</small></span><div className="admin-account-links"><button type="button" onClick={() => navigate('/admin/profile')}><FiUser /> Profile</button><button type="button" onClick={() => navigate('/admin/settings')}><FiSettings /> Settings</button><button className="admin-logout" type="button" onClick={signOut} aria-label="Sign out"><FiLogOut /></button></div></div></header><div className="admin-control-breadcrumb"><span>CAMPS</span><FiChevronRight /><strong>{crumb}</strong></div>{children}</main>
+  return <main className="admin-control-page"><header className="admin-control-topbar"><Brand light /><div className="admin-control-account"><span className="admin-account-avatar">{user.initials || 'KM'}</span><span className="admin-control-user"><strong>{user.name}</strong><small>Administrator · {user.department === 'ALL' ? 'All departments' : `${user.department} scope`}</small></span><div className="admin-account-links"><button type="button" onClick={() => navigate('/admin/profile')}><FiUser /> Profile</button><button type="button" onClick={() => navigate('/admin/settings')}><FiSettings /> Settings</button><button className="admin-logout" type="button" onClick={signOut} aria-label="Sign out"><FiLogOut /></button></div></div></header><div className="admin-control-breadcrumb"><span>CAMPS</span><FiChevronRight /><strong>{crumb}</strong></div>{children}</main>
 }
 
 function AdminPageIntro({ eyebrow, title, description, actions }) {
@@ -32,11 +32,13 @@ function scopedLocalSubjects(department, semester) {
   return getDemoSubjects().filter((subject) => subject.department === department && (!semester || Number(subject.semester) === Number(semester)))
 }
 
+const adminSemesters = [1, 2, 3, 4, 5, 6, 7, 8]
+
 export default function AdminSubjectHierarchy() {
   const navigate = useNavigate()
-  const [department, setDepartment] = useState(departmentCards[0])
-  const [subjectCounts, setSubjectCounts] = useState(() => Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((semester) => [semester, scopedLocalSubjects(departmentCards[0].code, semester).length])))
-  const semesters = [1, 2, 3, 4, 5, 6, 7, 8]
+  const { user } = useAuth()
+  const department = useMemo(() => departmentCards.find((item) => item.code === user.department) || departmentCards[0], [user.department])
+  const [subjectCounts, setSubjectCounts] = useState(() => Object.fromEntries(adminSemesters.map((semester) => [semester, scopedLocalSubjects(department.code, semester).length])))
 
   useEffect(() => {
     let mounted = true
@@ -45,27 +47,34 @@ export default function AdminSubjectHierarchy() {
       if (!DEMO_MODE) {
         try { const response = await api.getSubjects({ department: department.code }); subjects = response.data || [] } catch { /* local fallback keeps the hierarchy usable */ }
       }
-      if (mounted) setSubjectCounts(Object.fromEntries(semesters.map((semester) => [semester, subjects.filter((subject) => Number(subject.semester) === semester).length])))
+      if (mounted) setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, subjects.filter((subject) => Number(subject.semester) === semester).length])))
     }
     loadCounts()
     return () => { mounted = false }
-  }, [department])
+  }, [department.code])
 
-  return <AdminShell crumb="Department → Semester"><section className="admin-control-content"><button className="admin-back-link" type="button" onClick={() => navigate('/app')}><FiArrowLeft /> Back to administration</button><AdminPageIntro eyebrow="Academic structure" title="Department → Semester hierarchy" description="Choose a department, then open a semester to manage the subjects shared by every academic portal." actions={<span className="admin-scope-pill"><FiGrid /> Administrator scope · all departments</span>} /><div className="admin-hierarchy-grid"><section className="admin-structure-card"><div className="admin-card-heading"><div><h2>1. Department</h2><p>Choose the department curriculum to manage.</p></div><FiUsers /></div><div className="admin-department-grid">{departmentCards.map((item) => <button type="button" key={item.code} className={`admin-department-option ${department.code === item.code ? 'active' : ''}`} onClick={() => setDepartment(item)}><span className={`admin-department-orb ${item.tone}`}>{item.icon}</span><span><strong>{item.label}</strong><small>{item.name}</small></span><FiChevronRight /></button>)}</div></section><section className="admin-structure-card admin-semester-card"><div className="admin-card-heading"><div><h2>2. Semester</h2><p>{department.label} · Select a semester to manage its subjects.</p></div><FiBookOpen /></div><div className="admin-semester-grid">{semesters.map((semester) => <button type="button" className="admin-semester-option" key={semester} onClick={() => navigate(`/admin/subjects/${department.code}/${semester}`)}><span className="admin-semester-number">{String(semester).padStart(2, '0')}</span><span><strong>Semester {semester}</strong><small>{subjectCounts[semester] || 0} subjects configured</small></span><FiArrowRight /></button>)}</div><div className="admin-hierarchy-note"><FiCheck /><span>Subjects added here sync automatically to the Teacher, Student and Parent dashboards for {department.label} Semester 1–8.</span></div></section></div></section></AdminShell>
+  return <AdminShell crumb="Semester hierarchy"><section className="admin-control-content"><button className="admin-back-link" type="button" onClick={() => navigate('/app')}><FiArrowLeft /> Back to administration</button><AdminPageIntro eyebrow={`${department.label} · Academic structure`} title="Semester hierarchy" description={`Select a semester to manage the subjects shared by every ${department.label} academic portal.`} actions={<span className="admin-scope-pill"><FiGrid /> Selected at login · {department.label}</span>} /><div className="admin-selected-scope"><span className={`admin-department-orb ${department.tone}`}>{department.icon}</span><div><span>Selected department</span><strong>{department.label}</strong><small>{department.name}</small></div><em><FiShield /> Department is fixed for this session</em></div><section className="admin-structure-card admin-semester-card admin-semester-dashboard"><div className="admin-card-heading"><div><h2>Semesters 1–8</h2><p>{department.label} · Choose a semester to open Subject Management.</p></div><FiBookOpen /></div><div className="admin-semester-grid">{adminSemesters.map((semester) => <button type="button" className="admin-semester-option" key={semester} onClick={() => navigate(`/admin/subjects/${department.code}/${semester}`)}><span className="admin-semester-number">{String(semester).padStart(2, '0')}</span><span><strong>Semester {semester}</strong><small>{subjectCounts[semester] || 0} subjects configured</small></span><FiArrowRight /></button>)}</div><div className="admin-hierarchy-note"><FiCheck /><span>Subjects added here sync automatically to Teacher, Student and Parent dashboards for {department.label} Semester 1–8.</span></div></section></section></AdminShell>
 }
 
 export function AdminSubjectManagement() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { department: departmentParam, semester: semesterParam } = useParams()
-  const department = String(departmentParam || '').toUpperCase()
+  const routeDepartment = String(departmentParam || '').toUpperCase()
+  const department = user.department !== 'ALL' ? user.department : routeDepartment
   const semester = Number(semesterParam)
   const departmentDetails = useMemo(() => departmentCards.find((item) => item.code === department) || departmentCards[0], [department])
+  const scopeMismatch = user.department !== 'ALL' && routeDepartment !== user.department
   const validSemester = Number.isInteger(semester) && semester >= 1 && semester <= 8
   const [subjects, setSubjects] = useState(() => validSemester ? scopedLocalSubjects(departmentDetails.code, semester) : [])
   const [loading, setLoading] = useState(!DEMO_MODE)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    if (scopeMismatch && validSemester) navigate(`/admin/subjects/${user.department}/${semester}`, { replace: true })
+  }, [scopeMismatch, validSemester, navigate, user.department, semester])
 
   const loadSubjects = async () => {
     if (!validSemester) return
@@ -147,5 +156,5 @@ export function AdminAccount({ mode = 'profile' }) {
   const { user, logout } = useAuth()
   const signOut = async () => { await logout(); navigate('/', { replace: true }) }
   const profile = mode === 'profile'
-  return <AdminShell crumb={profile ? 'Profile' : 'Settings'}><section className="admin-control-content"><button className="admin-back-link" type="button" onClick={() => navigate('/admin/subjects')}><FiArrowLeft /> Back to subject management</button><AdminPageIntro eyebrow="Administrator account" title={profile ? 'Profile' : 'Settings'} description={profile ? 'Your administrator identity and access scope.' : 'Central catalog and workspace settings.'} /><section className="admin-account-card"><div className="admin-account-hero"><span className="admin-account-large-avatar"><FiUser /></span><div><h2>{user.name}</h2><p>{user.email || 'Administrator'} · All departments</p></div><span className="admin-account-active"><i /> Active</span></div>{profile ? <div className="admin-account-details"><div><span>Name</span><strong>{user.name}</strong></div><div><span>Role</span><strong>Administrator</strong></div><div><span>Email</span><strong>{user.email || 'Not recorded'}</strong></div><div><span>Access scope</span><strong>All departments · Semesters 1–8</strong></div></div> : <div className="admin-setting-list"><div><span><FiBookOpen /> Subject catalog</span><strong>Database synchronized</strong></div><div><span><FiUsers /> Portal propagation</span><strong>Teacher · Student · Parent</strong></div><div><span><FiShield /> Authentication</span><strong>JWT-secured</strong></div></div>}<div className="admin-account-actions"><button className="admin-secondary-button" type="button" onClick={() => navigate('/admin/subjects')}><FiArrowLeft /> Subject management</button><button className="admin-primary-button" type="button" onClick={() => navigate(profile ? '/admin/settings' : '/admin/profile')}><FiSettings /> {profile ? 'Open settings' : 'View profile'}</button><button className="admin-secondary-button" type="button" onClick={signOut}><FiLogOut /> Logout</button></div></section></section></AdminShell>
+  return <AdminShell crumb={profile ? 'Profile' : 'Settings'}><section className="admin-control-content"><button className="admin-back-link" type="button" onClick={() => navigate('/admin/subjects')}><FiArrowLeft /> Back to subject management</button><AdminPageIntro eyebrow="Administrator account" title={profile ? 'Profile' : 'Settings'} description={profile ? 'Your administrator identity and access scope.' : 'Central catalog and workspace settings.'} /><section className="admin-account-card"><div className="admin-account-hero"><span className="admin-account-large-avatar"><FiUser /></span><div><h2>{user.name}</h2><p>{user.email || 'Administrator'} · All departments</p></div><span className="admin-account-active"><i /> Active</span></div>{profile ? <div className="admin-account-details"><div><span>Name</span><strong>{user.name}</strong></div><div><span>Role</span><strong>Administrator</strong></div><div><span>Email</span><strong>{user.email || 'Not recorded'}</strong></div><div><span>Access scope</span><strong>{user.department === 'ALL' ? 'All departments' : `${user.department} · Semesters 1–8`}</strong></div></div> : <div className="admin-setting-list"><div><span><FiBookOpen /> Subject catalog</span><strong>Database synchronized</strong></div><div><span><FiUsers /> Portal propagation</span><strong>Teacher · Student · Parent</strong></div><div><span><FiShield /> Authentication</span><strong>JWT-secured</strong></div></div>}<div className="admin-account-actions"><button className="admin-secondary-button" type="button" onClick={() => navigate('/admin/subjects')}><FiArrowLeft /> Subject management</button><button className="admin-primary-button" type="button" onClick={() => navigate(profile ? '/admin/settings' : '/admin/profile')}><FiSettings /> {profile ? 'Open settings' : 'View profile'}</button><button className="admin-secondary-button" type="button" onClick={signOut}><FiLogOut /> Logout</button></div></section></section></AdminShell>
 }

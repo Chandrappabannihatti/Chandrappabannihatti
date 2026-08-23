@@ -1845,3 +1845,17 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .subject-catalog-grid { grid-template-columns: 1fr; }
   .subject-catalog-item small { white-space: normal; }
 }
+
+.admin-selected-scope { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; border: 1px solid #dcebe4; border-radius: 12px; padding: 11px 13px; background: #eef9f3; }
+.admin-selected-scope > .admin-department-orb { flex: 0 0 auto; }
+.admin-selected-scope > div { display: grid; min-width: 0; }
+.admin-selected-scope > div > span { color: #78a08f; font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.admin-selected-scope > div > strong { margin-top: 3px; color: #315e50; font-size: 12px; }
+.admin-selected-scope > div > small { overflow: hidden; margin-top: 2px; color: #78958b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.admin-selected-scope em { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: #5f917b; font-size: 9px; font-style: normal; font-weight: 800; white-space: nowrap; }
+.admin-selected-scope em svg { font-size: 12px; }
+.admin-semester-dashboard { max-width: 820px; }
+@media (max-width: 680px) {
+  .admin-selected-scope { align-items: flex-start; flex-wrap: wrap; }
+  .admin-selected-scope em { width: 100%; margin-left: 0; padding-left: 46px; white-space: normal; }
+}

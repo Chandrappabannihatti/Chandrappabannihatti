@@ -46,6 +46,10 @@ function roleRequired(...roles) {
   return (req, res, next) => roles.includes(req.user.role) ? next() : res.status(403).json({ message: 'You do not have permission for this action.' })
 }
 
+function selectedAdminDepartment(req) {
+  return req.user.role === 'admin' && req.user.department && req.user.department !== 'ALL' ? req.user.department : ''
+}
+
 function scopeStudent(req, student) {
   if (req.user.role === 'admin') return true
   if (req.user.role === 'teacher') return student.department === req.user.department
@@ -208,8 +212,9 @@ app.post('/api/auth/login', async (req, res, next) => {
       const account = demoAccounts[role]
       if (!account || identifier.toLowerCase() !== account.secret.toLowerCase() || password !== account.password) return res.status(401).json({ message: 'Invalid demo credentials.' })
       const requestedDepartment = cleanString(req.body.department).toUpperCase()
+      if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
       if (role !== 'admin' && requestedDepartment && requestedDepartment !== account.department) return res.status(403).json({ message: `This demo ${role} account is scoped to ${account.department}. Choose that department to continue.` })
-      const user = { ...account, department: role === 'admin' ? 'ALL' : account.department }
+      const user = { ...account, department: role === 'admin' ? requestedDepartment || account.department : account.department }
       return res.json({ token: sign(user), user: publicUser(user) })
     }
 
@@ -221,8 +226,9 @@ app.post('/api/auth/login', async (req, res, next) => {
     const found = rows[0]
     if (!found || !(await bcrypt.compare(password, found.password_hash))) return res.status(401).json({ message: 'Invalid credentials.' })
     const requestedDepartment = cleanString(req.body.department).toUpperCase()
+    if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
     if (role !== 'admin' && requestedDepartment && requestedDepartment !== found.department) return res.status(403).json({ message: `This ${role} account is scoped to ${found.department}. Choose that department to continue.` })
-    const user = { ...found, role, initials: found.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
+    const user = { ...found, role, department: role === 'admin' ? requestedDepartment || found.department || 'ALL' : found.department, initials: found.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
     res.json({ token: sign(user), user: publicUser(user) })
   } catch (error) { next(error) }
 })
@@ -266,7 +272,8 @@ app.post('/api/sections', authRequired, roleRequired('teacher', 'admin'), async 
 app.get('/api/subjects', authRequired, async (req, res, next) => {
   try {
     const learner = req.user.role === 'student' || req.user.role === 'parent'
-    const requestedDepartment = ['teacher', 'student', 'parent'].includes(req.user.role) ? req.user.department : cleanString(req.query.department).toUpperCase()
+    const adminDepartment = selectedAdminDepartment(req)
+    const requestedDepartment = ['teacher', 'student', 'parent'].includes(req.user.role) ? req.user.department : adminDepartment || cleanString(req.query.department).toUpperCase()
     const requestedSemester = learner ? Number(req.user.semester) : Number(req.query.semester || 0)
     if (requestedDepartment && requestedDepartment !== 'ALL' && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
     if (requestedSemester && !validSemesters.includes(requestedSemester)) return res.status(422).json({ message: 'Semester must be between 1 and 8.' })
@@ -286,6 +293,8 @@ app.get('/api/subjects', authRequired, async (req, res, next) => {
 app.post('/api/subjects', authRequired, roleRequired('admin'), async (req, res, next) => {
   try {
     const input = { ...req.body, department: cleanString(req.body.department).toUpperCase(), semester: Number(req.body.semester), subjectCode: cleanString(req.body.subjectCode || req.body.subject_code).toUpperCase(), subjectName: cleanString(req.body.subjectName || req.body.subject_name), credits: Number(req.body.credits) }
+    const adminDepartment = selectedAdminDepartment(req)
+    if (adminDepartment && input.department !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
     const existing = useDemoData ? demoStore.subjects : []
     const errors = validateSubject(input, existing)
     if (errors.length) return res.status(422).json({ message: 'Subject validation failed.', errors })
@@ -305,11 +314,13 @@ app.post('/api/subjects', authRequired, roleRequired('admin'), async (req, res, 
 app.put('/api/subjects/:subjectId', authRequired, roleRequired('admin'), async (req, res, next) => {
   try {
     const subjectId = Number(req.params.subjectId)
+    const adminDepartment = selectedAdminDepartment(req)
     if (useDemoData) {
-      const index = demoStore.subjects.findIndex((subject) => Number(subject.id || subject.subjectId) === subjectId)
+      const index = demoStore.subjects.findIndex((subject) => Number(subject.id || subject.subjectId) === subjectId && (!adminDepartment || subject.department === adminDepartment))
       if (index < 0) return res.status(404).json({ message: 'Subject not found.' })
       const merged = { ...demoStore.subjects[index], ...req.body, id: demoStore.subjects[index].id, subjectId }
       merged.department = cleanString(merged.department).toUpperCase()
+      if (adminDepartment && merged.department !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
       merged.semester = Number(merged.semester)
       merged.subjectCode = cleanString(merged.subjectCode || merged.subject_code).toUpperCase()
       merged.subjectName = cleanString(merged.subjectName || merged.subject_name)
@@ -319,9 +330,10 @@ app.put('/api/subjects/:subjectId', authRequired, roleRequired('admin'), async (
       demoStore.subjects[index] = { ...merged, isActive: true }
       return res.json({ data: mapSubjectRow(demoStore.subjects[index]) })
     }
-    const existing = await findSubject(subjectId)
+    const existing = await findSubject(subjectId, adminDepartment || undefined)
     if (!existing) return res.status(404).json({ message: 'Subject not found.' })
     const merged = { ...mapSubjectRow(existing), ...req.body, subjectId, id: subjectId, department: cleanString(req.body.department || existing.department).toUpperCase(), semester: Number(req.body.semester || existing.semester), subjectCode: cleanString(req.body.subjectCode || existing.subjectCode).toUpperCase(), subjectName: cleanString(req.body.subjectName || existing.subjectName), credits: Number(req.body.credits || existing.credits) }
+    if (adminDepartment && merged.department !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
     const errors = validateSubject(merged, [])
     if (errors.length) return res.status(422).json({ message: 'Subject validation failed.', errors })
     await query('UPDATE subjects SET department_code=:department, semester=:semester, subject_code=:subjectCode, subject_name=:subjectName, credits=:credits WHERE subject_id=:subjectId AND is_active=1', merged)
@@ -335,13 +347,16 @@ app.put('/api/subjects/:subjectId', authRequired, roleRequired('admin'), async (
 app.delete('/api/subjects/:subjectId', authRequired, roleRequired('admin'), async (req, res, next) => {
   try {
     const subjectId = Number(req.params.subjectId)
+    const adminDepartment = selectedAdminDepartment(req)
     if (useDemoData) {
-      const index = demoStore.subjects.findIndex((subject) => Number(subject.id || subject.subjectId) === subjectId)
+      const index = demoStore.subjects.findIndex((subject) => Number(subject.id || subject.subjectId) === subjectId && (!adminDepartment || subject.department === adminDepartment))
       if (index < 0) return res.status(404).json({ message: 'Subject not found.' })
       demoStore.subjects.splice(index, 1)
       return res.json({ ok: true })
     }
-    const result = await query('DELETE FROM subjects WHERE subject_id=:subjectId', { subjectId })
+    const result = adminDepartment
+      ? await query('DELETE FROM subjects WHERE subject_id=:subjectId AND department_code=:department', { subjectId, department: adminDepartment })
+      : await query('DELETE FROM subjects WHERE subject_id=:subjectId', { subjectId })
     if (!result.affectedRows) return res.status(404).json({ message: 'Subject not found.' })
     res.json({ ok: true })
   } catch (error) { next(error) }
@@ -349,7 +364,7 @@ app.delete('/api/subjects/:subjectId', authRequired, roleRequired('admin'), asyn
 
 app.get('/api/subjects/:subjectId/records', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
   try {
-    const department = req.user.role === 'teacher' ? req.user.department : cleanString(req.query.department).toUpperCase()
+    const department = req.user.role === 'teacher' ? req.user.department : selectedAdminDepartment(req) || cleanString(req.query.department).toUpperCase()
     const semester = Number(req.query.semester)
     const section = cleanString(req.query.section).toUpperCase()
     const subject = await findSubject(Number(req.params.subjectId), department, semester)
@@ -384,7 +399,9 @@ async function subjectStudent(req, subject, input) {
 app.put('/api/subjects/:subjectId/attendance', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
   try {
     const semester = Number(req.body.semester)
-    const subject = await findSubject(Number(req.params.subjectId), req.user.role === 'teacher' ? req.user.department : cleanString(req.body.department).toUpperCase(), semester)
+    const adminDepartment = selectedAdminDepartment(req)
+    if (adminDepartment && req.body.department && cleanString(req.body.department).toUpperCase() !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
+    const subject = await findSubject(Number(req.params.subjectId), req.user.role === 'teacher' ? req.user.department : adminDepartment || cleanString(req.body.department).toUpperCase(), semester)
     if (!subject) return res.status(404).json({ message: 'Subject not found in the selected scope.' })
     const attendance = Number(req.body.attendance)
     if (!Number.isFinite(attendance) || attendance < 0 || attendance > 100) return res.status(422).json({ message: 'Attendance must be between 0 and 100.' })
@@ -406,7 +423,9 @@ app.put('/api/subjects/:subjectId/attendance', authRequired, roleRequired('teach
 app.put('/api/subjects/:subjectId/marks', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
   try {
     const semester = Number(req.body.semester)
-    const subject = await findSubject(Number(req.params.subjectId), req.user.role === 'teacher' ? req.user.department : cleanString(req.body.department).toUpperCase(), semester)
+    const adminDepartment = selectedAdminDepartment(req)
+    if (adminDepartment && req.body.department && cleanString(req.body.department).toUpperCase() !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
+    const subject = await findSubject(Number(req.params.subjectId), req.user.role === 'teacher' ? req.user.department : adminDepartment || cleanString(req.body.department).toUpperCase(), semester)
     if (!subject) return res.status(404).json({ message: 'Subject not found in the selected scope.' })
     const ia1 = Number(req.body.ia1)
     const ia2 = Number(req.body.ia2)

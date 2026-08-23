@@ -15,7 +15,7 @@ A production-shaped academic monitoring workspace for **PES Institute of Technol
 - Full student profiles include personal details, photo/avatar, DOB, blood group, address, parent/guardian details, academic information, achievements, certifications, skills, teacher remarks and XGBoost prediction context. Profile, Settings and Logout are available to every authenticated role.
 - Teachers can add a student achievement from `/teacher/semester/:semester/section/:section/achievements`. The Student selector is built from the current section only; saved records retain department, semester, section and student ownership and are available as read-only student/parent academic records.
 - Read-only student and parent dashboards with attendance, marks, CGPA, prediction, achievements, remarks, messages and announcements.
-- Admin subject management at `/admin/subjects`: choose Department → Semester, then add, edit or delete department/semester-owned subjects. The subject catalog is unique by `(department_code, semester, subject_code)` and the same active list is fetched by teacher, student and parent workspaces.
+- Admin subject management at `/admin/subjects`: the department chosen before Admin login is retained for the session, so the dashboard opens directly on Semester 1–8 cards. Selecting a semester opens scoped subject CRUD. The subject catalog is unique by `(department_code, semester, subject_code)` and the same active list is fetched by teacher, student and parent workspaces.
 - Subject changes are synchronized end to end: teachers get subject-specific attendance and internal-mark entry immediately at `/teacher/semester/:semester/section/:section/attendance` and `/marks`, while student/parent records show the same catalog. The API and demo fallback retain scoped subject records and validation without a second setup step.
 
 ## Run locally in demo mode
@@ -55,7 +55,7 @@ The default review setup uses the same demo credentials in both the API and the 
 | Student | `4PM21CS033` | `Student@123` |
 | Parent | `4PM21CS033` | `Parent@123` |
 
-The demo teacher account is scoped to CSE. Select CSE → Teacher on the entry page, sign in, then open an isolated route such as `/teacher/semester/7/section/B`. Student and parent accounts open the read-only records for Ishita Kulkarni, including achievements. Admin accounts open the Department → Semester subject hierarchy; for example, CSE → Semester 7 contains the bundled subject catalog and supports synchronized CRUD.
+The demo teacher account is scoped to CSE. Select CSE → Teacher on the entry page, sign in, then open an isolated route such as `/teacher/semester/7/section/B`. Student and parent accounts open the read-only records for Ishita Kulkarni, including achievements. Admin accounts inherit the department selected before login and open the Semester 1–8 dashboard directly; for example, select CSE → Admin, then open Semester 7 to manage the bundled subject catalog.
 
 ## MySQL setup
 

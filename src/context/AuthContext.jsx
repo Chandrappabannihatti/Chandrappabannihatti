@@ -23,10 +23,12 @@ export function AuthProvider({ children }) {
 
   const login = async ({ role, identifier, password, department }) => {
     const normalizedRole = role.toLowerCase()
+    const requestedDepartment = String(department || '').trim().toUpperCase()
     if (!DEMO_MODE) {
       try {
-        const result = await api.login({ role: normalizedRole, identifier, password, department })
-        const next = { token: result.token, user: { ...result.user, role: normalizedRole } }
+        const result = await api.login({ role: normalizedRole, identifier, password, department: requestedDepartment })
+        const user = { ...result.user, role: normalizedRole, department: normalizedRole === 'admin' ? requestedDepartment || result.user.department : result.user.department }
+        const next = { token: result.token, user }
         setSession(next)
         return next.user
       } catch (apiError) {
@@ -40,11 +42,10 @@ export function AuthProvider({ children }) {
     if (!account || identifier.trim().toLowerCase() !== account.secret.toLowerCase() || password !== account.password) {
       throw new Error(`Use the demo ${normalizedRole} credentials shown below to continue.`)
     }
-    const requestedDepartment = String(department || '').trim().toUpperCase()
     if (normalizedRole !== 'admin' && requestedDepartment && requestedDepartment !== account.user.department) {
       throw new Error(`This demo ${normalizedRole} account is scoped to ${account.user.department}. Choose that department to continue.`)
     }
-    const user = { ...account.user, department: normalizedRole === 'admin' ? 'ALL' : account.user.department }
+    const user = { ...account.user, department: normalizedRole === 'admin' ? requestedDepartment || account.user.department : account.user.department }
     const next = { token: 'demo-session-token', user }
     setSession(next)
     return user
