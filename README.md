@@ -10,7 +10,7 @@ A production-shaped academic monitoring workspace for **PES Institute of Technol
 - `.xlsx` / `.csv` upload pipeline with server-side validation, duplicate USN detection, preview/import workflow and Excel export.
 - Flask prediction service ready for a trained XGBoost `joblib` model. The API falls back to a transparent deterministic baseline when no model is mounted.
 - Demo data and four ready-to-use demo roles: admin, teacher, student and parent.
-- Teacher tools: a dedicated semester selection page followed by isolated semester routes (`/teacher/semester/1` through `/teacher/semester/8`), each with its own roster, attendance, marks, analytics, messages, announcements and prediction desk. Search/filter/sort, manual student entry, upload/import and shared remarks are scoped to that semester.
+- Teacher tools: a dedicated semester selection page followed by isolated semester routes (`/teacher/semester/1` through `/teacher/semester/8`), each with its own roster, attendance, marks, analytics, messages, announcements and prediction desk. Search/filter/sort, full-page student profiles, semester-scoped manual student entry (`/teacher/semester/:semester/students/new`) and shared remarks are scoped to that semester.
 - Read-only student and parent dashboards with attendance, marks, CGPA, prediction, remarks, messages and announcements.
 
 ## Run locally in demo mode

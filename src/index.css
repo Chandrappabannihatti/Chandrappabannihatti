@@ -885,3 +885,15 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .profile-mark-row > div:first-child { display: block; }
   .profile-mark-row strong { display: block; margin-top: 3px; }
 }
+
+/* Semester-scoped student entry */
+.add-student-page .page-intro { margin-bottom: 18px; }
+.add-student-form { max-width: 1000px; padding: 23px; }
+.add-form-grid { margin-top: 20px; }
+.add-form-grid .form-field { margin-top: 0; }
+.locked-field { color: #648073 !important; background: #edf6f1 !important; }
+.add-form-section-heading { margin-top: 29px; border-top: 1px solid #efeee9; padding-top: 22px; }
+@media (max-width: 560px) {
+  .add-student-form { padding: 16px; }
+  .add-form-section-heading { margin-top: 23px; padding-top: 18px; }
+}
