@@ -14,6 +14,8 @@ export default [
         localStorage: 'readonly',
         FileReader: 'readonly',
         FormData: 'readonly',
+        Blob: 'readonly',
+        URL: 'readonly',
         URLSearchParams: 'readonly',
         Intl: 'readonly',
         console: 'readonly',

@@ -159,16 +159,20 @@ CREATE TABLE IF NOT EXISTS messages (
   recipient_user_id BIGINT UNSIGNED NULL,
   recipient_scope VARCHAR(80) NULL,
   student_id BIGINT UNSIGNED NULL,
+  department_code VARCHAR(10) NULL,
+  semester TINYINT UNSIGNED NULL,
   audience ENUM('Student', 'Parent', 'Students', 'Parents', 'Class group') NOT NULL DEFAULT 'Student',
   subject VARCHAR(180) NOT NULL,
   body TEXT NOT NULL,
   read_at TIMESTAMP NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_message_recipient (recipient_user_id, read_at, created_at),
-  KEY idx_message_scope (recipient_scope, created_at),
+  KEY idx_message_scope (recipient_scope, department_code, semester, created_at),
   CONSTRAINT fk_message_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE RESTRICT,
   CONSTRAINT fk_message_recipient FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE SET NULL,
-  CONSTRAINT fk_message_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL
+  CONSTRAINT fk_message_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL,
+  CONSTRAINT fk_message_department FOREIGN KEY (department_code) REFERENCES departments(code) ON DELETE SET NULL,
+  CONSTRAINT chk_message_semester CHECK (semester IS NULL OR semester BETWEEN 1 AND 8)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS announcements (

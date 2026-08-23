@@ -253,22 +253,32 @@ app.get('/api/students/export', authRequired, roleRequired('teacher', 'admin'), 
 
 app.get('/api/messages', authRequired, async (req, res, next) => {
   try {
+    const requestedDepartment = req.user.role === 'teacher' ? req.user.department : (req.query.department || req.user.department)
+    const requestedSemester = req.query.semester || req.user.semester
     if (useDemoData) {
-      const messages = req.user.role === 'teacher' || req.user.role === 'admin' ? demoStore.messages : demoStore.messages.filter((message) => String(message.recipient).toLowerCase().includes(String(req.user.name || req.user.usn).toLowerCase()) || message.audience === 'Students')
+      const messages = (req.user.role === 'teacher' || req.user.role === 'admin'
+        ? demoStore.messages
+        : demoStore.messages.filter((message) => String(message.recipient).toLowerCase().includes(String(req.user.name || req.user.usn).toLowerCase()) || message.audience === 'Students'))
+        .filter((message) => (!requestedDepartment || message.department === requestedDepartment) && (!requestedSemester || Number(message.semester) === Number(requestedSemester)))
       return res.json({ data: messages })
     }
-    const rows = await query('SELECT m.*, u.display_name AS sender_name FROM messages m LEFT JOIN users u ON u.id = m.sender_id WHERE m.recipient_user_id = :userId OR m.recipient_scope = :scope ORDER BY m.created_at DESC', { userId: req.user.sub, scope: req.user.department || 'ALL' })
+    const conditions = ['(m.recipient_user_id = :userId OR m.recipient_scope = :scope)']
+    const params = { userId: req.user.sub, scope: requestedDepartment || 'ALL' }
+    if (requestedDepartment) { conditions.push('m.department_code = :department'); params.department = requestedDepartment }
+    if (requestedSemester) { conditions.push('m.semester = :semester'); params.semester = Number(requestedSemester) }
+    const rows = await query(`SELECT m.*, u.display_name AS sender_name FROM messages m LEFT JOIN users u ON u.id = m.sender_id WHERE ${conditions.join(' AND ')} ORDER BY m.created_at DESC`, params)
     res.json({ data: rows.map(mapMessageRow) })
   } catch (error) { next(error) }
 })
 
 app.post('/api/messages/send', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
   try {
-    const { recipient, audience, subject, body, studentId } = req.body
+    const { recipient, audience, subject, body, studentId, department, semester } = req.body
     if (!subject || !body) return res.status(422).json({ message: 'Subject and message body are required.' })
-    const message = { id: useDemoData ? nextId(demoStore.messages) : undefined, sender: req.user.name, recipient: recipient || audience || 'Academic community', audience: audience || 'Student', subject: cleanString(subject), body: cleanString(body), time: 'Just now', createdAt: new Date().toISOString(), read: false, initials: (req.user.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(), studentId }
+    if (req.user.role === 'teacher' && department && department !== req.user.department) return res.status(403).json({ message: 'Teachers may only message their department.' })
+    const message = { id: useDemoData ? nextId(demoStore.messages) : undefined, sender: req.user.name, recipient: recipient || audience || 'Academic community', audience: audience || 'Student', department: department || req.user.department, semester: Number(semester || req.user.semester || 0) || null, subject: cleanString(subject), body: cleanString(body), time: 'Just now', createdAt: new Date().toISOString(), read: false, initials: (req.user.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(), studentId }
     if (useDemoData) demoStore.messages.unshift(message)
-    else await query('INSERT INTO messages (sender_id, recipient_scope, subject, body) VALUES (:senderId, :recipientScope, :subject, :body)', { senderId: req.user.sub, recipientScope: recipient || audience || 'Academic community', subject: message.subject, body: message.body })
+    else await query('INSERT INTO messages (sender_id, recipient_scope, student_id, department_code, semester, audience, subject, body) VALUES (:senderId, :recipientScope, :studentId, :department, :semester, :audience, :subject, :body)', { senderId: req.user.sub, recipientScope: recipient || audience || 'Academic community', studentId: studentId || null, department: message.department, semester: message.semester, audience: message.audience, subject: message.subject, body: message.body })
     res.status(201).json({ data: message })
   } catch (error) { next(error) }
 })
@@ -282,11 +292,16 @@ app.put('/api/messages/:id/read', authRequired, async (req, res, next) => {
 
 app.get('/api/announcements', authRequired, async (req, res, next) => {
   try {
+    const requestedDepartment = req.user.role === 'teacher' ? req.user.department : (req.query.department || req.user.department)
+    const requestedSemester = req.query.semester || req.user.semester
     if (useDemoData) {
-      const items = demoStore.announcements.filter((item) => (!item.department || item.department === req.user.department || req.user.role === 'admin') && (!item.semester || item.semester === req.user.semester || req.user.role === 'teacher' || req.user.role === 'admin'))
+      const items = demoStore.announcements.filter((item) => (!requestedDepartment || item.department === requestedDepartment) && (!requestedSemester || Number(item.semester) === Number(requestedSemester)))
       return res.json({ data: items })
     }
-    const rows = await query('SELECT * FROM announcements WHERE is_active = 1 AND (visibility_type = "College" OR department_code = :department OR (department_code = :department AND semester = :semester)) ORDER BY created_at DESC', { department: req.user.department, semester: req.user.semester || 0 })
+    const conditions = ['is_active = 1', 'department_code = :department']
+    const params = { department: requestedDepartment }
+    if (requestedSemester) { conditions.push('semester = :semester'); params.semester = Number(requestedSemester) }
+    const rows = await query(`SELECT * FROM announcements WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`, params)
     res.json({ data: rows.map(mapAnnouncementRow) })
   } catch (error) { next(error) }
 })
@@ -321,8 +336,18 @@ app.delete('/api/announcements/:id', authRequired, roleRequired('teacher', 'admi
 
 app.get('/api/remarks', authRequired, async (req, res, next) => {
   try {
-    if (useDemoData) return res.json({ data: req.user.role === 'teacher' || req.user.role === 'admin' ? demoStore.remarks : demoStore.remarks.filter((remark) => remark.studentId === 4) })
-    const rows = await query('SELECT r.*, s.name AS student_name FROM remarks r JOIN students s ON s.id=r.student_id WHERE s.department_code=:department ORDER BY r.created_at DESC', { department: req.user.department }); res.json({ data: rows.map(mapRemarkRow) })
+    const requestedSemester = req.query.semester || req.user.semester
+    if (useDemoData) {
+      const items = (req.user.role === 'teacher' || req.user.role === 'admin' ? demoStore.remarks : demoStore.remarks.filter((remark) => remark.studentId === 4)).filter((remark) => {
+        const student = demoStore.students.find((item) => item.id === remark.studentId)
+        return student && student.department === req.user.department && (!requestedSemester || Number(student.semester) === Number(requestedSemester))
+      })
+      return res.json({ data: items })
+    }
+    const conditions = ['s.department_code=:department']
+    const params = { department: req.user.department }
+    if (requestedSemester) { conditions.push('s.semester=:semester'); params.semester = Number(requestedSemester) }
+    const rows = await query(`SELECT r.*, s.name AS student_name FROM remarks r JOIN students s ON s.id=r.student_id WHERE ${conditions.join(' AND ')} ORDER BY r.created_at DESC`, params); res.json({ data: rows.map(mapRemarkRow) })
   } catch (error) { next(error) }
 })
 
