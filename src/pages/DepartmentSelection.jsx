@@ -1,10 +1,21 @@
 import { useMemo } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { FiArrowRight, FiCheckCircle, FiChevronRight, FiLock, FiLogOut, FiShield } from 'react-icons/fi'
+import { FiArrowRight, FiChevronRight, FiLogOut } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
-import { cloneDemoStudents, departments } from '../data/demo'
+import { cloneDemoStudents } from '../data/demo'
 import { Brand } from './Landing'
 import SemesterSelection from './SemesterSelection'
+
+const departmentCards = [
+  { accessCode: 'CSE', code: 'CSE', name: 'Computer Science & Engineering', tagline: 'Code. Create. Innovate.', icon: '💻', tone: 'coral' },
+  { accessCode: 'AIML', code: 'AIML', name: 'Artificial Intelligence & ML', tagline: 'Intelligence for tomorrow.', icon: '🤖', tone: 'mint' },
+  { accessCode: 'CSDS', code: 'CSDS', name: 'Computer Science & Data Science', tagline: 'Turn data into decisions.', icon: '📊', tone: 'sky' },
+  { accessCode: 'CE', code: 'CE', name: 'Computer Engineering', tagline: 'Design powerful systems.', icon: '🏗️', tone: 'teal' },
+  { accessCode: 'CIVIL', code: 'CV', name: 'Civil Engineering', tagline: 'Build the world around us.', icon: '🌉', tone: 'peach' },
+  { accessCode: 'ME', code: 'ME', name: 'Mechanical Engineering', tagline: 'Engineer motion and machines.', icon: '⚙️', tone: 'lavender' },
+  { accessCode: 'EEE', code: 'EEE', name: 'Electrical & Electronics', tagline: 'Power ideas into life.', icon: '⚡', tone: 'yellow' },
+  { accessCode: 'ECE', code: 'ECE', name: 'Electronics & Communication', tagline: 'Connect a smarter future.', icon: '📡', tone: 'slate' },
+]
 
 export default function DepartmentSelection() {
   const navigate = useNavigate()
@@ -13,17 +24,15 @@ export default function DepartmentSelection() {
   const signOut = async () => { await logout(); navigate('/', { replace: true }) }
 
   return <main className="department-selection-page">
-    <header className="selection-topbar"><Brand light /><div className="selection-user"><span className="selection-user-avatar">{user.initials}</span><span><strong>{user.name}</strong><small>{user.department} · Teacher</small></span><button className="selection-logout" type="button" onClick={signOut} aria-label="Sign out"><FiLogOut /></button></div></header>
-    <section className="selection-content department-selection-content">
-      <div className="selection-heading"><div><p className="page-eyebrow">Teacher workspace</p><h1>Select a department</h1><p>Choose your department before opening a semester. Your account can view and manage records only inside its assigned department.</p></div><span className="selection-scope"><FiShield /> {user.department} scope locked</span></div>
-      <div className="department-list">{departments.map((department, index) => {
-        const allowed = department.code === user.department
-        const count = students.filter((student) => student.department === department.code).length || department.count
-        return <button key={department.code} className={`department-list-row ${allowed ? 'available' : 'locked'}`} type="button" disabled={!allowed} onClick={() => navigate(`/teacher/department/${department.code}`)}><span className="department-list-index">0{index + 1}</span><span className={`department-list-icon ${department.tone}`}>{department.icon}</span><span className="department-list-copy"><strong>{department.name}</strong><small>{department.code} · {count} students {allowed ? '· Your department' : '· Restricted for this account'}</small></span>{allowed ? <FiChevronRight className="department-list-chevron" /> : <FiLock className="department-list-lock" />}</button>
+    <header className="department-selection-toolbar"><Brand /><div className="department-account"><span className="department-account-avatar">{user.initials}</span><span><strong>{user.name}</strong><small>{user.department} · Teacher</small></span><button className="department-account-logout" type="button" onClick={signOut} aria-label="Sign out"><FiLogOut /></button></div></header>
+    <section className="department-selection-content" aria-labelledby="department-selection-title">
+      <h1 id="department-selection-title" className="sr-only">Choose a department</h1>
+      <div className="department-list">{departmentCards.map((department) => {
+        const allowed = department.accessCode === user.department
+        const count = students.filter((student) => student.department === department.accessCode).length
+        return <button key={department.code} className={`department-list-row ${allowed ? 'available' : 'locked'}`} type="button" disabled={!allowed} aria-label={allowed ? `Choose ${department.name}` : `${department.name} is outside your ${user.department} teacher scope`} onClick={() => navigate(`/teacher/department/${department.accessCode}`)}><span className={`department-card-orbit ${allowed ? 'active' : ''}`} aria-hidden="true" /><span className={`department-list-icon ${department.tone}`} aria-hidden="true">{department.icon}</span><span className="department-list-copy"><span className="department-list-code">{department.code}</span><strong>{department.name}</strong><small>{department.tagline}</small></span><span className="department-card-link">Choose department <FiArrowRight /></span>{count > 0 && <span className="sr-only">{count} demo students</span>}</button>
       })}</div>
-      <div className="selection-note"><FiCheckCircle /><span>Department access is enforced by the teacher session. Semester, section and student data will stay inside <strong>{user.department}</strong>.</span><FiArrowRight /></div>
     </section>
-    <footer className="selection-footer"><span>PES Institute of Technology and Management · Shivamogga</span><span>CAMPS · Academic year 2026–27</span></footer>
   </main>
 }
 
