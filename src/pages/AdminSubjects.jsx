@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { departmentCards } from '../data/departments'
 import { getDemoSubjects } from '../data/demo'
 import { Brand } from './Landing'
-import api, { DEMO_MODE, LOCAL_SESSION_TOKEN } from '../lib/api'
+import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, setAuthToken } from '../lib/api'
 
 function persistDemoSubjects(subjects) {
   if (typeof window === 'undefined') return
@@ -44,6 +44,7 @@ export default function AdminSubjectHierarchy() {
   useEffect(() => {
     let mounted = true
     const loadCounts = async () => {
+      if (apiSession) setAuthToken(token)
       let subjects = scopedLocalSubjects(department.code)
       if (apiSession) {
         try { const response = await api.getSubjects({ department: department.code }); subjects = response.data || [] } catch { /* local fallback keeps the hierarchy usable */ }
@@ -80,6 +81,7 @@ export function AdminSubjectManagement() {
 
   const loadSubjects = async () => {
     if (!validSemester) return
+    if (apiSession) setAuthToken(token)
     setLoading(true)
     let next = scopedLocalSubjects(departmentDetails.code, semester)
     if (apiSession) {
@@ -98,6 +100,7 @@ export function AdminSubjectManagement() {
     let saved
     let usedLocalFallback = !apiSession
     if (apiSession) {
+      setAuthToken(token)
       try {
         const response = editing ? await api.updateSubject(editing.subjectId || editing.id, payload) : await api.createSubject(payload)
         saved = response.data
@@ -132,6 +135,7 @@ export function AdminSubjectManagement() {
     const id = subject.subjectId || subject.id
     if (!window.confirm(`Delete ${subject.subjectCode} from ${departmentDetails.label} Semester ${semester}?`)) return
     if (apiSession) {
+      setAuthToken(token)
       try { await api.deleteSubject(id) } catch (error) { setNotice(error.response?.data?.message || 'Subject could not be deleted.'); return }
     }
     const next = getDemoSubjects().filter((item) => Number(item.id || item.subjectId) !== Number(id))
