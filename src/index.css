@@ -623,3 +623,69 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .model-version { width: 100%; margin-left: 47px; }
   .role-switcher button { padding-right: 5px; padding-left: 5px; }
 }
+
+/* Minimal department-first landing page */
+.simple-landing { min-height: 100vh; background: var(--cream); }
+.simple-college-header { display: grid; grid-template-columns: 205px minmax(0, 1fr) auto; align-items: center; gap: 28px; max-width: 1100px; margin: 0 auto; border-bottom: 1px solid #e4e3dc; padding: 26px 24px 24px; }
+.simple-header-brand { align-self: start; padding-top: 2px; }
+.simple-college-copy { padding-left: 28px; border-left: 1px solid #e2e1da; }
+.simple-overline { margin: 0; color: var(--coral-dark); font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.simple-college-copy h1 { margin: 7px 0 0; color: var(--ink); font-family: 'Manrope', sans-serif; font-size: clamp(19px, 2.4vw, 28px); font-weight: 800; letter-spacing: -.055em; line-height: 1.12; }
+.simple-address { margin: 8px 0 0; color: #8c9699; font-size: 11px; }
+.simple-sign-in { display: inline-flex; align-items: center; gap: 9px; border: 0; border-radius: 999px; padding: 12px 16px; color: #fff; background: var(--coral); font-size: 11px; font-weight: 800; box-shadow: 0 8px 17px rgba(240,126,94,.2); transition: transform .18s ease, background .18s ease; }
+.simple-sign-in:hover { transform: translateY(-2px); background: var(--coral-dark); }
+.simple-department-section { max-width: 850px; margin: 0 auto; padding: 70px 24px 45px; }
+.simple-section-intro { margin-bottom: 24px; }
+.simple-kicker { margin: 0 0 9px; color: var(--coral-dark); font-size: 10px; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
+.simple-section-intro h2 { margin: 0; color: var(--ink); font-family: 'Manrope', sans-serif; font-size: clamp(30px, 4.2vw, 45px); font-weight: 800; letter-spacing: -.07em; line-height: 1; }
+.simple-section-intro > p:last-child { margin: 11px 0 0; color: #8a9598; font-size: 12px; }
+.simple-department-list { display: grid; gap: 9px; }
+.simple-department-row { display: grid; grid-template-columns: 35px 43px minmax(0, 1fr) auto 18px; align-items: center; gap: 13px; width: 100%; border: 1px solid #e3e2dc; border-radius: 13px; padding: 13px 16px 13px 12px; color: var(--ink); background: rgba(255,255,255,.62); text-align: left; transition: all .18s ease; }
+.simple-department-row:hover, .simple-department-row.selected { border-color: var(--ink); background: #fff; box-shadow: 0 9px 24px rgba(8,23,40,.08); transform: translateX(4px); }
+.simple-department-row.selected { box-shadow: inset 4px 0 0 var(--coral), 0 9px 24px rgba(8,23,40,.08); }
+.simple-department-number { color: #aab1af; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.simple-department-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: var(--ink); background: #f3d7c9; font-size: 18px; font-weight: 700; }
+.simple-department-row:nth-child(2) .simple-department-icon { background: #d4efe4; }
+.simple-department-row:nth-child(3) .simple-department-icon { background: #d8edf5; }
+.simple-department-row:nth-child(4) .simple-department-icon { background: #e3e2f5; }
+.simple-department-row:nth-child(5) .simple-department-icon { background: #f5e6bd; }
+.simple-department-row:nth-child(6) .simple-department-icon { background: #dfe6eb; }
+.simple-department-row:nth-child(7) .simple-department-icon { background: #f2ddd5; }
+.simple-department-name { min-width: 0; }
+.simple-department-name strong { display: block; font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 800; letter-spacing: -.02em; }
+.simple-department-name small { display: block; overflow: hidden; margin-top: 3px; color: #919b9d; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.simple-student-count { color: #a0a9a7; font-size: 10px; }
+.simple-row-arrow { color: #aab3b0; font-size: 15px; transition: transform .18s ease, color .18s ease; }
+.simple-department-row:hover .simple-row-arrow, .simple-department-row.selected .simple-row-arrow { color: var(--coral); transform: translateX(3px); }
+.simple-role-chooser { display: grid; grid-template-columns: .85fr 1.15fr; gap: 22px; align-items: center; margin-top: 22px; border: 1px solid #cce6db; border-radius: 15px; padding: 19px; background: #e8f5ef; animation: slide-in .24s ease both; }
+.simple-role-chooser h3 { margin: 0; color: var(--ink); font-family: 'Manrope', sans-serif; font-size: 20px; letter-spacing: -.05em; }
+.simple-role-chooser h3 span { color: var(--coral); }
+.simple-role-chooser > div:first-child > p:last-child { margin: 6px 0 0; color: #738781; font-size: 10px; line-height: 1.5; }
+.simple-role-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.simple-role-list button { display: flex; align-items: center; gap: 7px; min-height: 38px; border: 1px solid rgba(8,23,40,.09); border-radius: 9px; padding: 0 9px; color: var(--ink); background: rgba(255,255,255,.72); font-size: 10px; font-weight: 800; transition: all .18s ease; }
+.simple-role-list button svg:first-child { color: var(--coral-dark); font-size: 14px; }
+.simple-role-list button svg:last-child { margin-left: auto; color: #b0b9b5; font-size: 11px; }
+.simple-role-list button:hover { border-color: var(--ink); background: #fff; transform: translateY(-1px); }
+.simple-footer { display: flex; align-items: center; justify-content: space-between; max-width: 850px; margin: 0 auto; border-top: 1px solid #e4e3dc; padding: 18px 24px 28px; color: #9ca5a3; font-size: 10px; }
+.simple-footer span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.simple-footer svg { color: #62a483; }
+@media (max-width: 760px) {
+  .simple-college-header { grid-template-columns: 1fr auto; gap: 17px; padding: 20px; }
+  .simple-header-brand { grid-column: 1 / -1; }
+  .simple-college-copy { grid-column: 1; padding-left: 0; border-left: 0; }
+  .simple-college-copy h1 { font-size: 18px; }
+  .simple-address { font-size: 10px; }
+  .simple-department-section { padding-top: 45px; }
+  .simple-role-chooser { grid-template-columns: 1fr; gap: 17px; }
+  .simple-role-list { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .simple-college-header { grid-template-columns: 1fr; }
+  .simple-sign-in { width: max-content; }
+  .simple-department-row { grid-template-columns: 27px 38px minmax(0, 1fr) 16px; gap: 9px; padding-right: 12px; }
+  .simple-student-count { display: none; }
+  .simple-department-icon { width: 35px; height: 35px; }
+  .simple-department-name strong { font-size: 12px; }
+  .simple-department-name small { font-size: 9px; }
+  .simple-footer { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
