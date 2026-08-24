@@ -104,6 +104,14 @@ CREATE TABLE IF NOT EXISTS students (
   certifications JSON NULL,
   skills JSON NULL,
   password_hash VARCHAR(255) NULL,
+  attendance_percentage DECIMAL(5,2) NOT NULL DEFAULT 0,
+  average_internal_marks DECIMAL(5,2) NOT NULL DEFAULT 0,
+  average_assignment_score DECIMAL(5,2) NOT NULL DEFAULT 0,
+  previous_gpa DECIMAL(4,2) NOT NULL DEFAULT 0,
+  current_gpa DECIMAL(4,2) NOT NULL DEFAULT 0,
+  participation_score DECIMAL(5,2) NOT NULL DEFAULT 0,
+  result ENUM('Pass', 'Fail') NOT NULL DEFAULT 'Fail',
+  risk ENUM('Low Risk', 'Medium Risk', 'High Risk') NOT NULL DEFAULT 'High Risk',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   joined_on DATE NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -112,9 +120,16 @@ CREATE TABLE IF NOT EXISTS students (
   KEY idx_student_scope (department_code, semester, section, is_active),
   KEY idx_student_section (section_id, semester, is_active),
   KEY idx_student_name (name),
+  KEY idx_student_risk (risk, result),
   CONSTRAINT fk_student_department FOREIGN KEY (department_code) REFERENCES departments(code),
   CONSTRAINT fk_student_section FOREIGN KEY (section_id) REFERENCES sections(section_id) ON DELETE SET NULL,
-  CONSTRAINT chk_student_semester CHECK (semester BETWEEN 1 AND 8)
+  CONSTRAINT chk_student_semester CHECK (semester BETWEEN 1 AND 8),
+  CONSTRAINT chk_student_attendance CHECK (attendance_percentage BETWEEN 0 AND 100),
+  CONSTRAINT chk_student_internal CHECK (average_internal_marks BETWEEN 0 AND 100),
+  CONSTRAINT chk_student_assignment CHECK (average_assignment_score BETWEEN 0 AND 100),
+  CONSTRAINT chk_student_previous_gpa CHECK (previous_gpa BETWEEN 0 AND 10),
+  CONSTRAINT chk_student_current_gpa CHECK (current_gpa BETWEEN 0 AND 10),
+  CONSTRAINT chk_student_participation CHECK (participation_score BETWEEN 0 AND 100)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS parents (
@@ -147,22 +162,22 @@ CREATE TABLE IF NOT EXISTS attendance (
   CONSTRAINT fk_attendance_teacher FOREIGN KEY (marked_by) REFERENCES teachers(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS internal_marks (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS subject_records (
+  record_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  subject_id BIGINT UNSIGNED NOT NULL,
   student_id BIGINT UNSIGNED NOT NULL,
-  subject_code VARCHAR(30) NOT NULL,
-  semester TINYINT UNSIGNED NOT NULL,
-  ia1 DECIMAL(5,2) NULL,
-  ia2 DECIMAL(5,2) NULL,
-  practical DECIMAL(5,2) NULL,
-  cgpa DECIMAL(4,2) NULL,
+  attendance_percentage DECIMAL(5,2) NOT NULL DEFAULT 0,
+  average_internal_marks DECIMAL(5,2) NOT NULL DEFAULT 0,
   recorded_by BIGINT UNSIGNED NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_internal_student_subject_semester (student_id, subject_code, semester),
-  KEY idx_internal_student (student_id, semester),
-  CONSTRAINT fk_internal_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
-  CONSTRAINT fk_internal_teacher FOREIGN KEY (recorded_by) REFERENCES teachers(id) ON DELETE SET NULL,
-  CONSTRAINT chk_internal_semester CHECK (semester BETWEEN 1 AND 8)
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_subject_record_student (subject_id, student_id),
+  KEY idx_subject_record_scope (subject_id, student_id),
+  CONSTRAINT fk_subject_record_subject FOREIGN KEY (subject_id) REFERENCES subjects(subject_id) ON DELETE CASCADE,
+  CONSTRAINT fk_subject_record_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  CONSTRAINT fk_subject_record_teacher FOREIGN KEY (recorded_by) REFERENCES teachers(id) ON DELETE SET NULL,
+  CONSTRAINT chk_subject_record_attendance CHECK (attendance_percentage BETWEEN 0 AND 100),
+  CONSTRAINT chk_subject_record_internal CHECK (average_internal_marks BETWEEN 0 AND 100)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS assignments (
@@ -264,16 +279,14 @@ CREATE TABLE IF NOT EXISTS announcements (
 CREATE TABLE IF NOT EXISTS predictions (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   student_id BIGINT UNSIGNED NOT NULL,
-  attendance DECIMAL(5,2) NOT NULL DEFAULT 0,
-  ia1 DECIMAL(5,2) NOT NULL DEFAULT 0,
-  ia2 DECIMAL(5,2) NOT NULL DEFAULT 0,
-  assignment_marks DECIMAL(5,2) NOT NULL DEFAULT 0,
-  previous_sgpa DECIMAL(4,2) NOT NULL DEFAULT 0,
-  cgpa DECIMAL(4,2) NOT NULL DEFAULT 0,
-  backlogs TINYINT UNSIGNED NOT NULL DEFAULT 0,
-  risk ENUM('Low', 'Medium', 'High') NOT NULL,
-  pass_probability DECIMAL(5,2) NOT NULL,
-  model_version VARCHAR(40) NOT NULL DEFAULT 'xgboost-0.9.4',
+  attendance_percentage DECIMAL(5,2) NOT NULL DEFAULT 0,
+  average_internal_marks DECIMAL(5,2) NOT NULL DEFAULT 0,
+  average_assignment_score DECIMAL(5,2) NOT NULL DEFAULT 0,
+  previous_gpa DECIMAL(4,2) NOT NULL DEFAULT 0,
+  participation_score DECIMAL(5,2) NOT NULL DEFAULT 0,
+  result ENUM('Pass', 'Fail') NOT NULL,
+  risk ENUM('Low Risk', 'Medium Risk', 'High Risk') NOT NULL,
+  model_version VARCHAR(40) NOT NULL DEFAULT 'xgboost-1.0',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_prediction_student_latest (student_id, created_at),
   KEY idx_prediction_risk (risk, created_at),

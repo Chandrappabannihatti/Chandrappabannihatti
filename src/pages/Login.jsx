@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { FiArrowLeft, FiArrowRight, FiCheck, FiEye, FiEyeOff, FiKey, FiLock, FiUser, FiUsers } from 'react-icons/fi'
 import { Brand } from './Landing'
 import { departmentCards } from '../data/departments'
@@ -24,7 +24,7 @@ export default function Login() {
   const [params] = useSearchParams()
   const { login } = useAuth()
   const initialRole = accountDetails[params.get('role')] ? params.get('role') : 'teacher'
-  const department = params.get('department') || 'CSE'
+  const department = String(params.get('department') || '').trim().toUpperCase()
   const departmentDetails = useMemo(() => departmentCards.find((item) => item.code === department) || departmentCards[0], [department])
   const [role, setRole] = useState(initialRole)
   const [identifier, setIdentifier] = useState(accountDetails[initialRole].value)
@@ -33,6 +33,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const details = useMemo(() => accountDetails[role], [role])
+  if (!departmentCards.some((item) => item.code === department)) return <Navigate to="/" replace />
 
   const changeRole = (nextRole) => {
     setRole(nextRole)

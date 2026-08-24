@@ -1,22 +1,22 @@
 # CAMPS · Centralized Academic Monitoring & Prediction System
 
-A production-shaped academic monitoring workspace for **PES Institute of Technology and Management**, Shivamogga. CAMPS connects department-scoped student records, attendance, internal marks, teacher communication, announcements, remarks and a prediction service in one responsive interface.
+A production-shaped academic monitoring workspace for **PES Institute of Technology and Management**, Shivamogga. CAMPS connects department-scoped student records, attendance, Average Academic Performance, teacher communication, announcements, remarks and an XGBoost prediction service in one responsive interface.
 
 ## What is included
 
 - Premium university-style React/Vite frontend with React Router, Tailwind CSS, Axios, React Icons and Recharts.
 - Node.js + Express REST API with JWT authentication, department-level teacher access control and role-aware endpoints.
-- MySQL 8 schema covering departments, users, teachers, students, parents, attendance, internal marks, assignments, achievements, remarks, messages, announcements, predictions and notifications.
+- MySQL 8 schema covering departments, users, teachers, students, parents, attendance, subject records, Average Academic Performance values, achievements, remarks, messages, announcements, predictions and notifications.
 - `.xlsx` / `.csv` upload pipeline with server-side validation, duplicate USN detection, preview/import workflow and Excel export.
-- Flask prediction service ready for a trained XGBoost `joblib` model. The API falls back to a transparent deterministic baseline when no model is mounted.
+- Flask Average Academic Performance service ready for a trained XGBoost `joblib` model. The API falls back to a transparent deterministic baseline when no model is mounted.
 - Demo data and four ready-to-use demo roles: admin, teacher, student and parent.
 - The entry flow is department → role → login. The root page presents responsive department cards, then tab-style Teacher/Student/Parent/Admin selection, followed by a clean role-specific login page. Marketing hero/promotional content is not used in the sign-in flow.
-- Teacher tools: a department → semester → section hierarchy. After teacher login, `/teacher/semester/:semester` lists the available sections and supports **+ Add Section**; section workspaces use `/teacher/semester/:semester/section/:section` and isolate students, attendance, internal marks, assignments, achievements, remarks, messages, announcements, analytics and predictions. Search/filter/sort, full-page student profiles at `/teacher/student/:usn`, section-scoped manual entry (`/teacher/semester/:semester/section/:section/students/new`) and Excel import (`/teacher/semester/:semester/section/:section/students/upload`) cannot mix department, semester or section records.
+- Teacher tools: a department → semester → section hierarchy. After teacher login, `/teacher/semester/:semester` lists the available sections and supports **+ Add Section**; section workspaces use `/teacher/semester/:semester/section/:section` and isolate students, attendance, Average Academic Performance, assignments, achievements, remarks, messages, announcements, analytics and predictions. Search/filter/sort, full-page student profiles at `/teacher/student/:usn`, section-scoped manual entry (`/teacher/semester/:semester/section/:section/students/new`) and Excel import (`/teacher/semester/:semester/section/:section/students/upload`) cannot mix department, semester or section records.
 - Full student profiles include personal details, photo/avatar, DOB, blood group, address, parent/guardian details, academic information, achievements, certifications, skills, teacher remarks and XGBoost prediction context. Profile, Settings and Logout are available to every authenticated role.
 - Teachers can add a student achievement from `/teacher/semester/:semester/section/:section/achievements`. The Student selector is built from the current section only; saved records retain department, semester, section and student ownership and are available as read-only student/parent academic records.
-- Read-only student and parent dashboards with attendance, marks, CGPA, prediction, achievements, remarks, messages and announcements.
+- Read-only student and parent dashboards with attendance, Average Academic Performance, GPA, Pass/Fail result, risk, achievements, remarks, messages and announcements.
 - Admin subject management at `/admin/subjects`: the department chosen before Admin login is retained for the session, so the dashboard opens directly on Semester 1–8 cards. Selecting a semester opens scoped subject CRUD. The subject catalog is unique by `(department_code, semester, subject_code)` and the same active list is fetched by teacher, student and parent workspaces.
-- Subject changes are synchronized end to end: teachers get subject-specific attendance and internal-mark entry immediately at `/teacher/semester/:semester/section/:section/attendance` and `/marks`, while student/parent records show the same catalog. The API and demo fallback retain scoped subject records and validation without a second setup step.
+- Subject changes are synchronized end to end: teachers get subject-specific attendance and Average Internal Marks entry immediately at `/teacher/semester/:semester/section/:section/attendance` and `/marks`, while student/parent records show the same catalog. The API and demo fallback retain scoped subject records and validation without a second setup step.
 
 ## Run locally in demo mode
 
@@ -68,21 +68,44 @@ npm run db:init
 npm run db:seed
 ```
 
-The schema is in [`database/schema.sql`](database/schema.sql), with department and subject seed notes in [`database/seed.sql`](database/seed.sql). `npm run db:init` also upgrades existing `students` tables with the expanded profile columns and widens legacy record-table subject codes for the shared catalog. Passwords are bcrypt-hashed by the seed script.
+The schema is in [`database/schema.sql`](database/schema.sql), with department and subject seed notes in [`database/seed.sql`](database/seed.sql). `npm run db:init` also upgrades existing `students` tables with the profile and Average Academic Performance columns for the shared catalog. Passwords are bcrypt-hashed by the seed script.
 
-## Prediction service
+## Average Academic Performance prediction service
 
-The Node API accepts the following feature contract:
+The prediction contract stores these six teacher-entered attributes on each student:
+
+- `attendancePercentage` — Attendance Percentage, 0–100
+- `averageInternalMarks` — Average Internal Marks, 0–100
+- `averageAssignmentScore` — Average Assignment Score, 0–100
+- `previousGpa` — Previous GPA, 0–10
+- `currentGpa` — Current GPA, 0–10; stored and displayed, but excluded from XGBoost
+- `participationScore` — Participation Score, 0–100
+
+XGBoost receives exactly these five inputs and returns a binary result plus a separate risk label:
 
 ```json
 {
-  "attendance": 82,
-  "ia1": 38,
-  "ia2": 41,
-  "assignmentMarks": 17,
-  "previousSgpa": 8.1,
-  "cgpa": 8.3,
-  "backlogs": 0
+  "attendancePercentage": 82,
+  "averageInternalMarks": 78,
+  "averageAssignmentScore": 84,
+  "previousGpa": 8.1,
+  "participationScore": 72
+}
+```
+
+The response shape is:
+
+```json
+{
+  "result": "Pass",
+  "risk": "Low Risk",
+  "inputs": {
+    "attendancePercentage": 82,
+    "averageInternalMarks": 78,
+    "averageAssignmentScore": 84,
+    "previousGpa": 8.1,
+    "participationScore": 72
+  }
 }
 ```
 
@@ -91,12 +114,12 @@ Run the Flask service in a Python virtual environment:
 ```bash
 cd ml-service
 python -m venv .venv
-. .venv/bin/activate       # Windows: .venv\\Scripts\\activate
+. .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python app.py
 ```
 
-Set `ML_SERVICE_URL=http://127.0.0.1:8000` in the Node `.env`. To use a trained model, place a binary classifier at `ml-service/model/camps_xgboost.joblib` or set `MODEL_PATH`. The model must expose `predict_proba` and consume the seven features in the order listed in `ml-service/app.py`.
+Set `ML_SERVICE_URL=http://127.0.0.1:8000` in the Node `.env`. To use a trained model, place a binary classifier at `ml-service/model/camps_xgboost.joblib` or set `MODEL_PATH`. The model must expose `predict_proba` and consume the five inputs in the order listed in `ml-service/app.py`.
 
 ## API surface
 
