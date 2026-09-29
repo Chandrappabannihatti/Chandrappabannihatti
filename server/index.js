@@ -181,7 +181,7 @@ async function canAccessRealtimeTarget(user, targetRole, targetId, studentId, se
   if (user.role === 'student' || user.role === 'parent') {
     if (!['teacher', 'admin'].includes(normalizedRole)) return false
     const ownStudent = await findMessageStudent(null, user.usn)
-    return Boolean(ownStudent && (!studentId || Number(ownStudent.id) === Number(studentId)) && (!target.department || target.department === user.department))
+    return Boolean(ownStudent && (!studentId || Number(ownStudent.id) === Number(studentId)) && (normalizedRole === 'admin' || !target.department || target.department === user.department))
   }
   if (user.role === 'teacher') {
     if (!['student', 'parent', 'admin'].includes(normalizedRole)) return false
@@ -1346,6 +1346,7 @@ app.post('/api/messages/send', authRequired, async (req, res, next) => {
       linkedStudent = await findMessageStudent(target.studentId)
       if (!linkedStudent) return res.status(404).json({ message: 'The recipient is not linked to an active student.' })
     }
+    if (!(await canAccessRealtimeTarget(req.user, receiverRole, receiverId, linkedStudent?.id))) return res.status(403).json({ message: 'The selected recipient is outside your access scope.' })
     if (req.user.role === 'parent' || req.user.role === 'student') {
       const ownStudent = await findMessageStudent(null, req.user.usn)
       if (!ownStudent || !linkedStudent || Number(ownStudent.id) !== Number(linkedStudent.id)) return res.status(403).json({ message: 'You may only message the teacher for your linked student.' })
