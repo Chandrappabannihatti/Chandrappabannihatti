@@ -28,15 +28,15 @@ export function getDemoSubjects() {
   return demoSubjects.map((subject) => ({ ...subject }))
 }
 
-export const demoSections = semesters.flatMap((semester) => ['A', 'B', 'C'].map((sectionName, index) => ({
-  sectionId: `CSE-${semester}-${sectionName}`,
-  department: 'CSE',
+export const demoSections = departments.flatMap((department) => semesters.flatMap((semester) => ['A', 'B', 'C'].map((sectionName, index) => ({
+  sectionId: `${department.code}-${semester}-${sectionName}`,
+  department: department.code,
   semester,
   sectionName,
   studentCount: 0,
   createdAt: '2026-06-01',
   sortOrder: index,
-})))
+}))))
 
 export const demoStudents = [
 
@@ -130,6 +130,10 @@ export const currentUser = {
   email: 'ananya.rao@pestrust.edu.in',
   initials: 'AR',
 }
+
+export const demoTeachers = [
+  { id: 1, employeeCode: 'FAC-CSE-001', name: 'Dr. Ananya Rao', email: 'teacher@camps.edu', department: 'CSE', designation: 'Assistant Professor', phone: '+91 98450 10001', isActive: true, initials: 'AR' },
+]
 
 export const studentUser = {
   name: 'Ishita Kulkarni',

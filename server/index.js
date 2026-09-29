@@ -9,7 +9,7 @@ import multer from 'multer'
 import * as XLSX from 'xlsx'
 import axios from 'axios'
 import { demoStore, nextId } from './demoStore.js'
-import { getPool, query } from './db.js'
+import { getPool, query, transaction } from './db.js'
 import { academicFields, cleanString, isEmail, isPhone, normalizeRisk, predictAcademic, predictionAttributeKeys, predictionFields, validDepartments, validSemesters, validateAchievement, validateStudent, validateSubject } from './utils.js'
 
 const app = express()
@@ -24,6 +24,20 @@ app.use(express.json({ limit: '2mb' }))
 app.use(express.urlencoded({ extended: true }))
 
 const publicUser = (user) => ({ id: user.id, name: user.name, role: user.role, department: user.department, semester: user.semester, usn: user.usn, email: user.email, designation: user.designation, initials: user.initials })
+
+function publicTeacher(teacher) {
+  return {
+    id: teacher.id,
+    employeeCode: teacher.employeeCode || teacher.employee_code,
+    name: teacher.name,
+    email: teacher.email,
+    department: teacher.department || teacher.department_code,
+    designation: teacher.designation || '',
+    phone: teacher.phone || '',
+    isActive: teacher.isActive ?? teacher.is_active ?? true,
+    initials: teacher.initials || String(teacher.name || 'Teacher').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(),
+  }
+}
 
 const demoAccounts = {
   admin: { id: 1, secret: 'admin@camps.edu', password: 'Admin@123', name: 'Kavya Menon', role: 'admin', department: 'ALL', email: 'admin@camps.edu', designation: 'Academic Administrator', initials: 'KM' },
@@ -212,8 +226,18 @@ app.post('/api/auth/login', async (req, res, next) => {
     if (!['admin', 'teacher', 'student', 'parent'].includes(role) || !identifier || !password) return res.status(400).json({ message: 'Role, identifier and password are required.' })
 
     if (useDemoData) {
-      const account = demoAccounts[role]
-      if (!account || identifier.toLowerCase() !== account.secret.toLowerCase() || password !== account.password) return res.status(401).json({ message: 'Invalid demo credentials.' })
+      let account = demoAccounts[role]
+      if (role === 'teacher') {
+        const savedTeacher = demoStore.teachers.find((teacher) => teacher.email.toLowerCase() === identifier.toLowerCase() && teacher.isActive !== false)
+        if (savedTeacher) {
+          const validPassword = savedTeacher.passwordHash
+            ? await bcrypt.compare(password, savedTeacher.passwordHash)
+            : identifier.toLowerCase() === demoAccounts.teacher.secret.toLowerCase() && password === demoAccounts.teacher.password
+          if (!validPassword) return res.status(401).json({ message: 'Invalid demo credentials.' })
+          account = { ...savedTeacher, secret: savedTeacher.email, role: 'teacher' }
+        }
+      }
+      if (!account || identifier.toLowerCase() !== account.secret.toLowerCase() || (role !== 'teacher' && password !== account.password)) return res.status(401).json({ message: 'Invalid demo credentials.' })
       const requestedDepartment = cleanString(req.body.department).toUpperCase()
       if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
       if (role !== 'admin' && requestedDepartment && requestedDepartment !== account.department) return res.status(403).json({ message: `This demo ${role} account is scoped to ${account.department}. Choose that department to continue.` })
@@ -237,6 +261,64 @@ app.post('/api/auth/login', async (req, res, next) => {
 })
 
 app.post('/api/auth/logout', authRequired, (_req, res) => res.json({ ok: true, message: 'Signed out.' }))
+
+app.get('/api/teachers', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const selectedDepartment = selectedAdminDepartment(req)
+    const requestedDepartment = selectedDepartment || cleanString(req.query.department).toUpperCase()
+    if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
+    if (useDemoData) {
+      const data = demoStore.teachers.filter((teacher) => !requestedDepartment || teacher.department === requestedDepartment).map(publicTeacher)
+      return res.json({ data })
+    }
+    const conditions = ['is_active = 1']
+    const params = {}
+    if (requestedDepartment) { conditions.push('department_code = :department'); params.department = requestedDepartment }
+    const rows = await query(`SELECT id, employee_code AS employeeCode, name, email, department_code AS department, designation, phone, is_active AS isActive FROM teachers WHERE ${conditions.join(' AND ')} ORDER BY name`, params)
+    res.json({ data: rows.map(publicTeacher) })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/teachers', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const input = {
+      employeeCode: cleanString(req.body.employeeCode || req.body.employee_code).toUpperCase(),
+      name: cleanString(req.body.name),
+      email: cleanString(req.body.email).toLowerCase(),
+      department: cleanString(req.body.department).toUpperCase(),
+      designation: cleanString(req.body.designation),
+      phone: cleanString(req.body.phone),
+      password: cleanString(req.body.password),
+    }
+    const selectedDepartment = selectedAdminDepartment(req)
+    const errors = []
+    if (!/^[A-Z0-9][A-Z0-9-]{2,29}$/.test(input.employeeCode)) errors.push('Employee code must be 3–30 letters, numbers or hyphens.')
+    if (!input.name) errors.push('Teacher name is required.')
+    if (!isEmail(input.email)) errors.push('A valid teacher email is required.')
+    if (!validDepartments.includes(input.department)) errors.push('Choose a valid department.')
+    if (selectedDepartment && input.department !== selectedDepartment) errors.push(`This admin session is scoped to ${selectedDepartment}.`)
+    if (input.designation.length > 100) errors.push('Designation must be 100 characters or fewer.')
+    if (input.phone && !isPhone(input.phone)) errors.push('Phone number is invalid.')
+    if (input.password.length < 8) errors.push('Password must be at least 8 characters.')
+    if (errors.length) return res.status(422).json({ message: 'Teacher validation failed.', errors })
+    const passwordHash = await bcrypt.hash(input.password, 10)
+    if (useDemoData) {
+      if (demoStore.teachers.some((teacher) => teacher.email.toLowerCase() === input.email || teacher.employeeCode.toUpperCase() === input.employeeCode)) return res.status(409).json({ message: 'A teacher with this email or employee code already exists.' })
+      const teacher = { id: nextId(demoStore.teachers), employeeCode: input.employeeCode, name: input.name, email: input.email, department: input.department, designation: input.designation, phone: input.phone, isActive: true, initials: input.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(), passwordHash }
+      demoStore.teachers.push(teacher)
+      return res.status(201).json({ data: publicTeacher(teacher) })
+    }
+    const teacher = await transaction(async (connection) => {
+      const [userResult] = await connection.query('INSERT INTO users (role, display_name, email, password_hash) VALUES (?, ?, ?, ?)', ['teacher', input.name, input.email, passwordHash])
+      const [teacherResult] = await connection.query('INSERT INTO teachers (user_id, employee_code, name, email, password_hash, department_code, designation, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [userResult.insertId, input.employeeCode, input.name, input.email, passwordHash, input.department, input.designation || null, input.phone || null])
+      return { id: teacherResult.insertId, ...input, isActive: true }
+    })
+    res.status(201).json({ data: publicTeacher(teacher) })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'A teacher with this email or employee code already exists.' })
+    next(error)
+  }
+})
 
 app.get('/api/sections', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
   try {

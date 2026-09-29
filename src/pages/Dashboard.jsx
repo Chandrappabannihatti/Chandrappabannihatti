@@ -62,19 +62,21 @@ import { useAuth } from '../context/AuthContext'
 import {
   attendanceTrend,
   cloneDemoStudents,
+  departments,
   currentUser,
   demoAchievements,
   demoAnnouncements,
   demoMessages,
   demoRemarks,
   demoStudents,
+  demoTeachers,
   getDemoSubjects,
   semesters,
   studentUser,
   subjectPerformance,
 } from '../data/demo'
 import { Brand } from './Landing'
-import api, { DEMO_MODE } from '../lib/api'
+import api, { DEMO_MODE, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
 
 const navItems = [
@@ -84,6 +86,13 @@ const navItems = [
   { key: 'messages', label: 'Messages', icon: FiMessageCircle, badge: 3 },
   { key: 'announcements', label: 'Announcements', icon: FiBell },
   { key: 'remarks', label: 'Teacher remarks', icon: FiEdit3 },
+]
+
+const adminNavItems = [
+  { key: 'overview', label: 'Overview', icon: FiGrid },
+  { key: 'people', label: 'People management', icon: FiUsers },
+  { key: 'students', label: 'Student records', icon: FiUsers },
+  { key: 'settings', label: 'Administration settings', icon: FiSettings },
 ]
 
 const learnerNavItems = [
@@ -121,7 +130,7 @@ function MiniSpark({ color = '#F07E5E' }) {
 function Layout({ user, activeView, onNavigate, onLogout, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const learner = user.role === 'student' || user.role === 'parent'
-  const items = learner ? learnerNavItems : navItems
+  const items = learner ? learnerNavItems : user.role === 'admin' ? adminNavItems : navItems
   const workspaceLabel = user.role === 'admin' ? 'Administration' : user.role === 'teacher' ? `${user.department} department` : `${user.department} · Semester ${user.semester}`
 
   const navigate = (key) => {
@@ -159,9 +168,10 @@ function PageIntro({ eyebrow, title, description, actions }) {
 
 function Overview({ user, students, onNavigate, onAddStudent, onUpload, onExport }) {
   const isAdmin = user.role === 'admin'
+  const departmentScope = user.department === 'ALL' ? '' : user.department
   const [selectedSemester, setSelectedSemester] = useState(7)
-  const department = isAdmin ? 'All departments' : user.department
-  const scopeStudents = useMemo(() => isAdmin ? students : students.filter((student) => student.department === user.department), [isAdmin, students, user.department])
+  const department = departmentScope || (isAdmin ? 'All departments' : user.department)
+  const scopeStudents = useMemo(() => departmentScope ? students.filter((student) => student.department === departmentScope) : students, [departmentScope, students])
   const semesterStudents = scopeStudents.filter((student) => student.semester === selectedSemester)
   const semesterCounts = semesters.map((semester) => ({ semester, count: scopeStudents.filter((student) => student.semester === semester).length }))
   const total = scopeStudents.length
@@ -177,9 +187,9 @@ function Overview({ user, students, onNavigate, onAddStudent, onUpload, onExport
   const currentDate = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date('2026-08-23T10:00:00Z'))
 
   return <div className="dashboard-content">
-    <PageIntro eyebrow={`${department} · Academic year 2026–27`} title={user.role === 'admin' ? 'Good morning, Kavya.' : 'Good morning, Ananya.'} description={`${currentDate}  ·  Here is what needs your attention today.`} actions={<><button type="button" className="button-ghost" onClick={onExport}><FiDownload /> Export report</button>{!isAdmin && <button type="button" className="button-primary" onClick={onAddStudent}><FiPlus /> Add student</button>}</>} />
+    <PageIntro eyebrow={`${department} · Academic year 2026–27`} title={user.role === 'admin' ? 'Good morning, Kavya.' : 'Good morning, Ananya.'} description={`${currentDate}  ·  Here is what needs your attention today.`} actions={<><button type="button" className="button-ghost" onClick={onExport}><FiDownload /> Export report</button><button type="button" className="button-primary" onClick={onAddStudent}><FiPlus /> Add student</button>{isAdmin && <button type="button" className="button-ghost" onClick={() => onNavigate('people')}><FiUsers /> Manage people</button>}</>} />
     <section className="semester-picker-card">
-      <div className="semester-picker-head"><div><p className="page-eyebrow">Teacher workspace</p><h2>Choose a semester</h2><p>Select a semester to view only students from your department.</p></div><span className="scope-pill"><FiShield /> {isAdmin ? 'All departments' : `${user.department} only`}</span></div>
+      <div className="semester-picker-head"><div><p className="page-eyebrow">Teacher workspace</p><h2>Choose a semester</h2><p>Select a semester to view only students from your department.</p></div><span className="scope-pill"><FiShield /> {departmentScope ? `${departmentScope} only` : isAdmin ? 'All departments' : `${user.department} only`}</span></div>
       <div className="semester-picker-list">{semesterCounts.map(({ semester, count }, index) => <button type="button" className={`semester-picker-item ${semester === selectedSemester ? 'active' : ''}`} key={semester} onClick={() => setSelectedSemester(semester)}><span className="semester-picker-number">{semesterOrdinals[index]}</span><span className="semester-picker-label">Semester {semester}</span><span className="semester-picker-count">{count} {count === 1 ? 'student' : 'students'}</span><FiChevronRight /></button>)}</div>
     </section>
     <div className="kpi-grid">
@@ -210,19 +220,21 @@ function StudentTable({ students, compact = false, onView, onEdit, onDelete }) {
 
 function StudentsView({ user, students, setStudents, onAddStudent, onUpload, onExport, showToast, selectedStudent, setSelectedStudent }) {
   const admin = user.role === 'admin'
+  const departmentScope = user.department === 'ALL' ? '' : user.department
   const [semester, setSemester] = useState(user.role === 'teacher' ? '7' : 'all')
-  const [department, setDepartment] = useState(admin ? 'all' : user.department)
+  const [department, setDepartment] = useState(admin ? departmentScope || 'all' : user.department)
   const [query, setQuery] = useState('')
   const [risk, setRisk] = useState('all')
   const [editing, setEditing] = useState(null)
-  const filtered = useMemo(() => students.filter((student) => (admin ? department === 'all' || student.department === department : student.department === user.department) && (semester === 'all' || String(student.semester) === semester) && (risk === 'all' || student.risk === risk) && `${student.name} ${student.usn}`.toLowerCase().includes(query.toLowerCase())), [students, admin, department, user.department, semester, risk, query])
+  const filtered = useMemo(() => students.filter((student) => (departmentScope ? student.department === departmentScope : admin ? department === 'all' || student.department === department : student.department === user.department) && (semester === 'all' || String(student.semester) === semester) && (risk === 'all' || student.risk === risk) && `${student.name} ${student.usn}`.toLowerCase().includes(query.toLowerCase())), [students, admin, department, departmentScope, user.department, semester, risk, query])
+  const scopeTotal = departmentScope ? students.filter((student) => student.department === departmentScope).length : students.length
   const saveEdit = async (updated) => { let record = updated; if (!DEMO_MODE) { try { const response = await api.updateStudent(updated.id, updated); record = response.data || updated } catch { showToast('API unavailable · updated locally for this session') } } setStudents((current) => current.map((student) => student.id === record.id ? record : student)); setEditing(null); showToast('Student record updated') }
   const deleteStudent = async (student) => { if (window.confirm(`Remove ${student.name} from the demo roster?`)) { if (!DEMO_MODE) { try { await api.deleteStudent(student.id) } catch { showToast('API unavailable · removed locally for this session') } } setStudents((current) => current.filter((item) => item.id !== student.id)); showToast('Student record removed') } }
-  return <div className="dashboard-content"><PageIntro eyebrow="Student management" title="Student records" description="Search, review and maintain the academic roster with confidence." actions={<><button className="button-ghost" type="button" onClick={onExport}><FiDownload /> Export .xlsx</button>{!admin && <><button className="button-ghost" type="button" onClick={onUpload}><FiUploadCloud /> Upload</button><button className="button-primary" type="button" onClick={onAddStudent}><FiPlus /> Manual add</button></>}</>} /><div className="toolbar-card"><div className="search-field"><FiSearch /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or USN" aria-label="Search by name or USN" /></div><div className="toolbar-filters"><select value={department} onChange={(event) => setDepartment(event.target.value)} aria-label="Filter department"><option value="all">All departments</option><option value="CSE">CSE</option><option value="AIML">AIML</option><option value="CSDS">CSDS</option><option value="CE">CE</option><option value="ECE">ECE</option><option value="EEE">EEE</option><option value="ME">ME</option><option value="CIVIL">CIVIL</option></select><select value={semester} onChange={(event) => setSemester(event.target.value)} aria-label="Filter semester"><option value="all">All semesters</option>{semesters.map((item) => <option key={item} value={item}>Semester {item}</option>)}</select><select value={risk} onChange={(event) => setRisk(event.target.value)} aria-label="Filter risk"><option value="all">All risk levels</option><option value="Low Risk">Low Risk</option><option value="Medium Risk">Medium Risk</option><option value="High Risk">High Risk</option></select></div></div><section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">Roster overview</h2><p className="card-description">Showing {filtered.length} of {students.length} demo records · sorted by USN</p></div><span className="department-note"><FiShield /> {admin ? 'Admin access' : `${user.department} access only`}</span></div><StudentTable students={filtered} onView={setSelectedStudent} onEdit={setEditing} onDelete={deleteStudent} /><div className="table-footer"><span>Showing {filtered.length ? 1 : 0}–{Math.min(filtered.length, 10)} of {filtered.length} students</span><div className="pagination"><button type="button" className="active">1</button><button type="button">2</button><button type="button"><FiChevronRight /></button></div></div></section>{editing && <StudentFormModal student={editing} existingStudents={students} onClose={() => setEditing(null)} onSave={saveEdit} />}{selectedStudent && <StudentDetailModal student={selectedStudent} onClose={() => setSelectedStudent(null)} />}</div>
+  return <div className="dashboard-content"><PageIntro eyebrow="Student management" title="Student records" description="Search, review and maintain the academic roster with confidence." actions={<><button className="button-ghost" type="button" onClick={onExport}><FiDownload /> Export .xlsx</button><button className="button-ghost" type="button" onClick={onUpload}><FiUploadCloud /> Upload</button><button className="button-primary" type="button" onClick={onAddStudent}><FiPlus /> Manual add</button></>} /><div className="toolbar-card"><div className="search-field"><FiSearch /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or USN" aria-label="Search by name or USN" /></div><div className="toolbar-filters"><select value={department} onChange={(event) => setDepartment(event.target.value)} aria-label="Filter department" disabled={Boolean(departmentScope)} title={departmentScope ? `Scoped to ${departmentScope}` : undefined}><option value="all">All departments</option><option value="CSE">CSE</option><option value="AIML">AIML</option><option value="CSDS">CSDS</option><option value="CE">CE</option><option value="ECE">ECE</option><option value="EEE">EEE</option><option value="ME">ME</option><option value="CIVIL">CIVIL</option></select><select value={semester} onChange={(event) => setSemester(event.target.value)} aria-label="Filter semester"><option value="all">All semesters</option>{semesters.map((item) => <option key={item} value={item}>Semester {item}</option>)}</select><select value={risk} onChange={(event) => setRisk(event.target.value)} aria-label="Filter risk"><option value="all">All risk levels</option><option value="Low Risk">Low Risk</option><option value="Medium Risk">Medium Risk</option><option value="High Risk">High Risk</option></select></div></div><section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">Roster overview</h2><p className="card-description">Showing {filtered.length} of {scopeTotal} records · sorted by USN</p></div><span className="department-note"><FiShield /> {admin ? 'Admin access' : `${user.department} access only`}</span></div><StudentTable students={filtered} onView={setSelectedStudent} onEdit={setEditing} onDelete={deleteStudent} /><div className="table-footer"><span>Showing {filtered.length ? 1 : 0}–{Math.min(filtered.length, 10)} of {filtered.length} students</span><div className="pagination"><button type="button" className="active">1</button><button type="button">2</button><button type="button"><FiChevronRight /></button></div></div></section>{editing && <StudentFormModal student={editing} departmentScope={departmentScope} existingStudents={students} onClose={() => setEditing(null)} onSave={saveEdit} />}{selectedStudent && <StudentDetailModal student={selectedStudent} onClose={() => setSelectedStudent(null)} />}</div>
 }
 
 function PredictionView({ user, students, showToast }) {
-  const scope = user.role === 'admin' ? students : students.filter((student) => student.department === user.department)
+  const scope = user.department === 'ALL' ? students : students.filter((student) => student.department === user.department)
   const [selectedId, setSelectedId] = useState(scope[0]?.id || '')
   const selected = scope.find((student) => String(student.id) === String(selectedId)) || scope[0]
   const [features, setFeatures] = useState(() => selected ? predictionFields(selected) : { attendancePercentage: 75, averageInternalMarks: 60, averageAssignmentScore: 75, previousGpa: 7, participationScore: 60 })
@@ -312,21 +324,97 @@ function SettingsView({ user, showToast }) {
   return <div className="dashboard-content"><PageIntro eyebrow="Workspace settings" title="Settings" description="Keep your academic workspace clear, secure and aligned." actions={<button className="button-primary" type="button" onClick={() => showToast('Settings saved for this session')}><FiCheck /> Save changes</button>} /><section className="content-card"><div className="settings-row"><div><h2 className="card-title">Profile & permissions</h2><p className="card-description">Your current identity and access scope</p></div><span className="live-tag" style={{ color: '#4f9276', background: '#eaf6f0', borderColor: '#d7ecdf' }}><i style={{ background: '#70B99B' }} /> JWT secured</span></div><div className="form-grid" style={{ marginTop: 24 }}><div className="form-field"><label className="plain-label">Full name</label><input className="field-control" value={user.name} readOnly /></div><div className="form-field"><label className="plain-label">Role</label><input className="field-control" value={user.role} readOnly /></div><div className="form-field"><label className="plain-label">Email</label><input className="field-control" value={user.email || 'admin@camps.edu'} readOnly /></div><div className="form-field"><label className="plain-label">Access scope</label><input className="field-control" value={user.department === 'ALL' ? 'All departments' : `${user.department} students only`} readOnly /></div></div></section></div>
 }
 
-function StudentFormModal({ student, existingStudents = [], onClose, onSave }) {
-  const [form, setForm] = useState(() => student ? { ...student, ...academicFields(student) } : { usn: '', name: '', department: 'CSE', semester: 7, section: 'A', gender: 'Female', email: '', phone: '', parentName: '', parentPhone: '', ...academicFields({ attendancePercentage: 75, averageInternalMarks: 60, averageAssignmentScore: 75, previousGpa: 7, currentGpa: 7, participationScore: 60 }) })
+function readLocalAdminTeachers() {
+  if (typeof window === 'undefined') return demoTeachers.map((teacher) => ({ ...teacher }))
+  try {
+    const stored = JSON.parse(window.localStorage.getItem('camps_teachers') || 'null')
+    if (Array.isArray(stored)) return stored
+  } catch { /* use bundled demo teachers */ }
+  return demoTeachers.map((teacher) => ({ ...teacher }))
+}
+
+function writeLocalAdminTeachers(teachers) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem('camps_teachers', JSON.stringify(teachers))
+}
+
+function AdminPeopleView({ user, token, students, onAddStudent, showToast }) {
+  const selectedDepartment = user.department === 'ALL' ? '' : user.department
+  const [teachers, setTeachers] = useState(() => readLocalAdminTeachers().filter((teacher) => !selectedDepartment || teacher.department === selectedDepartment))
+  const [teacherFormOpen, setTeacherFormOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const scopedStudents = selectedDepartment ? students.filter((student) => student.department === selectedDepartment) : students
+
+  useEffect(() => {
+    if (DEMO_MODE) return undefined
+    let mounted = true
+    setLoading(true)
+    setAuthToken(token)
+    api.getTeachers({ department: selectedDepartment || undefined }).then((response) => {
+      if (mounted && response.data) setTeachers(response.data)
+    }).catch(() => {
+      if (mounted) showToast('API unavailable · showing teachers saved in this session')
+    }).finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [selectedDepartment, token])
+
+  const saveTeacher = async (input) => {
+    const localTeacher = { ...input, id: Date.now(), isActive: true, initials: input.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
+    let saved = localTeacher
+    if (!DEMO_MODE) {
+      setAuthToken(token)
+      try {
+        const response = await api.createTeacher(input)
+        saved = response.data || localTeacher
+      } catch (error) {
+        throw new Error(error.response?.data?.errors?.join(' ') || error.response?.data?.message || 'Teacher could not be created.')
+      }
+    }
+    const allTeachers = readLocalAdminTeachers()
+    const nextAll = [...allTeachers.filter((teacher) => teacher.email !== saved.email), saved]
+    setTeachers(nextAll.filter((teacher) => !selectedDepartment || teacher.department === selectedDepartment))
+    writeLocalAdminTeachers(nextAll)
+    setTeacherFormOpen(false)
+    showToast(`${saved.name} was added as a teacher`)
+  }
+
+  return <div className="dashboard-content admin-people-page"><PageIntro eyebrow="Administration · People" title="People management" description="Add teacher accounts and student records from one department-aware workspace." actions={<><button className="button-ghost" type="button" onClick={onAddStudent}><FiPlus /> Add student</button><button className="button-primary" type="button" onClick={() => setTeacherFormOpen(true)}><FiPlus /> Add teacher</button></>} /><div className="semester-context-banner"><FiShield /><span>Teacher accounts and student records are created with the administrator’s selected department scope. New teachers can sign in immediately.</span></div><div className="section-grid admin-people-grid"><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Teacher accounts</h2><p className="card-description">{loading ? 'Loading accounts…' : `${teachers.length} active teacher${teachers.length === 1 ? '' : 's'}`}</p></div><span className="scope-pill"><FiUsers /> Faculty</span></div>{teachers.length ? <div className="admin-people-list">{teachers.map((teacher) => <div className="admin-person-row" key={teacher.id || teacher.email}><Avatar initials={teacher.initials || teacher.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase()} tone="sky" /><div><strong>{teacher.name}</strong><span>{teacher.employeeCode} · {teacher.department} · {teacher.designation || 'Teacher'}</span><small>{teacher.email}{teacher.phone ? ` · ${teacher.phone}` : ''}</small></div><span className="live-tag"><i /> Active</span></div>)}</div> : <div className="empty-state"><FiUsers /><span>No teacher accounts yet.</span></div>}</section><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Student records</h2><p className="card-description">Add a student manually or use the roster upload workflow.</p></div><span className="scope-pill"><FiUser /> {scopedStudents.length} loaded</span></div><div className="admin-people-action-card"><FiUsers /><strong>Student admission record</strong><span>Includes department, semester, section, contact details and all six Average Academic Performance attributes.</span><button className="button-primary" type="button" onClick={onAddStudent}><FiPlus /> Add student record</button></div></section></div>{teacherFormOpen && <TeacherForm department={selectedDepartment} onClose={() => setTeacherFormOpen(false)} onSave={saveTeacher} />}</div>
+}
+
+function TeacherForm({ department, onClose, onSave }) {
+  const [form, setForm] = useState({ employeeCode: '', name: '', email: '', department: department || 'CSE', designation: 'Assistant Professor', phone: '', password: 'Teacher@123' })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const update = (key, value) => { setError(''); setForm((current) => ({ ...current, [key]: value })) }
+  const submit = async (event) => {
+    event.preventDefault()
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]{2,29}$/.test(form.employeeCode.trim())) { setError('Use an employee code with 3–30 letters, numbers or hyphens.'); return }
+    if (!form.name.trim()) { setError('Teacher name is required.'); return }
+    if (!/^\S+@\S+\.\S+$/.test(form.email)) { setError('Enter a valid teacher email address.'); return }
+    if (form.password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    setSaving(true)
+    try { await onSave({ ...form, employeeCode: form.employeeCode.trim().toUpperCase(), name: form.name.trim(), email: form.email.trim().toLowerCase(), department: form.department.toUpperCase(), designation: form.designation.trim(), phone: form.phone.trim() }) } catch (saveError) { setError(saveError.message) } finally { setSaving(false) }
+  }
+  return <div className="modal-backdrop"><form className="modal-card wide" onSubmit={submit}><div className="modal-head"><div><h2>Add teacher account</h2><p>Create an administrator-managed teacher login.</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body"><div className="form-grid"><div className="form-field"><label className="plain-label">Employee code</label><input className="field-control" value={form.employeeCode} onChange={(event) => update('employeeCode', event.target.value.toUpperCase())} placeholder="FAC-CSE-002" required /></div><div className="form-field"><label className="plain-label">Teacher name</label><input className="field-control" value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Full name" required /></div><div className="form-field"><label className="plain-label">Email address</label><input className="field-control" type="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="teacher@pestrust.edu.in" required /></div><div className="form-field"><label className="plain-label">Department</label>{department ? <input className="field-control locked-field" value={department} readOnly /> : <select className="field-control" value={form.department} onChange={(event) => update('department', event.target.value)}>{departments.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}</select>}</div><div className="form-field"><label className="plain-label">Designation</label><input className="field-control" value={form.designation} onChange={(event) => update('designation', event.target.value)} placeholder="Assistant Professor" /></div><div className="form-field"><label className="plain-label">Phone number</label><input className="field-control" value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="+91 98450 00000" /></div><div className="form-field full"><label className="plain-label">Temporary password</label><input className="field-control" type="password" value={form.password} onChange={(event) => update('password', event.target.value)} minLength="8" required /></div></div>{error && <div className="validation-error">{error}</div>}</div><div className="modal-foot"><button className="button-ghost" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="button-primary" type="submit" disabled={saving}><FiCheck /> {saving ? 'Creating…' : 'Create teacher account'}</button></div></form></div>
+}
+
+function StudentFormModal({ student, departmentScope = '', existingStudents = [], onClose, onSave }) {
+  const defaultDepartment = departmentScope || student?.department || 'CSE'
+  const [form, setForm] = useState(() => student ? { ...student, department: departmentScope || student.department, ...academicFields(student) } : { usn: '', name: '', department: defaultDepartment, semester: 7, section: 'A', gender: 'Female', email: '', phone: '', parentName: '', parentPhone: '', ...academicFields({ attendancePercentage: 75, averageInternalMarks: 60, averageAssignmentScore: 75, previousGpa: 7, currentGpa: 7, participationScore: 60 }) })
   const [error, setError] = useState('')
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }))
   const submit = (event) => {
     event.preventDefault()
     if (!form.usn || !form.name || !form.email) { setError('USN, name and email are required.'); return }
     if (existingStudents.some((item) => item.usn.toUpperCase() === form.usn.toUpperCase() && item.id !== form.id)) { setError('This USN already exists in the roster.'); return }
+    if (departmentScope && form.department !== departmentScope) { setError(`This account is scoped to ${departmentScope}.`); return }
     if (form.phone && !/^\+?[0-9 ()-]{10,18}$/.test(form.phone)) { setError('Enter a valid phone number.'); return }
     const academic = academicFields(form)
     const invalid = ACADEMIC_ATTRIBUTES.find(({ key, min, max }) => academic[key] < min || academic[key] > max)
     if (invalid) { setError(`${invalid.label} must be between ${invalid.min} and ${invalid.max}.`); return }
     onSave({ ...form, ...academic, ...predictAcademic(academic), id: form.id || Date.now(), semester: Number(form.semester), usn: form.usn.toUpperCase(), initials: form.initials || form.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() })
   }
-  return <div className="modal-backdrop"><form className="modal-card wide" onSubmit={submit}><div className="modal-head"><div><h2>{student ? 'Edit student record' : 'Add a student'}</h2><p>Capture roster details and the teacher-entered academic performance.</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body"><div className="form-grid"><div className="form-field"><label className="plain-label">USN</label><input className="field-control" value={form.usn} onChange={(event) => update('usn', event.target.value.toUpperCase())} placeholder="4PM25CS101" required /></div><div className="form-field"><label className="plain-label">Student name</label><input className="field-control" value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Full name" required /></div><div className="form-field"><label className="plain-label">Department</label><select className="field-control" value={form.department} onChange={(event) => update('department', event.target.value)}><option>CSE</option><option>AIML</option><option>CSDS</option><option>CE</option><option>ECE</option><option>EEE</option><option>ME</option><option>CIVIL</option></select></div><div className="form-field"><label className="plain-label">Semester</label><select className="field-control" value={form.semester} onChange={(event) => update('semester', event.target.value)}>{semesters.map((item) => <option key={item}>{item}</option>)}</select></div><div className="form-field"><label className="plain-label">Section</label><select className="field-control" value={form.section} onChange={(event) => update('section', event.target.value)}><option>A</option><option>B</option><option>C</option></select></div><div className="form-field"><label className="plain-label">Gender</label><select className="field-control" value={form.gender} onChange={(event) => update('gender', event.target.value)}><option>Female</option><option>Male</option><option>Other</option></select></div><div className="form-field"><label className="plain-label">Email</label><input className="field-control" type="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="student@pestrust.edu.in" required /></div><div className="form-field"><label className="plain-label">Phone</label><input className="field-control" value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div><div className="form-field"><label className="plain-label">Parent name</label><input className="field-control" value={form.parentName} onChange={(event) => update('parentName', event.target.value)} placeholder="Parent / guardian name" /></div><div className="form-field"><label className="plain-label">Parent phone</label><input className="field-control" value={form.parentPhone} onChange={(event) => update('parentPhone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div></div><div className="profile-card-heading add-form-section-heading"><div><h2>Average Academic Performance</h2><p>These six attributes are entered directly by the teacher and stored on the student record.</p></div><FiActivity /></div><div className="form-grid">{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix, min, max, step }) => <div className="form-field" key={key}><label className="plain-label">{label}</label><div className="academic-input-wrap"><input className="field-control" type="number" min={min} max={max} step={step} value={form[key]} onChange={(event) => update(key, event.target.value)} required /><small>{suffix}</small></div></div>)}</div>{error && <div className="validation-error">{error}</div>}</div><div className="modal-foot"><button className="button-ghost" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit"><FiCheck /> {student ? 'Save changes' : 'Save student'}</button></div></form></div>
+  return <div className="modal-backdrop"><form className="modal-card wide" onSubmit={submit}><div className="modal-head"><div><h2>{student ? 'Edit student record' : 'Add a student'}</h2><p>Capture roster details and the teacher-entered academic performance.</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body"><div className="form-grid"><div className="form-field"><label className="plain-label">USN</label><input className="field-control" value={form.usn} onChange={(event) => update('usn', event.target.value.toUpperCase())} placeholder="4PM25CS101" required /></div><div className="form-field"><label className="plain-label">Student name</label><input className="field-control" value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Full name" required /></div><div className="form-field"><label className="plain-label">Department</label>{departmentScope ? <input className="field-control locked-field" value={departmentScope} readOnly /> : <select className="field-control" value={form.department} onChange={(event) => update('department', event.target.value)}><option>CSE</option><option>AIML</option><option>CSDS</option><option>CE</option><option>ECE</option><option>EEE</option><option>ME</option><option>CIVIL</option></select>}</div><div className="form-field"><label className="plain-label">Semester</label><select className="field-control" value={form.semester} onChange={(event) => update('semester', event.target.value)}>{semesters.map((item) => <option key={item}>{item}</option>)}</select></div><div className="form-field"><label className="plain-label">Section</label><select className="field-control" value={form.section} onChange={(event) => update('section', event.target.value)}><option>A</option><option>B</option><option>C</option><option>D</option></select></div><div className="form-field"><label className="plain-label">Gender</label><select className="field-control" value={form.gender} onChange={(event) => update('gender', event.target.value)}><option>Female</option><option>Male</option><option>Other</option></select></div><div className="form-field"><label className="plain-label">Email</label><input className="field-control" type="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="student@pestrust.edu.in" required /></div><div className="form-field"><label className="plain-label">Phone</label><input className="field-control" value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div><div className="form-field"><label className="plain-label">Parent name</label><input className="field-control" value={form.parentName} onChange={(event) => update('parentName', event.target.value)} placeholder="Parent / guardian name" /></div><div className="form-field"><label className="plain-label">Parent phone</label><input className="field-control" value={form.parentPhone} onChange={(event) => update('parentPhone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div></div><div className="profile-card-heading add-form-section-heading"><div><h2>Average Academic Performance</h2><p>These six attributes are entered directly by the teacher and stored on the student record.</p></div><FiActivity /></div><div className="form-grid">{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix, min, max, step }) => <div className="form-field" key={key}><label className="plain-label">{label}</label><div className="academic-input-wrap"><input className="field-control" type="number" min={min} max={max} step={step} value={form[key]} onChange={(event) => update(key, event.target.value)} required /><small>{suffix}</small></div></div>)}</div>{error && <div className="validation-error">{error}</div>}</div><div className="modal-foot"><button className="button-ghost" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit"><FiCheck /> {student ? 'Save changes' : 'Save student'}</button></div></form></div>
 }
 
 function StudentDetailModal({ student, onClose }) {
@@ -336,7 +424,7 @@ function StudentDetailModal({ student, onClose }) {
   return <div className="modal-backdrop"><div className="modal-card wide"><div className="modal-head"><div><h2>Average Academic Performance</h2><p>{student.name} · {student.department} · Semester {student.semester}</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body"><div className="student-detail-hero"><Avatar initials={student.initials} tone="mint" /><div><h2>{student.name}</h2><p>{student.usn} · Section {student.section} · {student.email}</p></div><span style={{ marginLeft: 'auto' }}><RiskBadge risk={risk} /></span></div><div className="profile-stat-grid academic-performance-grid" style={{ marginTop: 18 }}>{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix }) => <div key={key}><span>{label}</span><strong>{Number(academic[key]).toFixed(1)}</strong><small>{suffix}</small></div>)}</div><div className="detail-list" style={{ marginTop: 18 }}><div className="detail-item"><span>Prediction</span><strong>{outcome}</strong></div><div className="detail-item"><span>Risk level</span><strong>{risk}</strong></div><div className="detail-item"><span>Parent / guardian</span><strong>{student.parentName || 'Not recorded'}</strong></div><div className="detail-item"><span>Parent phone</span><strong>{student.parentPhone || 'Not recorded'}</strong></div></div></div><div className="modal-foot"><button className="button-primary" type="button" onClick={onClose}>Done</button></div></div></div>
 }
 
-function UploadModal({ onClose, onImport }) {
+function UploadModal({ departmentScope = '', onClose, onImport }) {
   const [file, setFile] = useState(null)
   const [rows, setRows] = useState([])
   const [errors, setErrors] = useState([])
@@ -357,7 +445,7 @@ function UploadModal({ onClose, onImport }) {
           id: Date.now() + index,
           usn: row.USN || row.usn || '',
           name: row.Name || row.name || '',
-          department: row.Department || row.department || 'CSE',
+          department: String(row.Department || row.department || departmentScope || 'CSE').trim().toUpperCase(),
           semester: Number(row.Semester || row.semester || 1),
           section: row.Section || row.section || 'A',
           email: row.Email || row.email || '',
@@ -374,6 +462,7 @@ function UploadModal({ onClose, onImport }) {
         const validation = []
         normalized.forEach((row, index) => {
           if (!row.usn || !row.name || !row.email) validation.push(`Row ${index + 2}: USN, name and email are required.`)
+          if (departmentScope && row.department !== departmentScope) validation.push(`Row ${index + 2}: department must be ${departmentScope} for this account.`)
           if (row.semester < 1 || row.semester > 8) validation.push(`Row ${index + 2}: semester must be between 1 and 8.`)
           if (row.email && !/^\S+@\S+\.\S+$/.test(row.email)) validation.push(`Row ${index + 2}: invalid email.`)
           const academicColumns = [
@@ -419,7 +508,7 @@ function RemarkModal({ students, onClose, onCreate }) {
 }
 
 export default function Dashboard() {
-  const { user, logout } = useAuth()
+  const { user, logout, token } = useAuth()
   const navigate = useNavigate()
   const [activeView, setActiveView] = useState('overview')
   const [students, setStudents] = useState(() => cloneDemoStudents())
@@ -465,9 +554,37 @@ export default function Dashboard() {
   }, [])
 
   const showToast = (message) => { setToast(message); window.setTimeout(() => setToast(''), 3000) }
-  const exportStudents = () => { const rows = students.map((student) => ({ USN: student.usn, Name: student.name, Department: student.department, Semester: student.semester, Section: student.section, Gender: student.gender || '', Email: student.email, Phone: student.phone || '', 'Parent Name': student.parentName || '', 'Parent Phone': student.parentPhone || '', 'Attendance Percentage': student.attendancePercentage, 'Average Internal Marks': student.averageInternalMarks, 'Average Assignment Score': student.averageAssignmentScore, 'Previous GPA': student.previousGpa, 'Current GPA': student.currentGpa, 'Participation Score': student.participationScore, Result: student.result || predictAcademic(student).result, Risk: student.risk || predictAcademic(student).risk })); const worksheet = XLSX.utils.json_to_sheet(rows); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, 'Students'); XLSX.writeFile(workbook, 'camps-student-roster.xlsx'); showToast('Roster exported as camps-student-roster.xlsx') }
-  const importStudents = async (rows) => { const mapped = rows.map((row) => { const academic = academicFields(row); return { ...row, ...academic, ...predictAcademic(academic), id: Date.now() + Math.random(), semester: Number(row.semester), initials: row.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() } }); let savedRows = mapped; if (!DEMO_MODE) { const responses = await Promise.all(mapped.map(async (row) => { try { const response = await api.createStudent(row); return response.data || row } catch { return row } })); savedRows = responses } setStudents((current) => [...savedRows, ...current]); showToast(`${savedRows.length} student${savedRows.length === 1 ? '' : 's'} imported`) }
-  const saveNewStudent = async (student) => { const academic = academicFields(student); let saved = { ...student, ...academic, ...predictAcademic(academic) }; if (!DEMO_MODE) { try { const response = await api.createStudent(saved); saved = response.data || saved } catch { showToast('API unavailable · saved locally for this session') } } setStudents((current) => [saved, ...current]); setStudentModalOpen(false); showToast('Student saved to the roster') }
+  const exportStudents = () => { const departmentScope = user.department === 'ALL' ? '' : user.department; const visibleStudents = departmentScope ? students.filter((student) => student.department === departmentScope) : students; const rows = visibleStudents.map((student) => ({ USN: student.usn, Name: student.name, Department: student.department, Semester: student.semester, Section: student.section, Gender: student.gender || '', Email: student.email, Phone: student.phone || '', 'Parent Name': student.parentName || '', 'Parent Phone': student.parentPhone || '', 'Attendance Percentage': student.attendancePercentage, 'Average Internal Marks': student.averageInternalMarks, 'Average Assignment Score': student.averageAssignmentScore, 'Previous GPA': student.previousGpa, 'Current GPA': student.currentGpa, 'Participation Score': student.participationScore, Result: student.result || predictAcademic(student).result, Risk: student.risk || predictAcademic(student).risk })); const worksheet = XLSX.utils.json_to_sheet(rows); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, 'Students'); XLSX.writeFile(workbook, 'camps-student-roster.xlsx'); showToast('Roster exported as camps-student-roster.xlsx') }
+  const importStudents = async (rows) => {
+    const departmentScope = user.department === 'ALL' ? '' : user.department
+    const outOfScope = departmentScope && rows.some((row) => String(row.department).toUpperCase() !== departmentScope)
+    if (outOfScope) { showToast(`Import blocked · use ${departmentScope} student records only`); return }
+    const mapped = rows.map((row) => { const academic = academicFields(row); return { ...row, department: String(row.department).toUpperCase(), ...academic, ...predictAcademic(academic), id: Date.now() + Math.random(), semester: Number(row.semester), initials: row.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() } })
+    let savedRows = mapped
+    let failed = 0
+    if (!DEMO_MODE) {
+      setAuthToken(token)
+      const responses = await Promise.all(mapped.map(async (row) => {
+        try { const response = await api.createStudent(row, token); return response.data || row } catch { failed += 1; return null }
+      }))
+      savedRows = responses.filter(Boolean)
+    }
+    if (savedRows.length) setStudents((current) => [...savedRows, ...current])
+    showToast(`${savedRows.length} student${savedRows.length === 1 ? '' : 's'} imported${failed ? ` · ${failed} rejected by the API` : ''}`)
+  }
+  const saveNewStudent = async (student) => {
+    const departmentScope = user.department === 'ALL' ? '' : user.department
+    if (departmentScope && student.department !== departmentScope) { showToast(`Save blocked · this account is scoped to ${departmentScope}`); return }
+    const academic = academicFields(student)
+    let saved = { ...student, department: String(student.department).toUpperCase(), ...academic, ...predictAcademic(academic) }
+    if (!DEMO_MODE) {
+      try { setAuthToken(token); const response = await api.createStudent(saved, token); saved = response.data || saved } catch (error) {
+        if (error.response) { showToast(error.response.data?.message || 'Student could not be saved'); return }
+        showToast('API unavailable · saved locally for this session')
+      }
+    }
+    setStudents((current) => [saved, ...current]); setStudentModalOpen(false); showToast('Student saved to the roster')
+  }
   const navigateView = (view) => setActiveView(view)
   const signOut = async () => { await logout(); navigate('/', { replace: true }) }
 
@@ -483,6 +600,7 @@ export default function Dashboard() {
     }
     if (activeView === 'students') return <StudentsView user={user} students={students} setStudents={setStudents} onAddStudent={() => setStudentModalOpen(true)} onUpload={() => setUploadOpen(true)} onExport={exportStudents} showToast={showToast} selectedStudent={selectedStudent} setSelectedStudent={setSelectedStudent} />
     if (activeView === 'prediction') return <PredictionView user={user} students={students} showToast={showToast} />
+    if (user.role === 'admin' && activeView === 'people') return <AdminPeopleView user={user} token={token} students={students} onAddStudent={() => setStudentModalOpen(true)} showToast={showToast} />
     if (activeView === 'messages') return <MessagesView user={user} messages={messages} setMessages={setMessages} showToast={showToast} />
     if (activeView === 'announcements') return <AnnouncementsView announcements={announcements} setAnnouncements={setAnnouncements} user={user} showToast={showToast} />
     if (activeView === 'remarks') return <RemarksView remarks={remarks} setRemarks={setRemarks} students={students} user={user} showToast={showToast} />
@@ -490,5 +608,5 @@ export default function Dashboard() {
     return <Overview user={user} students={students} onNavigate={navigateView} onAddStudent={() => setStudentModalOpen(true)} onUpload={() => setUploadOpen(true)} onExport={exportStudents} />
   }
 
-  return <Layout user={user} activeView={activeView} onNavigate={navigateView} onLogout={signOut}>{renderContent()}{!isLearner && studentModalOpen && <StudentFormModal existingStudents={students} onClose={() => setStudentModalOpen(false)} onSave={saveNewStudent} />}{!isLearner && uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} onImport={importStudents} />}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</Layout>
+  return <Layout user={user} activeView={activeView} onNavigate={navigateView} onLogout={signOut}>{renderContent()}{!isLearner && studentModalOpen && <StudentFormModal departmentScope={user.department === 'ALL' ? '' : user.department} existingStudents={students} onClose={() => setStudentModalOpen(false)} onSave={saveNewStudent} />}{!isLearner && uploadOpen && <UploadModal departmentScope={user.department === 'ALL' ? '' : user.department} onClose={() => setUploadOpen(false)} onImport={importStudents} />}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</Layout>
 }

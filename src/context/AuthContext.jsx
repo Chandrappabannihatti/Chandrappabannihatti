@@ -55,14 +55,29 @@ export function AuthProvider({ children }) {
       }
     }
 
-    const account = demoAccounts[normalizedRole]
-    if (!account || identifier.trim().toLowerCase() !== account.secret.toLowerCase() || password !== account.password) {
-      throw new Error(`Use the demo ${normalizedRole} credentials shown below to continue.`)
+    let user
+    let localTeacher = null
+    if (normalizedRole === 'teacher') {
+      try {
+        const storedTeachers = JSON.parse(localStorage.getItem('camps_teachers') || '[]')
+        localTeacher = Array.isArray(storedTeachers) ? storedTeachers.find((teacher) => teacher.email?.toLowerCase() === identifier.trim().toLowerCase() && teacher.password) : null
+      } catch { /* fall through to the bundled demo account */ }
     }
-    if (normalizedRole !== 'admin' && requestedDepartment && requestedDepartment !== account.user.department) {
-      throw new Error(`This demo ${normalizedRole} account is scoped to ${account.user.department}. Choose that department to continue.`)
+    if (localTeacher) {
+      if (password !== localTeacher.password) throw new Error('Invalid teacher credentials.')
+      if (requestedDepartment && requestedDepartment !== localTeacher.department) throw new Error(`This demo teacher account is scoped to ${localTeacher.department}. Choose that department to continue.`)
+      const { password: _password, ...teacherProfile } = localTeacher
+      user = { ...teacherProfile, role: 'teacher', department: localTeacher.department }
+    } else {
+      const account = demoAccounts[normalizedRole]
+      if (!account || identifier.trim().toLowerCase() !== account.secret.toLowerCase() || password !== account.password) {
+        throw new Error(`Use the demo ${normalizedRole} credentials shown below to continue.`)
+      }
+      if (normalizedRole !== 'admin' && requestedDepartment && requestedDepartment !== account.user.department) {
+        throw new Error(`This demo ${normalizedRole} account is scoped to ${account.user.department}. Choose that department to continue.`)
+      }
+      user = { ...account.user, department: normalizedRole === 'admin' ? requestedDepartment || account.user.department : account.user.department }
     }
-    const user = { ...account.user, department: normalizedRole === 'admin' ? requestedDepartment || account.user.department : account.user.department }
     const next = { token: LOCAL_SESSION_TOKEN, user }
     persistSession(next)
     setAuthToken(next.token)

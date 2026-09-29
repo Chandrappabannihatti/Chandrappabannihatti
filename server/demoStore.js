@@ -1,10 +1,11 @@
-import { demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, demoStudents, demoSubjects } from '../src/data/demo.js'
+import { demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, demoStudents, demoSubjects, demoTeachers } from '../src/data/demo.js'
 
 export const demoStore = {
   sections: demoSections.map((section) => ({ ...section })),
   subjects: demoSubjects.map((subject) => ({ ...subject })),
   subjectRecords: [],
   students: demoStudents.map((student) => ({ ...student })),
+  teachers: demoTeachers.map((teacher) => ({ ...teacher, passwordHash: '' })),
   messages: demoMessages.map((message) => ({ ...message })),
   announcements: demoAnnouncements.map((announcement) => ({ ...announcement })),
   remarks: demoRemarks.map((remark) => ({ ...remark })),

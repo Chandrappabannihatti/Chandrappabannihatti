@@ -734,6 +734,24 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 .semester-context-banner svg { flex: 0 0 auto; color: #5ba080; font-size: 14px; }
 .semester-context-banner strong { color: #376d58; }
 .semester-context-banner .live-tag { margin-left: auto; }
+.admin-people-grid { grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); }
+.admin-people-list { display: grid; gap: 8px; margin-top: 18px; }
+.admin-person-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid #e6eee9; border-radius: 11px; padding: 10px; background: #fbfdfc; }
+.admin-person-row > div { display: grid; min-width: 0; gap: 3px; }
+.admin-person-row strong { overflow: hidden; color: var(--ink); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.admin-person-row span:not(.live-tag), .admin-person-row small { overflow: hidden; color: #829592; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.admin-person-row small { color: #a0aba8; }
+.admin-person-row .avatar { width: 36px; height: 36px; border-radius: 10px; font-size: 10px; }
+.admin-person-row .live-tag { padding: 6px 8px; }
+.admin-people-action-card { display: grid; justify-items: start; gap: 8px; min-height: 180px; margin-top: 18px; border: 1px dashed #b9d9ca; border-radius: 13px; padding: 19px; color: #78908b; background: #f5fbf7; }
+.admin-people-action-card > svg { color: #62a888; font-size: 23px; }
+.admin-people-action-card strong { color: #315c50; font-size: 12px; }
+.admin-people-action-card > span { max-width: 330px; color: #80938f; font-size: 10px; line-height: 1.55; }
+.admin-people-action-card .button-primary { margin-top: 4px; }
+@media (max-width: 760px) {
+  .admin-people-grid { grid-template-columns: 1fr; }
+}
+
 .inline-composer { margin-bottom: 13px; }
 .inline-composer .form-grid { gap: 12px 15px; }
 .composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 17px; border-top: 1px solid #eeece7; padding-top: 14px; }
