@@ -136,6 +136,7 @@ export default function ChatView({
   const selectedKeyRef = useRef('')
   const contactsRef = useRef(contacts)
   const notifyRef = useRef(notify)
+  const historyRef = useRef(null)
   const aliveRef = useRef(true)
 
   useEffect(() => { selectedKeyRef.current = selectedKey }, [selectedKey])
@@ -229,6 +230,11 @@ export default function ChatView({
     selectedMessages.forEach((message) => { if (!message.read && samePerson(message, user.id, user.role, 'receiver')) markRead(message) })
     // Read receipts are intentionally triggered by the active conversation.
   }, [selectedKey, messages.length])
+
+  useEffect(() => {
+    const history = historyRef.current
+    if (history) history.scrollTop = history.scrollHeight
+  }, [selectedKey, selectedMessages.length, typing])
 
   const websocketUrl = () => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -377,7 +383,7 @@ export default function ChatView({
       <section className="chat-conversation">
         {selectedContact ? <>
           <header className="chat-conversation-head"><div className="chat-recipient"><Avatar contact={selectedContact} /><div><h2>{selectedContact.name}</h2><p><span className={`chat-presence-inline ${selectedContact.online ? 'online' : ''}`} />{selectedContact.relationship} · {selectedContact.online ? 'Online now' : 'Offline'}{selectedContact.studentName && selectedContact.role === 'parent' ? ` · ${selectedContact.studentName}` : ''}</p></div></div><div className="chat-header-actions"><span className="chat-private-label"><FiWifi /> Private</span><button type="button" aria-label="Conversation options"><FiPlus /></button></div></header>
-          <div className="chat-history" aria-live="polite">{selectedMessages.length ? selectedMessages.map((message) => { const outgoing = samePerson(message, user.id, user.role, 'sender'); return <div className={`chat-message-row ${outgoing ? 'outgoing' : 'incoming'}`} key={message.id}><div className="chat-message-bubble"><p>{message.body}</p><footer><time>{messageTime(message)}</time><StatusMark message={message} outgoing={outgoing} /></footer></div></div> }) : <div className="chat-empty-history"><span><FiMessageCircle /></span><h3>Start the conversation</h3><p>Messages to {selectedContact.name} are private to this chat.</p></div>}{typing && selectedContact && typing.key === contactKey(selectedContact) && <div className="chat-typing"><span><i /><i /><i /></span>{typing.name} is typing…</div>}</div>
+          <div className="chat-history" ref={historyRef} aria-live="polite">{selectedMessages.length ? selectedMessages.map((message) => { const outgoing = samePerson(message, user.id, user.role, 'sender'); return <div className={`chat-message-row ${outgoing ? 'outgoing' : 'incoming'}`} key={message.id}><div className="chat-message-bubble"><p>{message.body}</p><footer><time>{messageTime(message)}</time><StatusMark message={message} outgoing={outgoing} /></footer></div></div> }) : <div className="chat-empty-history"><span><FiMessageCircle /></span><h3>Start the conversation</h3><p>Messages to {selectedContact.name} are private to this chat.</p></div>}{typing && selectedContact && typing.key === contactKey(selectedContact) && <div className="chat-typing"><span><i /><i /><i /></span>{typing.name} is typing…</div>}</div>
           <form className="chat-composer" onSubmit={send}><div className="chat-composer-tools"><button type="button" aria-label="Add attachment" title="Attachments are coming soon" disabled><FiPaperclip /></button><button type="button" className={showEmoji ? 'active' : ''} aria-label="Add emoji" onClick={() => setShowEmoji((value) => !value)}><FiSmile /></button>{showEmoji && <div className="chat-emoji-popover">{EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => { setDraft((value) => `${value}${emoji}`); setShowEmoji(false) }}>{emoji}</button>)}</div>}</div><textarea value={draft} onChange={onDraftChange} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(event) } }} placeholder={`Message ${selectedContact.name}…`} aria-label={`Message ${selectedContact.name}`} rows="1" /><button className="chat-send-button" type="submit" disabled={!draft.trim() || sending} aria-label="Send message">{sending ? <FiClock /> : <FiSend />}</button></form>
         </> : <div className="chat-no-selection"><FiMessageCircle /><h2>Select someone to chat</h2><p>Search the people in your communication scope to start a private conversation.</p></div>}
       </section>
