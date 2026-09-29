@@ -1058,6 +1058,7 @@ app.post('/api/messages/send', authRequired, async (req, res, next) => {
     if (!target) return res.status(404).json({ message: 'The selected recipient could not be found.' })
     receiverId = Number(target.id)
     if (target.studentId) {
+      if (linkedStudent && Number(linkedStudent.id) !== Number(target.studentId)) return res.status(403).json({ message: 'The selected recipient does not match the selected student.' })
       linkedStudent = await findMessageStudent(target.studentId)
       if (!linkedStudent) return res.status(404).json({ message: 'The recipient is not linked to an active student.' })
     }

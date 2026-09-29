@@ -403,7 +403,9 @@ function SemesterMessages({ user, semester, section = '', students, messages, se
     try {
       let saved = fallback
       if (!DEMO_MODE) {
-        const response = await api.sendMessage({ recipientRole, recipientId, studentId: Number(student.id), subject: form.subject.trim(), body: form.body.trim(), department: user.department, semester, section })
+        const request = { recipientRole, studentId: Number(student.id), subject: form.subject.trim(), body: form.body.trim(), department: user.department, semester, section }
+        if (recipientRole !== 'parent' || student.parentId || student.parent_id) request.recipientId = recipientRole === 'parent' ? Number(student.parentId || student.parent_id) : recipientId
+        const response = await api.sendMessage(request)
         saved = response.data || fallback
       }
       setMessages((current) => [saved, ...current])
