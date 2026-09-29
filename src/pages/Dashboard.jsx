@@ -277,8 +277,8 @@ function MessagesView({ user, messages, setMessages, setUnreadCount = () => {}, 
   const isIncoming = (message) => message.senderRole ? message.senderRole !== user.role : message.sender !== user.name
   const selected = messages.find((message) => message.id === selectedId) || visible[0]
   useEffect(() => {
-    if (!selectedId && visible[0]) setSelectedId(visible[0].id)
-  }, [selectedId, visible])
+    if (visible[0] && (!selectedId || !messages.some((message) => message.id === selectedId))) setSelectedId(visible[0].id)
+  }, [selectedId, messages, visible])
   useEffect(() => {
     const opened = messages.find((message) => message.id === selectedId)
     if (!opened || opened.read || !isIncoming(opened)) return
@@ -567,7 +567,7 @@ export default function Dashboard() {
       if (messageResult.status === 'fulfilled' && messageResult.value) {
         const nextMessages = messageResult.value.data || []
         setMessages(nextMessages)
-        setUnreadCount(Number(messageResult.value.unreadCount ?? nextMessages.filter((message) => !message.read && message.senderRole !== user.role).length))
+        setUnreadCount(Number(messageResult.value.unreadCount ?? nextMessages.filter((message) => !message.read && (message.senderRole ? message.senderRole !== user.role : message.sender !== user.name)).length))
       }
       if (announcementResult.status === 'fulfilled' && announcementResult.value?.data) setAnnouncements(announcementResult.value.data)
       if (remarkResult.status === 'fulfilled' && remarkResult.value?.data) setRemarks(remarkResult.value.data)
@@ -597,7 +597,7 @@ export default function Dashboard() {
         if (!mounted) return
         const nextMessages = response?.data || []
         setMessages(nextMessages)
-        setUnreadCount(Number(response?.unreadCount ?? nextMessages.filter((message) => !message.read && message.senderRole !== user.role).length))
+        setUnreadCount(Number(response?.unreadCount ?? nextMessages.filter((message) => !message.read && (message.senderRole ? message.senderRole !== user.role : message.sender !== user.name)).length))
       } catch (error) {
         console.warn('[messages] Inbox refresh failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message })
       }
