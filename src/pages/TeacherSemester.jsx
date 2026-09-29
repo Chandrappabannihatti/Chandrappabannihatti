@@ -54,7 +54,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useAuth } from '../context/AuthContext'
 import { achievementTypes, cloneDemoStudents, demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, getDemoSubjects } from '../data/demo'
-import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, setAuthToken } from '../lib/api'
+import api, { DEMO_MODE, getAuthToken, isApiToken, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
 import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
@@ -227,7 +227,8 @@ function writeLocalSubjectRecord(subjectId, studentId, patch) {
 
 function SubjectEntryPanel({ mode, user, semester, section = '', students, subjects, notify }) {
   const { token } = useAuth()
-  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
+  const apiToken = getAuthToken() || token
+  const apiSession = !DEMO_MODE && isApiToken(apiToken)
   const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.subjectId || subjects[0]?.id || '')
   const [records, setRecords] = useState({})
   const [savingStudent, setSavingStudent] = useState('')
@@ -492,7 +493,16 @@ function AddSemesterStudentPage({ user, semester, section = '', students, onCanc
   const [form, setForm] = useState({ usn: '', name: '', section: section || 'A', gender: 'Female', email: '', phone: '', parentName: '', parentPhone: '', dateOfBirth: '', bloodGroup: '', address: '', fatherName: '', motherName: '', parentEmail: '', certifications: '', skills: '', attendancePercentage: 75, averageInternalMarks: 60, averageAssignmentScore: 75, previousGpa: 7, currentGpa: 7, participationScore: 60 })
   const [error, setError] = useState('')
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }))
-  const submit = (event) => { event.preventDefault(); if (!form.usn || !form.name || !form.email) { setError('USN, name and email are required.'); return } if (students.some((student) => student.usn.toUpperCase() === form.usn.toUpperCase())) { setError('This USN already exists in the selected semester.'); return } if (!/^\S+@\S+\.\S+$/.test(form.email)) { setError('Enter a valid student email address.'); return } if (form.phone && !/^\+?[0-9 ()-]{10,18}$/.test(form.phone)) { setError('Enter a valid phone number.'); return } onSave({ ...form, usn: form.usn.toUpperCase(), department: user.department, semester: Number(semester), section: section || form.section, attendancePercentage: Number(form.attendancePercentage), averageInternalMarks: Number(form.averageInternalMarks), averageAssignmentScore: Number(form.averageAssignmentScore), previousGpa: Number(form.previousGpa), currentGpa: Number(form.currentGpa), participationScore: Number(form.participationScore) }) }
+  const submit = async (event) => {
+    event.preventDefault()
+    if (!form.usn || !form.name || !form.email) { setError('USN, name and email are required.'); return }
+    if (students.some((student) => student.usn.toUpperCase() === form.usn.toUpperCase())) { setError('This USN already exists in the selected semester.'); return }
+    if (!/^\S+@\S+\.\S+$/.test(form.email)) { setError('Enter a valid student email address.'); return }
+    if (form.phone && !/^\+?[0-9 ()-]{10,18}$/.test(form.phone)) { setError('Enter a valid phone number.'); return }
+    setError('')
+    const saved = await onSave({ ...form, usn: form.usn.toUpperCase(), department: user.department, semester: Number(semester), section: section || form.section, attendancePercentage: Number(form.attendancePercentage), averageInternalMarks: Number(form.averageInternalMarks), averageAssignmentScore: Number(form.averageAssignmentScore), previousGpa: Number(form.previousGpa), currentGpa: Number(form.currentGpa), participationScore: Number(form.participationScore) })
+    if (saved === false) setError('The student was not saved. Review the message above and try again.')
+  }
   return <div className="dashboard-content add-student-page"><ScopeIntro eyebrow={`${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`} title="Add a student" description={`Create a student record inside ${section ? `Section ${section} · ` : ''}this semester only. Department, semester and section are locked to your workspace.`} actions={<span className="scope-pill"><FiShield /> {user.department} · Sem {semester}{section ? ` · Sec ${section}` : ''}</span>} /><div className="semester-context-banner"><FiShield /><span>New records are saved to <strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong>. They will not appear in another scope.</span></div><form className="content-card add-student-form" onSubmit={submit}><div className="profile-card-heading"><div><h2>Personal information</h2><p>Student and parent contact details</p></div><FiUser /></div><div className="form-grid add-form-grid"><div className="form-field"><label className="plain-label">USN</label><input className="field-control" value={form.usn} onChange={(event) => update('usn', event.target.value)} placeholder="4PM25CS101" required /></div><div className="form-field"><label className="plain-label">Student name</label><input className="field-control" value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Full name" required /></div><div className="form-field"><label className="plain-label">Department</label><input className="field-control locked-field" value={user.department} readOnly /></div><div className="form-field"><label className="plain-label">Semester</label><input className="field-control locked-field" value={`Semester ${semester}`} readOnly /></div><div className="form-field"><label className="plain-label">Section</label>{section ? <input className="field-control locked-field" value={section} readOnly /> : <select className="field-control" value={form.section} onChange={(event) => update('section', event.target.value)}><option>A</option><option>B</option><option>C</option></select>}</div><div className="form-field"><label className="plain-label">Gender</label><select className="field-control" value={form.gender} onChange={(event) => update('gender', event.target.value)}><option>Female</option><option>Male</option><option>Other</option></select></div><div className="form-field"><label className="plain-label">Email address</label><input className="field-control" type="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="student@pestrust.edu.in" required /></div><div className="form-field"><label className="plain-label">Phone number</label><input className="field-control" value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div><div className="form-field"><label className="plain-label">Parent / guardian</label><input className="field-control" value={form.parentName} onChange={(event) => update('parentName', event.target.value)} placeholder="Parent name" /></div><div className="form-field"><label className="plain-label">Parent phone</label><input className="field-control" value={form.parentPhone} onChange={(event) => update('parentPhone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div><div className="form-field"><label className="plain-label">Date of birth</label><input className="field-control" type="date" value={form.dateOfBirth} onChange={(event) => update('dateOfBirth', event.target.value)} /></div><div className="form-field"><label className="plain-label">Blood group</label><select className="field-control" value={form.bloodGroup} onChange={(event) => update('bloodGroup', event.target.value)}><option value="">Not recorded</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div><div className="form-field full"><label className="plain-label">Address</label><textarea className="field-control" value={form.address} onChange={(event) => update('address', event.target.value)} placeholder="Residential address" /></div><div className="form-field"><label className="plain-label">Father / guardian name</label><input className="field-control" value={form.fatherName} onChange={(event) => update('fatherName', event.target.value)} placeholder="Father or primary guardian" /></div><div className="form-field"><label className="plain-label">Mother name</label><input className="field-control" value={form.motherName} onChange={(event) => update('motherName', event.target.value)} placeholder="Mother name" /></div><div className="form-field"><label className="plain-label">Parent email</label><input className="field-control" type="email" value={form.parentEmail} onChange={(event) => update('parentEmail', event.target.value)} placeholder="parent@example.com" /></div><div className="form-field"><label className="plain-label">Certifications</label><input className="field-control" value={form.certifications} onChange={(event) => update('certifications', event.target.value)} placeholder="AWS, NPTEL (comma separated)" /></div><div className="form-field"><label className="plain-label">Skills</label><input className="field-control" value={form.skills} onChange={(event) => update('skills', event.target.value)} placeholder="React, Python (comma separated)" /></div></div><div className="profile-card-heading add-form-section-heading"><div><h2>Average Academic Performance</h2><p>Enter the six academic attributes directly for this student.</p></div><FiActivity /></div><div className="form-grid add-form-grid">{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix, min, max, step }) => <div className="form-field" key={key}><label className="plain-label">{label}</label><div className="academic-input-wrap"><input className="field-control" type="number" min={min} max={max} step={step} value={form[key]} onChange={(event) => update(key, event.target.value)} required /><small>{suffix}</small></div></div>)}</div>{error && <div className="validation-error">{error}</div>}<div className="composer-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button><button className="button-primary" type="submit"><FiCheck /> Save student to Semester {semester}</button></div></form></div>
 }
 
@@ -510,7 +520,8 @@ function StudentProfilePage({ user, semester, student, remarks, achievements, on
 
 export function TeacherStudentProfile() {
   const { user, logout, token } = useAuth()
-  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
+  const apiToken = getAuthToken() || token
+  const apiSession = !DEMO_MODE && isApiToken(apiToken)
   const { usn: usnParam } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -605,7 +616,8 @@ function SemesterPredictions({ user, semester, section = '', students, notify })
 
 export default function TeacherSemester() {
   const { user, logout, token } = useAuth()
-  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
+  const apiToken = getAuthToken() || token
+  const apiSession = !DEMO_MODE && isApiToken(apiToken)
   const { semester: semesterParam } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -692,27 +704,42 @@ export default function TeacherSemester() {
     const outcome = predictAcademic(academic)
     const localRecord = { ...scopedInput, ...academic, ...outcome, id: Date.now(), initials: scopedInput.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
     let saved = localRecord
+    let refreshed = false
+    if (!DEMO_MODE && !apiSession) {
+      console.error('[students] Refusing to save because the teacher session has no API token.', { department: user.department, semester, section })
+      notify('Your secure session is unavailable. Please sign in again before saving to the database.')
+      return false
+    }
     if (apiSession) {
       try {
         // The form can be submitted immediately after a restored session is
         // rendered. Re-seed the interceptor with the current JWT before the
         // protected create request so it cannot be sent without auth.
-        setAuthToken(token)
-        const response = await api.createStudent(scopedInput, token)
+        setAuthToken(apiToken)
+        const response = await api.createStudent(scopedInput, apiToken)
         saved = response.data || localRecord
+        try {
+          const refreshedResponse = await api.getStudents({ department: user.department, semester, section, limit: 100 })
+          if (refreshedResponse.data) { setStudents(refreshedResponse.data); refreshed = true }
+        } catch (refreshError) {
+          console.warn('[students] Student was created, but the section roster refresh failed.', { message: refreshError.message, status: refreshError.response?.status })
+        }
       } catch (error) {
+        console.error('[students] Section student creation failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: user.department, semester, section })
         if (error.response?.status === 401) {
           await logout()
           navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
           return false
         }
-        if (error.response) { notify(error.response.data?.message || 'Student could not be saved in this section'); return false }
-        notify('API unavailable · student saved locally for this session')
+        if (error.response) { notify(error.response.data?.errors?.join(' ') || error.response.data?.message || 'Student could not be saved in this section'); return false }
+        notify('API unavailable · student was not saved to the database')
+        return false
       }
     }
-    setStudents((current) => [saved, ...current])
+    if (!refreshed) setStudents((current) => [saved, ...current])
     notify(`${saved.name} added to Semester ${semester}${section ? ` · Section ${section}` : ''}`)
     navigateModule('students')
+    return true
   }
   const saveImportedStudents = async (rows, file) => {
     const scopedRows = rows.map((row) => ({ ...row, department: user.department, semester: Number(semester), section: section || row.section }))

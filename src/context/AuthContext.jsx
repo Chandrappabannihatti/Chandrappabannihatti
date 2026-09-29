@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, setAuthToken } from '../lib/api'
+import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, isApiToken, setAuthToken } from '../lib/api'
 import { currentUser, parentUser, studentUser } from '../data/demo'
 
 const AuthContext = createContext(null)
@@ -36,12 +36,30 @@ export function AuthProvider({ children }) {
     setAuthToken(session?.token || '')
   }, [session])
 
+  useEffect(() => {
+    const syncStoredSession = (event) => {
+      if (event.key && event.key !== 'camps_session') return
+      try {
+        const next = event.newValue ? JSON.parse(event.newValue) : null
+        setAuthToken(next?.token || '')
+        setSession(next)
+      } catch (error) {
+        console.warn('[camps-auth] Could not restore the session from storage.', error)
+        setAuthToken('')
+        setSession(null)
+      }
+    }
+    window.addEventListener('storage', syncStoredSession)
+    return () => window.removeEventListener('storage', syncStoredSession)
+  }, [])
+
   const login = async ({ role, identifier, password, department }) => {
     const normalizedRole = role.toLowerCase()
     const requestedDepartment = String(department || '').trim().toUpperCase()
     if (!DEMO_MODE) {
       try {
         const result = await api.login({ role: normalizedRole, identifier, password, department: requestedDepartment })
+        if (!isApiToken(result?.token) || !result?.user) throw new Error('The authentication service returned an incomplete session.')
         const user = { ...result.user, role: normalizedRole, department: normalizedRole === 'admin' ? requestedDepartment || result.user.department : result.user.department }
         const next = { token: result.token, user }
         persistSession(next)
@@ -49,6 +67,11 @@ export function AuthProvider({ children }) {
         setSession(next)
         return next.user
       } catch (apiError) {
+        console.warn('[camps-auth] API login failed; evaluating local review fallback.', {
+          role: normalizedRole,
+          status: apiError.response?.status || 'network',
+          message: apiError.response?.data?.message || apiError.message,
+        })
         // Keep the review build usable when the optional API is not running.
         // Authentication errors from a reachable API are never silently bypassed.
         if (apiError.response?.status === 401 || apiError.response?.status === 403 || apiError.response?.status === 422) throw apiError
@@ -86,8 +109,8 @@ export function AuthProvider({ children }) {
   }
 
   const logout = async () => {
-    if (!DEMO_MODE && session?.token) {
-      try { await api.logout() } catch { /* local session is still cleared */ }
+    if (!DEMO_MODE && isApiToken(session?.token)) {
+      try { await api.logout() } catch (error) { console.warn('[camps-auth] API logout failed; clearing local session anyway.', error.message) }
     }
     persistSession(null)
     setAuthToken('')
@@ -98,6 +121,7 @@ export function AuthProvider({ children }) {
     user: session?.user || null,
     token: session?.token || null,
     isAuthenticated: Boolean(session?.user && session?.token),
+    isApiAuthenticated: Boolean(session?.user && isApiToken(session?.token)),
     login,
     logout,
   }), [session])

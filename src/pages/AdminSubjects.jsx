@@ -6,7 +6,7 @@ import { departmentCards } from '../data/departments'
 import { getDemoSubjects } from '../data/demo'
 import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
-import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, setAuthToken } from '../lib/api'
+import api, { DEMO_MODE, getAuthToken, isApiToken, setAuthToken } from '../lib/api'
 
 function persistDemoSubjects(subjects) {
   if (typeof window === 'undefined') return
@@ -38,14 +38,15 @@ const adminSemesters = [1, 2, 3, 4, 5, 6, 7, 8]
 export default function AdminSubjectHierarchy() {
   const navigate = useNavigate()
   const { user, token } = useAuth()
-  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
+  const apiToken = getAuthToken() || token
+  const apiSession = !DEMO_MODE && isApiToken(apiToken)
   const department = useMemo(() => departmentCards.find((item) => item.code === user.department) || departmentCards[0], [user.department])
   const [subjectCounts, setSubjectCounts] = useState(() => Object.fromEntries(adminSemesters.map((semester) => [semester, scopedLocalSubjects(department.code, semester).length])))
 
   useEffect(() => {
     let mounted = true
     const loadCounts = async () => {
-      if (apiSession) setAuthToken(token)
+      if (apiSession) setAuthToken(apiToken)
       let subjects = scopedLocalSubjects(department.code)
       if (apiSession) {
         try { const response = await api.getSubjects({ department: department.code }); subjects = response.data || [] } catch { /* local fallback keeps the hierarchy usable */ }
@@ -62,7 +63,8 @@ export default function AdminSubjectHierarchy() {
 export function AdminSubjectManagement() {
   const navigate = useNavigate()
   const { user, token } = useAuth()
-  const apiSession = !DEMO_MODE && token && token !== LOCAL_SESSION_TOKEN
+  const apiToken = getAuthToken() || token
+  const apiSession = !DEMO_MODE && isApiToken(apiToken)
   const { department: departmentParam, semester: semesterParam } = useParams()
   const routeDepartment = String(departmentParam || '').toUpperCase()
   const department = user.department !== 'ALL' ? user.department : routeDepartment
@@ -82,7 +84,7 @@ export function AdminSubjectManagement() {
 
   const loadSubjects = async () => {
     if (!validSemester) return
-    if (apiSession) setAuthToken(token)
+    if (apiSession) setAuthToken(apiToken)
     setLoading(true)
     let next = scopedLocalSubjects(departmentDetails.code, semester)
     if (apiSession) {
@@ -101,7 +103,7 @@ export function AdminSubjectManagement() {
     let saved
     let usedLocalFallback = !apiSession
     if (apiSession) {
-      setAuthToken(token)
+      setAuthToken(apiToken)
       try {
         const response = editing ? await api.updateSubject(editing.subjectId || editing.id, payload) : await api.createSubject(payload)
         saved = response.data
@@ -136,7 +138,7 @@ export function AdminSubjectManagement() {
     const id = subject.subjectId || subject.id
     if (!window.confirm(`Delete ${subject.subjectCode} from ${departmentDetails.label} Semester ${semester}?`)) return
     if (apiSession) {
-      setAuthToken(token)
+      setAuthToken(apiToken)
       try { await api.deleteSubject(id) } catch (error) { setNotice(error.response?.data?.message || 'Subject could not be deleted.'); return }
     }
     const next = getDemoSubjects().filter((item) => Number(item.id || item.subjectId) !== Number(id))

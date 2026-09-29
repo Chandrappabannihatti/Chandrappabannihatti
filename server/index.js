@@ -55,8 +55,17 @@ function authRequired(req, res, next) {
   // header used by the browser preview proxy when it strips Authorization.
   const authorization = req.headers.authorization || req.headers['x-access-token']
   const token = String(authorization || '').replace(/^Bearer\s+/i, '').trim()
-  if (!token) return res.status(401).json({ message: 'Authentication required.' })
-  try { req.user = jwt.verify(token, jwtSecret); next() } catch { return res.status(401).json({ message: 'Session expired. Please sign in again.' }) }
+  if (!token) {
+    console.warn('[camps-auth] Missing access token', { method: req.method, path: req.originalUrl, hasAuthorizationHeader: Boolean(req.headers.authorization), hasFallbackHeader: Boolean(req.headers['x-access-token']) })
+    return res.status(401).json({ message: 'Authentication required.' })
+  }
+  try {
+    req.user = jwt.verify(token, jwtSecret)
+    next()
+  } catch (error) {
+    console.warn('[camps-auth] Invalid or expired access token', { method: req.method, path: req.originalUrl, reason: error.name })
+    return res.status(401).json({ message: 'Session expired. Please sign in again.' })
+  }
 }
 
 function roleRequired(...roles) {
@@ -595,7 +604,11 @@ app.post('/api/students', authRequired, roleRequired('teacher', 'admin'), async 
     if (!sectionRow) return res.status(422).json({ message: `Section ${student.section} does not exist for ${student.department} Semester ${student.semester}.` })
     const insertResult = await query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, date_of_birth, blood_group, address, email, phone, parent_name, father_name, mother_name, parent_phone, parent_email, certifications, skills, attendance_percentage, average_internal_marks, average_assignment_score, previous_gpa, current_gpa, participation_score, result, risk) VALUES (:usn, :name, :department, :semester, :section, :sectionId, :gender, :dateOfBirth, :bloodGroup, :address, :email, :phone, :parentName, :fatherName, :motherName, :parentPhone, :parentEmail, :certifications, :skills, :attendancePercentage, :averageInternalMarks, :averageAssignmentScore, :previousGpa, :currentGpa, :participationScore, :result, :risk)', { ...student, sectionId: sectionRow.sectionId, dateOfBirth: student.dateOfBirth || null, bloodGroup: student.bloodGroup || null, address: student.address || null, fatherName: student.fatherName || null, motherName: student.motherName || null, parentEmail: student.parentEmail || null, parentPhone: student.parentPhone || null, certifications: JSON.stringify(student.certifications || []), skills: JSON.stringify(student.skills || []) })
     res.status(201).json({ data: { ...student, id: insertResult.insertId, sectionId: sectionRow.sectionId } })
-  } catch (error) { next(error) }
+  } catch (error) {
+    console.error('[students] Create request failed', { method: req.method, path: req.originalUrl, userId: req.user?.sub, role: req.user?.role, department: req.body?.department, semester: req.body?.semester, section: req.body?.section, code: error.code, message: error.message })
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'A student with this USN already exists.', errors: ['USN already exists.'] })
+    next(error)
+  }
 })
 
 app.put('/api/students/:id', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
@@ -992,10 +1005,20 @@ if (process.env.NODE_ENV === 'production') {
   app.get('*', (_req, res) => res.sendFile(path.join(clientDirectory, 'index.html')))
 }
 
-app.use((error, _req, res, _next) => {
-  console.error(error)
+app.use((error, req, res, _next) => {
+  const status = error.status || 500
+  console.error('[camps-api] Request failed', {
+    method: req.method,
+    path: req.originalUrl,
+    status,
+    userId: req.user?.sub,
+    role: req.user?.role,
+    code: error.code,
+    sqlState: error.sqlState,
+    message: error.message,
+  })
   if (error.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ message: 'File is too large. Maximum size is 8 MB.' })
-  res.status(error.status || 500).json({ message: error.message || 'Unexpected server error.' })
+  res.status(status).json({ message: error.message || 'Unexpected server error.' })
 })
 
 app.listen(port, '0.0.0.0', () => {

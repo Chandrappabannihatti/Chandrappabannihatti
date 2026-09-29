@@ -76,7 +76,7 @@ import {
 } from '../data/demo'
 import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
-import api, { DEMO_MODE, setAuthToken } from '../lib/api'
+import api, { DEMO_MODE, getAuthToken, isApiToken, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
 
 const navItems = [
@@ -350,7 +350,7 @@ function AdminPeopleView({ user, token, students, onAddStudent, showToast }) {
     if (DEMO_MODE) return undefined
     let mounted = true
     setLoading(true)
-    setAuthToken(token)
+    setAuthToken(getAuthToken() || token)
     api.getTeachers({ department: selectedDepartment || undefined }).then((response) => {
       if (mounted && response.data) setTeachers(response.data)
     }).catch(() => {
@@ -363,7 +363,7 @@ function AdminPeopleView({ user, token, students, onAddStudent, showToast }) {
     const localTeacher = { ...input, id: Date.now(), isActive: true, initials: input.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
     let saved = localTeacher
     if (!DEMO_MODE) {
-      setAuthToken(token)
+      setAuthToken(getAuthToken() || token)
       try {
         const response = await api.createTeacher(input)
         saved = response.data || localTeacher
@@ -404,7 +404,7 @@ function StudentFormModal({ student, departmentScope = '', existingStudents = []
   const [form, setForm] = useState(() => student ? { ...student, department: departmentScope || student.department, ...academicFields(student) } : { usn: '', name: '', department: defaultDepartment, semester: 7, section: 'A', gender: 'Female', email: '', phone: '', parentName: '', parentPhone: '', ...academicFields({ attendancePercentage: 75, averageInternalMarks: 60, averageAssignmentScore: 75, previousGpa: 7, currentGpa: 7, participationScore: 60 }) })
   const [error, setError] = useState('')
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }))
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault()
     if (!form.usn || !form.name || !form.email) { setError('USN, name and email are required.'); return }
     if (existingStudents.some((item) => item.usn.toUpperCase() === form.usn.toUpperCase() && item.id !== form.id)) { setError('This USN already exists in the roster.'); return }
@@ -413,7 +413,9 @@ function StudentFormModal({ student, departmentScope = '', existingStudents = []
     const academic = academicFields(form)
     const invalid = ACADEMIC_ATTRIBUTES.find(({ key, min, max }) => academic[key] < min || academic[key] > max)
     if (invalid) { setError(`${invalid.label} must be between ${invalid.min} and ${invalid.max}.`); return }
-    onSave({ ...form, ...academic, ...predictAcademic(academic), id: form.id || Date.now(), semester: Number(form.semester), usn: form.usn.toUpperCase(), initials: form.initials || form.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() })
+    setError('')
+    const saved = await onSave({ ...form, ...academic, ...predictAcademic(academic), id: form.id || Date.now(), semester: Number(form.semester), usn: form.usn.toUpperCase(), initials: form.initials || form.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() })
+    if (saved === false) setError('The student was not saved. Review the message above and try again.')
   }
   return <div className="modal-backdrop"><form className="modal-card wide" onSubmit={submit}><div className="modal-head"><div><h2>{student ? 'Edit student record' : 'Add a student'}</h2><p>Capture roster details and the teacher-entered academic performance.</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body"><div className="form-grid"><div className="form-field"><label className="plain-label">USN</label><input className="field-control" value={form.usn} onChange={(event) => update('usn', event.target.value.toUpperCase())} placeholder="4PM25CS101" required /></div><div className="form-field"><label className="plain-label">Student name</label><input className="field-control" value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Full name" required /></div><div className="form-field"><label className="plain-label">Department</label>{departmentScope ? <input className="field-control locked-field" value={departmentScope} readOnly /> : <select className="field-control" value={form.department} onChange={(event) => update('department', event.target.value)}><option>CSE</option><option>AIML</option><option>CSDS</option><option>CE</option><option>ECE</option><option>EEE</option><option>ME</option><option>CIVIL</option></select>}</div><div className="form-field"><label className="plain-label">Semester</label><select className="field-control" value={form.semester} onChange={(event) => update('semester', event.target.value)}>{semesters.map((item) => <option key={item}>{item}</option>)}</select></div><div className="form-field"><label className="plain-label">Section</label><select className="field-control" value={form.section} onChange={(event) => update('section', event.target.value)}><option>A</option><option>B</option><option>C</option><option>D</option></select></div><div className="form-field"><label className="plain-label">Gender</label><select className="field-control" value={form.gender} onChange={(event) => update('gender', event.target.value)}><option>Female</option><option>Male</option><option>Other</option></select></div><div className="form-field"><label className="plain-label">Email</label><input className="field-control" type="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="student@pestrust.edu.in" required /></div><div className="form-field"><label className="plain-label">Phone</label><input className="field-control" value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div><div className="form-field"><label className="plain-label">Parent name</label><input className="field-control" value={form.parentName} onChange={(event) => update('parentName', event.target.value)} placeholder="Parent / guardian name" /></div><div className="form-field"><label className="plain-label">Parent phone</label><input className="field-control" value={form.parentPhone} onChange={(event) => update('parentPhone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div></div><div className="profile-card-heading add-form-section-heading"><div><h2>Average Academic Performance</h2><p>These six attributes are entered directly by the teacher and stored on the student record.</p></div><FiActivity /></div><div className="form-grid">{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix, min, max, step }) => <div className="form-field" key={key}><label className="plain-label">{label}</label><div className="academic-input-wrap"><input className="field-control" type="number" min={min} max={max} step={step} value={form[key]} onChange={(event) => update(key, event.target.value)} required /><small>{suffix}</small></div></div>)}</div>{error && <div className="validation-error">{error}</div>}</div><div className="modal-foot"><button className="button-ghost" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit"><FiCheck /> {student ? 'Save changes' : 'Save student'}</button></div></form></div>
 }
@@ -570,9 +572,9 @@ export default function Dashboard() {
     let savedRows = mapped
     let failed = 0
     if (!DEMO_MODE) {
-      setAuthToken(token)
+      setAuthToken(getAuthToken() || token)
       const responses = await Promise.all(mapped.map(async (row) => {
-        try { const response = await api.createStudent(row, token); return response.data || row } catch { failed += 1; return null }
+        try { const response = await api.createStudent(row, getAuthToken() || token); return response.data || row } catch { failed += 1; return null }
       }))
       savedRows = responses.filter(Boolean)
     }
@@ -581,16 +583,43 @@ export default function Dashboard() {
   }
   const saveNewStudent = async (student) => {
     const departmentScope = user.department === 'ALL' ? '' : user.department
-    if (departmentScope && student.department !== departmentScope) { showToast(`Save blocked · this account is scoped to ${departmentScope}`); return }
+    if (departmentScope && student.department !== departmentScope) { showToast(`Save blocked · this account is scoped to ${departmentScope}`); return false }
     const academic = academicFields(student)
     let saved = { ...student, department: String(student.department).toUpperCase(), ...academic, ...predictAcademic(academic) }
+    let refreshed = false
     if (!DEMO_MODE) {
-      try { setAuthToken(token); const response = await api.createStudent(saved, token); saved = response.data || saved } catch (error) {
-        if (error.response) { showToast(error.response.data?.message || 'Student could not be saved'); return }
-        showToast('API unavailable · saved locally for this session')
+      const activeToken = getAuthToken() || token
+      if (!isApiToken(activeToken)) {
+        console.error('[students] Refusing to submit without an API authentication token.', { role: user.role, department: user.department })
+        showToast('Your secure session is unavailable. Please sign in again before saving to the database.')
+        return false
+      }
+      try {
+        setAuthToken(activeToken)
+        const response = await api.createStudent(saved, activeToken)
+        saved = response.data || saved
+        try {
+          const refreshedResponse = await api.getStudents({ limit: 100 })
+          if (refreshedResponse.data) { setStudents(refreshedResponse.data); refreshed = true }
+        } catch (refreshError) {
+          console.warn('[students] Student was created, but the roster refresh failed.', { message: refreshError.message, status: refreshError.response?.status })
+        }
+      } catch (error) {
+        console.error('[students] Student creation failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: saved.department, semester: saved.semester, section: saved.section })
+        if (error.response?.status === 401) {
+          await logout()
+          navigate(`/login?department=${encodeURIComponent(user.department)}&role=${user.role}&reason=session`, { replace: true })
+          return false
+        }
+        if (error.response) { showToast(error.response.data?.errors?.join(' ') || error.response.data?.message || 'Student could not be saved'); return false }
+        showToast('API unavailable · student was not saved to the database')
+        return false
       }
     }
-    setStudents((current) => [saved, ...current]); setStudentModalOpen(false); showToast('Student saved to the roster')
+    if (!refreshed) setStudents((current) => [saved, ...current])
+    setStudentModalOpen(false)
+    showToast('Student saved successfully')
+    return true
   }
   const navigateView = (view) => {
     setActiveView(view)

@@ -17,7 +17,34 @@ function readStoredToken() {
 let authToken = readStoredToken()
 
 export function setAuthToken(token) {
-  authToken = token || ''
+  authToken = typeof token === 'string' ? token.trim() : ''
+}
+
+export function isApiToken(token) {
+  const normalized = typeof token === 'string' ? token.trim() : ''
+  return Boolean(normalized && normalized !== LOCAL_SESSION_TOKEN)
+}
+
+// localStorage is the source of truth after a login in another tab or after a
+// restored session. The in-memory value remains useful before storage exists.
+export function getAuthToken() {
+  const storedToken = readStoredToken()
+  if (storedToken) {
+    authToken = storedToken
+    return storedToken
+  }
+  return authToken
+}
+
+function resolveToken(candidate = '') {
+  if (isApiToken(candidate)) return candidate.trim()
+  const storedToken = getAuthToken()
+  return isApiToken(storedToken) ? storedToken : ''
+}
+
+function authHeaders(candidate = '') {
+  const token = resolveToken(candidate)
+  return token ? { Authorization: `Bearer ${token}`, 'X-Access-Token': token } : {}
 }
 
 const client = axios.create({
@@ -27,15 +54,24 @@ const client = axios.create({
 })
 
 client.interceptors.request.use((config) => {
-  try {
-    const session = JSON.parse(localStorage.getItem('camps_session'))
-    const token = authToken || session?.token
-    if (token && token !== LOCAL_SESSION_TOKEN) {
-      config.headers.Authorization = `Bearer ${token}`
-      config.headers['X-Access-Token'] = token
-    }
-  } catch { /* ignore malformed local storage */ }
+  const headers = authHeaders()
+  if (Object.keys(headers).length) {
+    config.headers = config.headers || {}
+    config.headers.Authorization = headers.Authorization
+    config.headers['X-Access-Token'] = headers['X-Access-Token']
+  }
   return config
+})
+
+client.interceptors.response.use(undefined, (error) => {
+  if (error.response?.status === 401) {
+    console.warn('[camps-auth] API request rejected as unauthenticated', {
+      method: error.config?.method,
+      url: error.config?.url,
+      hasApiToken: Boolean(resolveToken()),
+    })
+  }
+  return Promise.reject(error)
 })
 
 const unwrap = (request) => request.then((response) => response.data)
@@ -55,7 +91,7 @@ const api = {
   saveSubjectAttendance: (id, payload) => unwrap(client.put(`/subjects/${id}/attendance`, payload)),
   saveSubjectMarks: (id, payload) => unwrap(client.put(`/subjects/${id}/marks`, payload)),
   getStudents: (params) => unwrap(client.get('/students', { params })),
-  createStudent: (payload, token = '') => unwrap(client.post('/students', payload, token && token !== LOCAL_SESSION_TOKEN ? { headers: { Authorization: `Bearer ${token}`, 'X-Access-Token': token } } : undefined)),
+  createStudent: (payload, token = '') => unwrap(client.post('/students', payload, { headers: authHeaders(token) })),
   updateStudent: (id, payload) => unwrap(client.put(`/students/${id}`, payload)),
   deleteStudent: (id) => unwrap(client.delete(`/students/${id}`)),
   uploadStudents: (file, commit = false, scope = {}) => {
