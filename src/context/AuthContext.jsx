@@ -18,12 +18,33 @@ function persistSession(next) {
   } catch { /* keep in-memory auth when storage is unavailable */ }
 }
 
+function tokenExpired(token) {
+  if (!isApiToken(token)) return false
+  try {
+    const encodedPayload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(window.atob(encodedPayload.padEnd(Math.ceil(encodedPayload.length / 4) * 4, '=')))
+    return Number.isFinite(payload.exp) && payload.exp * 1000 <= Date.now()
+  } catch {
+    // The API remains the authority for signature validation. A malformed
+    // token is left in place long enough for the protected request to produce
+    // the normal session-expired path and its diagnostic log.
+    return false
+  }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('camps_session')) || null
+      if (stored?.token && tokenExpired(stored.token)) {
+        console.warn('[camps-auth] Stored session expired during restoration.', { role: stored.user?.role, userId: stored.user?.id })
+        localStorage.removeItem('camps_session')
+        setAuthToken('')
+        return null
+      }
       // Keep the API interceptor in sync before protected child effects run.
       setAuthToken(stored?.token || '')
+      if (stored?.user) console.info('[camps-auth] Session restored from localStorage.', { role: stored.user.role, userId: stored.user.id, department: stored.user.department })
       return stored
     } catch {
       setAuthToken('')
@@ -53,9 +74,29 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('storage', syncStoredSession)
   }, [])
 
+  useEffect(() => {
+    if (!isApiToken(session?.token)) return undefined
+    let mounted = true
+    console.info('[camps-auth] Validating restored JWT session.', { role: session.user?.role, userId: session.user?.id })
+    api.validateSession().then((result) => {
+      if (!mounted || !result?.user) return
+      setSession((current) => current ? { ...current, user: { ...current.user, ...result.user } } : current)
+      console.info('[camps-auth] Restored JWT session is valid.', { role: result.user.role, userId: result.user.id, department: result.user.department, usn: result.user.usn, studentId: result.user.studentId })
+    }).catch((error) => {
+      console.error('[camps-auth] Restored JWT session validation failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message })
+      if (mounted && error.response?.status === 401) {
+        persistSession(null)
+        setAuthToken('')
+        setSession(null)
+      }
+    })
+    return () => { mounted = false }
+  }, [session?.token])
+
   const login = async ({ role, identifier, password, department }) => {
     const normalizedRole = role.toLowerCase()
     const requestedDepartment = String(department || '').trim().toUpperCase()
+    console.info('[camps-auth] Login started.', { role: normalizedRole, identifier: String(identifier || '').trim(), department: requestedDepartment, apiMode: !DEMO_MODE })
     if (!DEMO_MODE) {
       try {
         const result = await api.login({ role: normalizedRole, identifier, password, department: requestedDepartment })
@@ -65,6 +106,7 @@ export function AuthProvider({ children }) {
         persistSession(next)
         setAuthToken(next.token)
         setSession(next)
+        console.info('[camps-auth] API login succeeded.', { role: next.user.role, userId: next.user.id, department: next.user.department, usn: next.user.usn, studentId: next.user.studentId })
         return next.user
       } catch (apiError) {
         console.warn('[camps-auth] API login failed; evaluating local review fallback.', {
@@ -105,16 +147,19 @@ export function AuthProvider({ children }) {
     persistSession(next)
     setAuthToken(next.token)
     setSession(next)
+    console.info('[camps-auth] Local demo login succeeded.', { role: user.role, userId: user.id, department: user.department, usn: user.usn, studentId: user.studentId })
     return user
   }
 
   const logout = async () => {
+    console.info('[camps-auth] Logout started.', { role: session?.user?.role, userId: session?.user?.id, hasApiToken: isApiToken(session?.token) })
     if (!DEMO_MODE && isApiToken(session?.token)) {
       try { await api.logout() } catch (error) { console.warn('[camps-auth] API logout failed; clearing local session anyway.', error.message) }
     }
     persistSession(null)
     setAuthToken('')
     setSession(null)
+    console.info('[camps-auth] Local session cleared.')
   }
 
   const value = useMemo(() => ({

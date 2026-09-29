@@ -43,6 +43,7 @@ import {
   FiMessageCircle,
   FiMoreHorizontal,
   FiPlus,
+  FiRefreshCw,
   FiSearch,
   FiSend,
   FiSettings,
@@ -170,6 +171,15 @@ function PageIntro({ eyebrow, title, description, actions }) {
   return <div className="page-intro"><div><p className="page-eyebrow">{eyebrow}</p><h1 className="page-title">{title}</h1>{description && <p className="page-subtitle">{description}</p>}</div>{actions && <div className="page-actions">{actions}</div>}</div>
 }
 
+function DashboardDataState({ title, message, loading = false, onRetry }) {
+  return <div className="dashboard-content"><section className="content-card dashboard-data-state"><div className="dashboard-data-state-icon">{loading ? <FiActivity className="dashboard-loading-icon" /> : <FiAlertCircle />}</div><h1>{loading ? 'Loading your dashboard…' : title}</h1><p>{message}</p>{!loading && onRetry && <button className="button-primary" type="button" onClick={onRetry}><FiRefreshCw /> Try again</button>}</section></div>
+}
+
+function DashboardDataNotice({ message, onRetry }) {
+  if (!message) return null
+  return <div className="dashboard-data-notice" role="status"><FiAlertCircle /><span>{message}</span>{onRetry && <button type="button" onClick={onRetry}>Retry</button>}</div>
+}
+
 function Overview({ user, students, onNavigate, onAddStudent, onUpload, onExport }) {
   const isAdmin = user.role === 'admin'
   const departmentScope = user.department === 'ALL' ? '' : user.department
@@ -285,7 +295,7 @@ function MessagesView({ user, messages, setMessages, setUnreadCount = () => {}, 
     selectMessage(opened)
   // Selecting an inbox item is the explicit read action; this also handles the first item opened on load.
   }, [selectedId])
-  const canReply = user.role === 'parent' || user.role === 'teacher' || user.role === 'admin'
+  const canReply = ['student', 'parent', 'teacher', 'admin'].includes(user.role)
   const selectMessage = async (message) => {
     setSelectedId(message.id)
     setMessages((current) => current.map((item) => item.id === message.id ? { ...item, read: true, readStatus: true } : item))
@@ -326,6 +336,61 @@ function MessagesView({ user, messages, setMessages, setUnreadCount = () => {}, 
     setReplySending(false)
   }
   return <div className="dashboard-content"><PageIntro eyebrow="Keep the loop warm" title="Messages" description={user.role === 'parent' ? 'Direct messages from your student’s teachers, with secure replies.' : 'Direct, searchable conversations with students and families.'} actions={!readOnly && user.role !== 'parent' && <button className="button-primary" type="button" onClick={() => setComposeOpen(true)}><FiPlus /> New message</button>} /><div className="messages-layout"><div className="message-list"><div className="message-list-head"><h3>Inbox <span style={{ color: '#F07E5E' }}>· {messages.filter((message) => !message.read && isIncoming(message)).length} unread</span></h3>{!readOnly && user.role !== 'parent' && <button type="button" onClick={() => setComposeOpen(true)} aria-label="Compose message"><FiPlus /></button>}</div><div className="message-search search-field"><FiSearch /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search inbox" /></div>{visible.map((message) => <button className={`message-item ${selected?.id === message.id ? 'active' : ''}`} type="button" key={message.id} onClick={() => selectMessage(message)}><Avatar initials={message.initials || 'CA'} tone={message.senderRole === 'parent' || message.receiverRole === 'parent' ? 'sky' : ''} /><span className="message-item-content"><span className="message-item-line"><strong>{message.sender}{!message.read && isIncoming(message) && <i className="unread-dot" />}</strong><time>{String(message.time || message.created_at || message.createdAt || '').replace('Today, ', '')}</time></span><p>{message.subject}</p><small>{message.recipient}</small></span></button>)}{!visible.length && <div className="empty-state"><FiMail /><span>No messages found.</span></div>}</div><div className="message-detail">{selected ? <><div className="message-detail-head"><div><h2>{selected.subject}</h2><p>From {selected.sender} · To {selected.recipient} · {selected.time || selected.createdAt}</p></div><button className="row-action" type="button" aria-label="More message actions"><FiMoreHorizontal /></button></div><div className="message-body"><div className="message-bubble">{selected.body}</div></div>{canReply && <form className="message-detail-footer" onSubmit={sendReply}><input value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Reply to this conversation…" aria-label="Reply to this conversation" /><button type="submit" disabled={replySending || !selected.senderRole} aria-label="Send reply"><FiSend /></button></form>}</> : <div className="empty-state"><FiMail /><span>Select a message to read it.</span></div>}</div></div>{composeOpen && !readOnly && <MessageModal user={user} students={students} onClose={() => setComposeOpen(false)} onSend={sendMessage} />}</div>
+}
+
+function AnnouncementsView({ announcements, setAnnouncements, user, showToast, readOnly = false }) {
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [filter, setFilter] = useState('All')
+  const visible = announcements.filter((item) => filter === 'All' || item.type === filter)
+  const createAnnouncement = async (item) => { let saved = { ...item, id: Date.now(), author: user.name, date: 'Just now' }; if (!DEMO_MODE) { try { const response = await api.createAnnouncement(item); saved = response.data || saved } catch { showToast('API unavailable · announcement saved locally for this session') } } setAnnouncements((current) => [saved, ...current]); setComposeOpen(false); showToast('Announcement published') }
+  const remove = (item) => { if (window.confirm(`Delete “${item.title}”?`)) { setAnnouncements((current) => current.filter((announcement) => announcement.id !== item.id)); showToast('Announcement deleted') } }
+  return <div className="dashboard-content"><PageIntro eyebrow="Keep everyone aligned" title="Announcements" description="One clear message, delivered to the people who need it." actions={!readOnly && <button className="button-primary" type="button" onClick={() => setComposeOpen(true)}><FiPlus /> Create announcement</button>} /><div className="toolbar-card"><div><strong style={{ color: '#15263a', fontSize: 12 }}>Published updates</strong><span style={{ display: 'block', marginTop: 4, color: '#99a2a1', fontSize: 10 }}>Visible to your selected audience</span></div><div className="toolbar-filters">{['All', 'College', 'Department', 'Semester'].map((item) => <button key={item} type="button" className={`filter-btn ${filter === item ? 'selected-filter' : ''}`} onClick={() => setFilter(item)}>{item}</button>)}</div></div><div className="announcement-grid">{visible.map((item) => <article className="announcement-card" key={item.id}><span className={`announcement-type ${item.type.toLowerCase()}`}>{item.type}{item.semester ? ` · Sem ${item.semester}` : item.department ? ` · ${item.department}` : ''}</span><h3>{item.title}</h3><p>{item.body}</p><div className="announcement-footer"><span>{item.date} · <strong>{item.author}</strong></span>{!readOnly && <div className="announcement-actions"><button type="button" onClick={() => showToast('Announcement edit form is ready')} aria-label="Edit announcement"><FiEdit3 /></button><button type="button" onClick={() => remove(item)} aria-label="Delete announcement"><FiTrash2 /></button></div>}</div></article>)}{!visible.length && <div className="empty-state"><FiBell /><span>No announcements in this view.</span></div>}</div>{composeOpen && !readOnly && <AnnouncementModal onClose={() => setComposeOpen(false)} onCreate={createAnnouncement} />}</div>
+}
+
+function RemarksView({ remarks, setRemarks, students, user, showToast }) {
+  const [composeOpen, setComposeOpen] = useState(false)
+  const createRemark = async (remark) => { const student = students.find((item) => item.id === Number(remark.studentId)); let saved = { ...remark, id: Date.now(), studentName: student?.name || 'Student', date: 'Just now', author: user.name }; if (!DEMO_MODE) { try { const response = await api.createRemark(remark); saved = response.data || saved } catch { showToast('API unavailable · saved locally for this session') } } setRemarks((current) => [saved, ...current]); setComposeOpen(false); showToast('Teacher remark saved') }
+  return <div className="dashboard-content"><PageIntro eyebrow="Context behind the data" title="Teacher remarks" description="Add the human detail that helps students and families move forward." actions={<button className="button-primary" type="button" onClick={() => setComposeOpen(true)}><FiPlus /> Add remark</button>} /><section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">Recent remarks</h2><p className="card-description">Visible to the student and their parent</p></div><span className="department-note"><FiEye /> Shared visibility</span></div><div className="table-scroll"><table className="remark-table"><thead><tr><th>Student</th><th>Remark</th><th>Note</th><th>Added</th></tr></thead><tbody>{remarks.map((remark) => <tr key={remark.id}><td><strong style={{ color: '#15263a' }}>{remark.studentName}</strong></td><td><span className={`remark-label ${remark.label.includes('Excellent') ? 'excellent' : remark.label.includes('Performance') ? 'good' : ''}`}>{remark.label}</span></td><td>{remark.note}</td><td>{remark.date}</td></tr>)}</tbody></table></div></section><div className="info-band" style={{ marginTop: 13 }}><article className="info-card mint"><span className="info-icon"><FiHeart /></span><h3>Lead with context</h3><p>A short, specific observation can make an alert feel actionable rather than alarming.</p></article><article className="info-card sky"><span className="info-icon"><FiUsers /></span><h3>Shared with care</h3><p>Remarks are visible to the student and parent linked to the record.</p></article><article className="info-card peach"><span className="info-icon"><FiCheckCircle /></span><h3>Small steps count</h3><p>Celebrate progress and make the next step clear.</p></article></div>{composeOpen && <RemarkModal students={students} onClose={() => setComposeOpen(false)} onCreate={createRemark} />}</div>
+}
+
+function learnerStudentFor(user, students) {
+  return students.find((item) => item.usn && user.usn && String(item.usn).toUpperCase() === String(user.usn).toUpperCase())
+    || students.find((item) => Number(item.id) === Number(user.studentId || user.id))
+    || students.find((item) => item.name === user.studentName || item.name === user.name)
+}
+
+function LearnerDataEmpty({ user }) {
+  return <DashboardDataState title="Student record unavailable" message={`We could not find an active student record linked to this ${user.role} account. Please contact the academic office or try again.`} />
+}
+
+function RecordsView({ user, students, achievements, subjects, onNavigate }) {
+  const student = learnerStudentFor(user, students)
+  if (!student) return <LearnerDataEmpty user={user} />
+  const academic = academicFields(student)
+  const outcome = student.result || predictAcademic(student).result
+  const risk = student.risk || predictAcademic(student).risk
+  const studentAchievements = (achievements || []).filter((achievement) => Number(achievement.studentId) === Number(student.id) || achievement.usn === student.usn)
+  return <div className="dashboard-content"><PageIntro eyebrow="Your academic record" title="Average Academic Performance" description="A read-only view of your teacher-entered Average Academic Performance record." /><section className="content-card"><div className="student-detail-hero"><Avatar initials={student.initials} tone="mint" /><div><h2>{student.name}</h2><p>{student.usn} · {student.department} · Semester {student.semester} · Section {student.section}</p></div><span style={{ marginLeft: 'auto' }}><RiskBadge risk={risk} /></span></div><div className="profile-stat-grid academic-performance-grid" style={{ marginTop: 20 }}>{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix }) => <div key={key}><span>{label}</span><strong>{Number(academic[key]).toFixed(1)}</strong><small>{suffix}</small></div>)}</div><div className="detail-list" style={{ marginTop: 18 }}><div className="detail-item"><span>Prediction</span><strong>{outcome}</strong></div><div className="detail-item"><span>Risk level</span><strong>{risk}</strong></div></div></section><LearnerSubjectCatalog subjects={subjects} student={student} /><section className="content-card learner-record-achievements"><div className="card-heading"><div><h2 className="card-title">Achievements</h2><p className="card-description">Read-only milestones attached to this academic record</p></div><FiAward /></div><div className="learner-achievement-list">{studentAchievements.map((achievement) => <article className="learner-achievement-row" key={achievement.id}><span className="learner-achievement-icon"><FiAward /></span><div><div className="achievement-record-meta"><span className="achievement-type-pill">{achievement.achievementType}</span><time>{achievement.date}</time></div><h3>{achievement.title}</h3><p>{achievement.description}</p></div></article>)}{!studentAchievements.length && <div className="empty-state"><FiAward /><span>No achievements recorded yet.</span></div>}</div></section></div>
+}
+
+function AchievementsView({ user, students, achievements, onNavigate }) {
+  const student = learnerStudentFor(user, students)
+  if (!student) return <LearnerDataEmpty user={user} />
+  const visible = (achievements || []).filter((achievement) => Number(achievement.studentId) === Number(student.id) || achievement.usn === student.usn)
+  const formatDate = (value) => { const date = new Date(`${String(value || '').slice(0, 10)}T00:00:00`); return Number.isNaN(date.getTime()) ? value || 'Date not recorded' : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }
+  return <div className="dashboard-content"><PageIntro eyebrow={`${student.department} · Semester ${student.semester} · Section ${student.section}`} title="Achievements" description={user.role === 'parent' ? `A read-only record of ${student.name}'s achievements and milestones.` : 'A read-only record of your achievements and milestones.'} actions={<span className="live-tag" style={{ color: '#4f9276', background: '#eaf6f0', borderColor: '#d7ecdf' }}><i style={{ background: '#70B99B' }} /> Read-only academic record</span>} /><div className="semester-context-banner"><FiShield /><span>These records were added by your teacher and are visible to the linked student and parent portals.</span></div><section className="content-card learner-achievements-card"><div className="table-card-head"><div><h2 className="card-title">{student.name}</h2><p className="card-description">{visible.length} achievement{visible.length === 1 ? '' : 's'} · {student.department} Semester {student.semester} Section {student.section}</p></div><span className="scope-pill"><FiAward /> Verified record</span></div><div className="learner-achievement-list">{visible.map((achievement) => <article className="learner-achievement-row" key={achievement.id}><span className="learner-achievement-icon"><FiAward /></span><div><div className="achievement-record-meta"><span className="achievement-type-pill">{achievement.achievementType}</span><time>{formatDate(achievement.date)}</time></div><h3>{achievement.title}</h3><p>{achievement.description}</p><small>Recorded by {achievement.author || 'Teacher'}</small></div></article>)}{!visible.length && <div className="empty-state"><FiAward /><span>No achievements have been recorded yet.</span></div>}</div></section></div>
+}
+
+function LearnerOverview({ user, students, announcements, messages, remarks, achievements, subjects, onNavigate }) {
+  const student = learnerStudentFor(user, students)
+  if (!student) return <LearnerDataEmpty user={user} />
+  const academic = academicFields(student)
+  const outcome = student.result || predictAcademic(student).result
+  const risk = student.risk || predictAcademic(student).risk
+  const isParent = user.role === 'parent'
+  const relevantRemarks = remarks.filter((remark) => remark.studentId === student.id)
+  const relevantAchievements = (achievements || []).filter((achievement) => Number(achievement.studentId) === Number(student.id) || achievement.usn === student.usn)
+  return <div className="dashboard-content"><PageIntro eyebrow={isParent ? `Family view · ${student.department}` : `${student.department} · Semester ${student.semester}`} title={isParent ? `Hello, ${user.name.split(' ')[0]}.` : `Welcome back, ${student.name.split(' ')[0]}.`} description={isParent ? `Here is the latest academic picture for ${student.name}.` : 'A clear view of your progress, support and next steps.'} actions={<span className="live-tag" style={{ color: '#4f9276', background: '#eaf6f0', borderColor: '#d7ecdf' }}><i style={{ background: '#70B99B' }} /> Read-only view</span>} /><LearnerSubjectCatalog subjects={subjects} student={student} /><div className="profile-stat-grid academic-performance-grid"><div><span>Attendance Percentage</span><strong>{academic.attendancePercentage.toFixed(1)}</strong><small>%</small></div><div><span>Current GPA</span><strong>{academic.currentGpa.toFixed(1)}</strong><small>/ 10</small></div><div><span>Prediction</span><strong>{outcome}</strong><small><RiskBadge risk={risk} /></small></div></div><div className="prediction-banner"><div className="prediction-banner-copy"><h3>Average Academic Performance</h3><p>Teacher-entered academic attributes are used to monitor progress.</p></div><div className="prediction-score"><strong>{outcome}</strong><div><span>prediction</span><b><i style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: '#BCE7D7', marginRight: 5 }} />{risk}</b></div></div></div><div className="section-grid" style={{ marginTop: 13 }}><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Your attendance rhythm</h2><p className="card-description">Consistency is a superpower</p></div></div><div className="chart-container" style={{ height: 210 }}><ResponsiveContainer width="100%" height="100%"><AreaChart data={attendanceTrend} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}><defs><linearGradient id="learnerGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#75BFA5" stopOpacity=".3" /><stop offset="100%" stopColor="#75BFA5" stopOpacity=".02" /></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="3 4" /><XAxis dataKey="month" axisLine={false} tickLine={false} /><YAxis domain={[55, 100]} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} /><Tooltip content={<ChartTooltip />} /><Area type="monotone" dataKey="attendance" stroke="#70B99B" strokeWidth={2.5} fill="url(#learnerGradient)" /></AreaChart></ResponsiveContainer></div></section><section className="student-detail-card"><div className="student-detail-hero"><Avatar initials={student.initials} tone="mint" /><div><h2>{student.name}</h2><p>{student.usn} · {student.department}</p></div></div><div className="detail-list"><div className="detail-item"><span>Average Internal Marks</span><strong>{academic.averageInternalMarks.toFixed(1)}%</strong></div><div className="detail-item"><span>Average Assignment Score</span><strong>{academic.averageAssignmentScore.toFixed(1)}%</strong></div><div className="detail-item"><span>Previous GPA</span><strong>{academic.previousGpa.toFixed(1)} / 10</strong></div><div className="detail-item"><span>Participation Score</span><strong>{academic.participationScore.toFixed(1)}%</strong></div></div></section></div><div className="section-grid" style={{ marginTop: 13 }}><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Teacher remarks</h2><p className="card-description">A little context for your next step</p></div><button className="button-ghost" type="button" onClick={() => onNavigate('messages')}>Open messages <FiArrowRight /></button></div>{relevantRemarks.length ? <div className="alert-list">{relevantRemarks.map((remark) => <div className="alert-row" key={remark.id}><Avatar initials="AR" /><div className="alert-info"><strong>{remark.label}</strong><span>{remark.note}</span></div><span style={{ color: '#a4acab', fontSize: 9 }}>{remark.date}</span></div>)}</div> : <div className="empty-state">No new remarks.</div>}</section><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Latest announcements</h2><p className="card-description">For {student.department} · Semester {student.semester}</p></div><button className="row-action" type="button" onClick={() => onNavigate('announcements')}><FiArrowRight /></button></div><div className="alert-list">{announcements.slice(0, 2).map((announcement) => <div className="alert-row" key={announcement.id}><span className="info-icon" style={{ width: 29, height: 29 }}><FiBell /></span><div className="alert-info"><strong>{announcement.title}</strong><span>{announcement.date}</span></div></div>)}</div></section></div><section className="content-card learner-overview-achievements"><div className="card-heading"><div><h2 className="card-title">Latest achievements</h2><p className="card-description">Milestones recorded in your academic record</p></div><button className="row-action" type="button" onClick={() => onNavigate('achievements')}><FiArrowRight /></button></div>{relevantAchievements.length ? <div className="alert-list">{relevantAchievements.slice(0, 2).map((achievement) => <div className="alert-row" key={achievement.id}><span className="info-icon" style={{ width: 29, height: 29 }}><FiAward /></span><div className="alert-info"><strong>{achievement.title}</strong><span>{achievement.achievementType} · {achievement.date}</span></div></div>)}</div> : <div className="empty-state"><FiAward /><span>No achievements recorded yet.</span></div>}</section></div>
 }
 
 function ProfileView({ user }) {
@@ -534,36 +599,58 @@ export default function Dashboard() {
   const location = useLocation()
   const locationView = location.pathname.startsWith('/app/') ? location.pathname.slice('/app/'.length).split('/')[0] || 'overview' : 'overview'
   const [activeView, setActiveView] = useState(locationView)
-  const [students, setStudents] = useState(() => cloneDemoStudents())
+  const isLearner = user.role === 'student' || user.role === 'parent'
+  const useRemoteLearnerData = !DEMO_MODE && isApiToken(token) && isLearner
+  const [students, setStudents] = useState(() => useRemoteLearnerData ? [] : cloneDemoStudents())
   const demoInbox = getDemoMessages().filter((item) => ['teacher', 'admin'].includes(user.role) || (Number(item.receiverId) === Number(user.id) && item.receiverRole === user.role) || String(item.recipient || '').toLowerCase().includes(String(user.name || '').toLowerCase()))
-  const [messages, setMessages] = useState(() => demoInbox.map((item) => ({ ...item })))
-  const [unreadCount, setUnreadCount] = useState(() => demoInbox.filter((item) => !item.read && (item.senderRole ? item.senderRole !== user.role : item.sender !== user.name)).length)
-  const [announcements, setAnnouncements] = useState(() => demoAnnouncements.map((item) => ({ ...item })))
-  const [remarks, setRemarks] = useState(() => demoRemarks.map((item) => ({ ...item })))
-  const [achievements, setAchievements] = useState(() => demoAchievements.map((item) => ({ ...item })))
-  const [subjects, setSubjects] = useState(() => getDemoSubjects())
+  const [messages, setMessages] = useState(() => useRemoteLearnerData ? [] : demoInbox.map((item) => ({ ...item })))
+  const [unreadCount, setUnreadCount] = useState(() => useRemoteLearnerData ? 0 : demoInbox.filter((item) => !item.read && (item.senderRole ? item.senderRole !== user.role : item.sender !== user.name)).length)
+  const [announcements, setAnnouncements] = useState(() => useRemoteLearnerData ? [] : demoAnnouncements.map((item) => ({ ...item })))
+  const [remarks, setRemarks] = useState(() => useRemoteLearnerData ? [] : demoRemarks.map((item) => ({ ...item })))
+  const [achievements, setAchievements] = useState(() => useRemoteLearnerData ? [] : demoAchievements.map((item) => ({ ...item })))
+  const [subjects, setSubjects] = useState(() => useRemoteLearnerData ? [] : getDemoSubjects())
+  const [dashboardLoading, setDashboardLoading] = useState(useRemoteLearnerData)
+  const [dashboardError, setDashboardError] = useState('')
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0)
   const [studentModalOpen, setStudentModalOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [toast, setToast] = useState('')
-  const isLearner = user.role === 'student' || user.role === 'parent'
 
   useEffect(() => {
     setActiveView(locationView)
   }, [locationView])
 
   useEffect(() => {
-    if (DEMO_MODE || !user) return undefined
+    if (DEMO_MODE || !user) {
+      setDashboardLoading(false)
+      return undefined
+    }
     let mounted = true
-    Promise.allSettled([
-      api.getStudents({ limit: 100 }),
-      api.getMessages(),
-      api.getAnnouncements(),
-      api.getRemarks(),
-      api.getAchievements(),
-      api.getSubjects(),
-    ]).then(([studentResult, messageResult, announcementResult, remarkResult, achievementResult, subjectResult]) => {
+    setDashboardLoading(isLearner)
+    setDashboardError('')
+    const requests = [
+      ['students', api.getStudents({ limit: 100 })],
+      ['messages', api.getMessages()],
+      ['announcements', api.getAnnouncements()],
+      ['remarks', api.getRemarks()],
+      ['achievements', api.getAchievements()],
+      ['subjects', api.getSubjects()],
+    ]
+    console.info('[dashboard] Fetching dashboard data.', { role: user.role, userId: user.id, usn: user.usn, studentId: user.studentId, department: user.department, semester: user.semester })
+    Promise.allSettled(requests.map(([, request]) => request)).then(async (results) => {
       if (!mounted) return
+      const [studentResult, messageResult, announcementResult, remarkResult, achievementResult, subjectResult] = results
+      const labels = requests.map(([label]) => label)
+      const failures = results.map((result, index) => result.status === 'rejected' ? { endpoint: labels[index], status: result.reason?.response?.status || 'network', message: result.reason?.response?.data?.message || result.reason?.message } : null).filter(Boolean)
+      if (failures.length) console.error('[dashboard] One or more dashboard requests failed.', { role: user.role, failures })
+      const authFailure = failures.find((failure) => failure.status === 401)
+      if (authFailure) {
+        console.error('[dashboard] Session rejected by API; returning to login.', { endpoint: authFailure.endpoint, status: authFailure.status, role: user.role })
+        await logout()
+        if (mounted) navigate(`/login?department=${encodeURIComponent(user.department || '')}&role=${user.role}&reason=session`, { replace: true })
+        return
+      }
       if (studentResult.status === 'fulfilled' && studentResult.value?.data) setStudents(studentResult.value.data)
       if (messageResult.status === 'fulfilled' && messageResult.value) {
         const nextMessages = messageResult.value.data || []
@@ -574,9 +661,15 @@ export default function Dashboard() {
       if (remarkResult.status === 'fulfilled' && remarkResult.value?.data) setRemarks(remarkResult.value.data)
       if (achievementResult.status === 'fulfilled' && achievementResult.value?.data) setAchievements(achievementResult.value.data)
       if (subjectResult.status === 'fulfilled' && subjectResult.value?.data) setSubjects(subjectResult.value.data)
+      const studentRows = studentResult.status === 'fulfilled' ? studentResult.value?.data || [] : []
+      if (isLearner && !studentRows.length && isApiToken(token)) setDashboardError(studentResult.status === 'rejected' ? 'Your student record could not be loaded. Check the API connection and try again.' : 'No active student record is linked to this account. Please contact the academic office.')
+      else if (failures.length && !isApiToken(token)) setDashboardError('The live API is unavailable. Showing the saved review data for this session.')
+      else if (failures.length) setDashboardError(`Some dashboard data could not be loaded (${failures.map((failure) => failure.endpoint).join(', ')}). The available information is shown below.`)
+      console.info('[dashboard] Dashboard data fetch completed.', { role: user.role, studentRecords: studentRows.length, messages: messageResult.status === 'fulfilled' ? (messageResult.value?.data || []).length : 0, failures: failures.length })
+      setDashboardLoading(false)
     })
     return () => { mounted = false }
-  }, [user])
+  }, [user, token, dashboardRefreshKey])
 
   useEffect(() => {
     if (!DEMO_MODE) return undefined
@@ -733,5 +826,15 @@ export default function Dashboard() {
     return <Overview user={user} students={students} onNavigate={navigateView} onAddStudent={() => setStudentModalOpen(true)} onUpload={() => setUploadOpen(true)} onExport={exportStudents} />
   }
 
-  return <Layout user={user} activeView={activeView} onNavigate={navigateView} onLogout={signOut} showBack={location.pathname !== '/app'} unreadCount={unreadCount}>{renderContent()}{!isLearner && studentModalOpen && <StudentFormModal departmentScope={user.department === 'ALL' ? '' : user.department} existingStudents={students} onClose={() => setStudentModalOpen(false)} onSave={saveNewStudent} />}{!isLearner && uploadOpen && <UploadModal departmentScope={user.department === 'ALL' ? '' : user.department} existingStudents={students} onClose={() => setUploadOpen(false)} onImport={importStudents} onPreview={previewImportedStudents} />}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</Layout>
+  const retryDashboard = () => {
+    console.info('[dashboard] Retrying dashboard data fetch.', { role: user.role, userId: user.id })
+    setDashboardRefreshKey((value) => value + 1)
+  }
+  const dashboardContent = dashboardLoading && isLearner && !students.length
+    ? <DashboardDataState loading message="We are securely loading your attendance, marks, GPA, prediction, messages and academic records." />
+    : dashboardError && isLearner && !students.length
+      ? <DashboardDataState title="Dashboard data unavailable" message={dashboardError} onRetry={retryDashboard} />
+      : <><DashboardDataNotice message={dashboardError} onRetry={retryDashboard} />{renderContent()}</>
+
+  return <Layout user={user} activeView={activeView} onNavigate={navigateView} onLogout={signOut} showBack={location.pathname !== '/app'} unreadCount={unreadCount}>{dashboardContent}{!isLearner && studentModalOpen && <StudentFormModal departmentScope={user.department === 'ALL' ? '' : user.department} existingStudents={students} onClose={() => setStudentModalOpen(false)} onSave={saveNewStudent} />}{!isLearner && uploadOpen && <UploadModal departmentScope={user.department === 'ALL' ? '' : user.department} existingStudents={students} onClose={() => setUploadOpen(false)} onImport={importStudents} onPreview={previewImportedStudents} />}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</Layout>
 }

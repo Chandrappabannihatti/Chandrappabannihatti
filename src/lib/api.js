@@ -64,10 +64,14 @@ client.interceptors.request.use((config) => {
 })
 
 client.interceptors.response.use(undefined, (error) => {
-  if (error.response?.status === 401) {
-    console.warn('[camps-auth] API request rejected as unauthenticated', {
-      method: error.config?.method,
+  const status = error.response?.status
+  if ([401, 403, 404, 500].includes(status)) {
+    const level = status === 401 || status === 403 ? 'warn' : 'error'
+    console[level]('[camps-api] Protected request failed.', {
+      method: error.config?.method?.toUpperCase(),
       url: error.config?.url,
+      status,
+      message: error.response?.data?.message || error.message,
       hasApiToken: Boolean(resolveToken()),
     })
   }
@@ -78,6 +82,7 @@ const unwrap = (request) => request.then((response) => response.data)
 
 const api = {
   login: (payload) => unwrap(client.post('/auth/login', payload)),
+  validateSession: () => unwrap(client.get('/auth/session')),
   logout: () => unwrap(client.post('/auth/logout')),
   getSections: (params) => unwrap(client.get('/sections', { params })),
   getTeachers: (params) => unwrap(client.get('/teachers', { params })),

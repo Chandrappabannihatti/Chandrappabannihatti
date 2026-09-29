@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Landing from './pages/Landing'
@@ -11,9 +12,27 @@ import AdminSubjectHierarchy, { AdminAccount } from './pages/AdminSubjects'
 
 function ProtectedRoute({ children, role }) {
   const { isAuthenticated, user } = useAuth()
-  if (!isAuthenticated) return <Navigate to="/" replace />
-  if (role && user.role !== role) return <Navigate to={user.role === 'teacher' ? '/teacher/departments' : '/app'} replace />
-  if (!role && user.role === 'teacher') return <Navigate to="/teacher/departments" replace />
+  const currentPath = window.location.pathname
+  useEffect(() => {
+    if (isAuthenticated && user) console.info('[route-access] Protected route evaluated.', { path: currentPath, role: user.role, userId: user.id, requiredRole: role || 'learner-or-admin' })
+  }, [currentPath, isAuthenticated, role, user])
+  if (!isAuthenticated) {
+    console.warn('[route-access] Protected route requires authentication.', { path: currentPath, requiredRole: role || 'learner-or-admin' })
+    return <Navigate to="/" replace />
+  }
+  if (role && user.role !== role) {
+    const fallback = user.role === 'teacher' ? '/teacher/departments' : user.role === 'admin' ? '/admin/subjects' : '/app'
+    console.warn('[route-access] Role mismatch; redirecting to the authenticated workspace.', { path: currentPath, requiredRole: role, actualRole: user.role, redirect: fallback, userId: user.id })
+    return <Navigate to={fallback} replace />
+  }
+  if (!role && user.role === 'teacher') {
+    console.info('[route-access] Teacher sent to the teacher workspace.', { path: currentPath, userId: user.id })
+    return <Navigate to="/teacher/departments" replace />
+  }
+  if (!role && !['admin', 'student', 'parent'].includes(user.role)) {
+    console.warn('[route-access] Unknown role blocked from learner workspace.', { path: currentPath, actualRole: user.role, userId: user.id })
+    return <Navigate to="/" replace />
+  }
   return children
 }
 

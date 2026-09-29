@@ -23,7 +23,7 @@ app.use(cors({ origin: process.env.CLIENT_ORIGIN?.split(',') || true, credential
 app.use(express.json({ limit: '2mb' }))
 app.use(express.urlencoded({ extended: true }))
 
-const publicUser = (user) => ({ id: user.id, name: user.name, role: user.role, department: user.department, semester: user.semester, usn: user.usn, studentId: user.studentId, studentName: user.studentName, email: user.email, designation: user.designation, relationship: user.relationship, initials: user.initials })
+const publicUser = (user) => ({ id: user.id ?? user.sub, name: user.name, role: user.role, department: user.department, semester: user.semester, usn: user.usn, studentId: user.studentId, studentName: user.studentName, email: user.email, designation: user.designation, relationship: user.relationship, initials: user.initials || String(user.name || 'User').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() })
 
 function publicTeacher(teacher) {
   return {
@@ -80,6 +80,7 @@ function authRequired(req, res, next) {
   }
   try {
     req.user = jwt.verify(token, jwtSecret)
+    console.info('[camps-auth] Authorized request', { method: req.method, path: req.originalUrl, userId: req.user.sub, role: req.user.role, department: req.user.department, usn: req.user.usn, studentId: req.user.studentId })
     next()
   } catch (error) {
     console.warn('[camps-auth] Invalid or expired access token', { method: req.method, path: req.originalUrl, reason: error.name })
@@ -88,7 +89,11 @@ function authRequired(req, res, next) {
 }
 
 function roleRequired(...roles) {
-  return (req, res, next) => roles.includes(req.user.role) ? next() : res.status(403).json({ message: 'You do not have permission for this action.' })
+  return (req, res, next) => {
+    if (roles.includes(req.user.role)) return next()
+    console.warn('[camps-auth] Route role denied', { method: req.method, path: req.originalUrl, requiredRoles: roles, actualRole: req.user.role, userId: req.user.sub })
+    return res.status(403).json({ message: 'You do not have permission for this action.' })
+  }
 }
 
 function selectedAdminDepartment(req) {
@@ -278,7 +283,12 @@ app.post('/api/auth/login', async (req, res, next) => {
     const role = cleanString(req.body.role).toLowerCase()
     const identifier = cleanString(req.body.identifier || req.body.email || req.body.usn)
     const password = cleanString(req.body.password)
-    if (!['admin', 'teacher', 'student', 'parent'].includes(role) || !identifier || !password) return res.status(400).json({ message: 'Role, identifier and password are required.' })
+    const requestedDepartment = cleanString(req.body.department).toUpperCase()
+    console.info('[camps-auth] Login attempt', { role, identifier, department: requestedDepartment, mode: useDemoData ? 'demo' : 'mysql' })
+    if (!['admin', 'teacher', 'student', 'parent'].includes(role) || !identifier || !password) {
+      console.warn('[camps-auth] Login rejected: missing or invalid fields', { role, identifier, department: requestedDepartment })
+      return res.status(400).json({ message: 'Role, identifier and password are required.' })
+    }
 
     if (useDemoData) {
       let account = demoAccounts[role]
@@ -288,7 +298,10 @@ app.post('/api/auth/login', async (req, res, next) => {
           const validPassword = savedTeacher.passwordHash
             ? await bcrypt.compare(password, savedTeacher.passwordHash)
             : identifier.toLowerCase() === demoAccounts.teacher.secret.toLowerCase() && password === demoAccounts.teacher.password
-          if (!validPassword) return res.status(401).json({ message: 'Invalid demo credentials.' })
+          if (!validPassword) {
+            console.warn('[camps-auth] Login rejected: invalid teacher credentials', { role, identifier, department: requestedDepartment })
+            return res.status(401).json({ message: 'Invalid demo credentials.' })
+          }
           account = { ...savedTeacher, secret: savedTeacher.email, role: 'teacher' }
         }
       }
@@ -296,11 +309,20 @@ app.post('/api/auth/login', async (req, res, next) => {
         const linkedStudent = demoStore.students.find((student) => String(student.usn).toUpperCase() === identifier.toUpperCase())
         account = demoParentForStudent(linkedStudent) || demoAccounts.parent
       }
-      if (!account || identifier.toLowerCase() !== String(account.secret).toLowerCase() || (role !== 'teacher' && password !== account.password)) return res.status(401).json({ message: 'Invalid demo credentials.' })
-      const requestedDepartment = cleanString(req.body.department).toUpperCase()
-      if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
-      if (role !== 'admin' && requestedDepartment && requestedDepartment !== account.department) return res.status(403).json({ message: `This demo ${role} account is scoped to ${account.department}. Choose that department to continue.` })
+      if (!account || identifier.toLowerCase() !== String(account.secret).toLowerCase() || (role !== 'teacher' && password !== account.password)) {
+        console.warn('[camps-auth] Login rejected: invalid demo credentials', { role, identifier, department: requestedDepartment })
+        return res.status(401).json({ message: 'Invalid demo credentials.' })
+      }
+      if (requestedDepartment && !validDepartments.includes(requestedDepartment)) {
+        console.warn('[camps-auth] Login rejected: invalid department', { role, identifier, department: requestedDepartment })
+        return res.status(422).json({ message: 'Choose a valid department.' })
+      }
+      if (role !== 'admin' && requestedDepartment && requestedDepartment !== account.department) {
+        console.warn('[camps-auth] Login rejected: department scope mismatch', { role, identifier, requestedDepartment, accountDepartment: account.department })
+        return res.status(403).json({ message: `This demo ${role} account is scoped to ${account.department}. Choose that department to continue.` })
+      }
       const user = { ...account, department: role === 'admin' ? requestedDepartment || account.department : account.department }
+      console.info('[camps-auth] Demo login succeeded', { role: user.role, userId: user.id, department: user.department, usn: user.usn, studentId: user.studentId })
       return res.json({ token: sign(user), user: publicUser(user) })
     }
 
@@ -310,16 +332,33 @@ app.post('/api/auth/login', async (req, res, next) => {
     else if (role === 'parent') rows = await query('SELECT p.id, p.name, p.email, p.password_hash, p.student_id AS studentId, s.usn, s.name AS studentName, s.department_code AS department, s.semester FROM parents p JOIN students s ON s.id = p.student_id WHERE s.usn = :identifier AND p.is_active = 1 AND s.is_active = 1 ORDER BY p.id LIMIT 1', { identifier: identifier.toUpperCase() })
     else rows = await query('SELECT id, name, email, password_hash FROM admins WHERE email = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toLowerCase() })
     const found = rows[0]
-    if (!found || !(await bcrypt.compare(password, found.password_hash))) return res.status(401).json({ message: 'Invalid credentials.' })
-    const requestedDepartment = cleanString(req.body.department).toUpperCase()
-    if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
-    if (role !== 'admin' && requestedDepartment && requestedDepartment !== found.department) return res.status(403).json({ message: `This ${role} account is scoped to ${found.department}. Choose that department to continue.` })
+    if (!found || !(await bcrypt.compare(password, found.password_hash))) {
+      console.warn('[camps-auth] Login rejected: invalid database credentials', { role, identifier, department: requestedDepartment })
+      return res.status(401).json({ message: 'Invalid credentials.' })
+    }
+    if (requestedDepartment && !validDepartments.includes(requestedDepartment)) {
+      console.warn('[camps-auth] Login rejected: invalid department', { role, identifier, department: requestedDepartment })
+      return res.status(422).json({ message: 'Choose a valid department.' })
+    }
+    if (role !== 'admin' && requestedDepartment && requestedDepartment !== found.department) {
+      console.warn('[camps-auth] Login rejected: department scope mismatch', { role, identifier, requestedDepartment, accountDepartment: found.department })
+      return res.status(403).json({ message: `This ${role} account is scoped to ${found.department}. Choose that department to continue.` })
+    }
     const user = { ...found, role, department: role === 'admin' ? requestedDepartment || found.department || 'ALL' : found.department, initials: found.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
+    console.info('[camps-auth] Database login succeeded', { role: user.role, userId: user.id, department: user.department, usn: user.usn, studentId: user.studentId })
     res.json({ token: sign(user), user: publicUser(user) })
   } catch (error) { next(error) }
 })
 
-app.post('/api/auth/logout', authRequired, (_req, res) => res.json({ ok: true, message: 'Signed out.' }))
+app.get('/api/auth/session', authRequired, (req, res) => {
+  console.info('[camps-auth] JWT session validation succeeded', { userId: req.user.sub, role: req.user.role, department: req.user.department, usn: req.user.usn, studentId: req.user.studentId })
+  res.json({ user: publicUser(req.user) })
+})
+
+app.post('/api/auth/logout', authRequired, (req, res) => {
+  console.info('[camps-auth] Logout accepted', { userId: req.user.sub, role: req.user.role })
+  res.json({ ok: true, message: 'Signed out.' })
+})
 
 app.get('/api/teachers', authRequired, roleRequired('admin'), async (req, res, next) => {
   try {
@@ -1000,7 +1039,7 @@ app.get('/api/messages', authRequired, async (req, res, next) => {
         const directReceiver = Number(message.receiverId || message.receiver_id) === Number(req.user.sub) && String(message.receiverRole || message.receiver_role || '').toLowerCase() === req.user.role
         const directSender = Number(message.senderId || message.sender_id) === Number(req.user.sub) && String(message.senderRole || message.sender_role || '').toLowerCase() === req.user.role
         const legacyMatch = !message.receiverId && (req.user.role === 'teacher' || req.user.role === 'admin' || String(message.recipient || '').toLowerCase().includes(String(req.user.name || req.user.usn).toLowerCase()) || (req.user.role === 'student' && String(message.recipient || '').toLowerCase().includes(String(req.user.name || '').toLowerCase())))
-        const visible = req.user.role === 'teacher' || req.user.role === 'admin' ? directReceiver || directSender || legacyMatch : directReceiver || legacyMatch
+        const visible = req.user.role === 'teacher' || req.user.role === 'admin' ? directReceiver || directSender || legacyMatch : directReceiver || directSender || legacyMatch
         return visible && messageScopeMatches(message, requestedDepartment, requestedSemester, requestedSection)
       }).map(mapMessageRow)
       return res.json({ data: messages, unreadCount: messages.filter((message) => !message.read && ((Number(message.receiverId || message.receiver_id) === Number(req.user.sub) && String(message.receiverRole || message.receiver_role || '').toLowerCase() === String(req.user.role).toLowerCase()) || (!message.receiverId && message.sender !== req.user.name))).length })
@@ -1008,7 +1047,7 @@ app.get('/api/messages', authRequired, async (req, res, next) => {
     const params = { currentId: Number(req.user.sub), currentRole: req.user.role }
     const direct = req.user.role === 'teacher' || req.user.role === 'admin'
       ? '((m.receiver_id=:currentId AND m.receiver_role=:currentRole) OR (m.sender_id=:currentId AND m.sender_role=:currentRole) OR (m.receiver_id IS NULL AND m.sender_id=:currentId))'
-      : '(m.receiver_id=:currentId AND m.receiver_role=:currentRole)'
+      : '((m.receiver_id=:currentId AND m.receiver_role=:currentRole) OR (m.sender_id=:currentId AND m.sender_role=:currentRole))'
     const conditions = [direct]
     if (requestedDepartment) { conditions.push('(m.department_code=:department OR m.department_code IS NULL)'); params.department = requestedDepartment }
     if (requestedSemester) { conditions.push('(m.semester=:semester OR m.semester IS NULL)'); params.semester = Number(requestedSemester) }
@@ -1142,18 +1181,21 @@ app.put('/api/messages/:id/read', authRequired, async (req, res, next) => {
 
 app.get('/api/announcements', authRequired, async (req, res, next) => {
   try {
+    const learner = req.user.role === 'student' || req.user.role === 'parent'
+    const linkedDemoStudent = learner && useDemoData ? demoStore.students.find((student) => String(student.usn).toUpperCase() === String(req.user.usn || '').toUpperCase()) : null
     const requestedDepartment = req.user.role === 'teacher' ? req.user.department : selectedAdminDepartment(req) || (cleanString(req.query.department).toUpperCase() || (req.user.department === 'ALL' ? '' : req.user.department))
     const requestedSemester = req.query.semester || req.user.semester
-    const requestedSection = req.query.section ? String(req.query.section).toUpperCase() : ''
+    const requestedSection = req.query.section ? String(req.query.section).toUpperCase() : linkedDemoStudent?.section || ''
     if (useDemoData) {
-      const items = demoStore.announcements.filter((item) => (!requestedDepartment || item.department === requestedDepartment) && (!requestedSemester || Number(item.semester) === Number(requestedSemester)) && (!requestedSection || String(item.section || '').toUpperCase() === requestedSection))
+      const items = demoStore.announcements.filter((item) => (!requestedDepartment || !item.department || item.department === requestedDepartment) && (!requestedSemester || !item.semester || Number(item.semester) === Number(requestedSemester)) && (!requestedSection || String(item.section || '').toUpperCase() === requestedSection || !item.section))
       return res.json({ data: items })
     }
     const conditions = ['is_active = 1']
     const params = {}
-    if (requestedDepartment) { conditions.push('department_code = :department'); params.department = requestedDepartment }
-    if (requestedSemester) { conditions.push('semester = :semester'); params.semester = Number(requestedSemester) }
+    if (requestedDepartment) { conditions.push(learner ? '(department_code = :department OR department_code IS NULL)' : 'department_code = :department'); params.department = requestedDepartment }
+    if (requestedSemester) { conditions.push(learner ? '(semester = :semester OR semester IS NULL)' : 'semester = :semester'); params.semester = Number(requestedSemester) }
     if (requestedSection) { conditions.push('sec.section_name = :section'); params.section = requestedSection }
+    if (learner && !requestedSection) { conditions.push('(a.section_id IS NULL OR a.section_id = (SELECT section_id FROM students WHERE usn = :announcementUserUsn AND is_active = 1 LIMIT 1))'); params.announcementUserUsn = req.user.usn }
     const rows = await query(`SELECT a.*, sec.section_name AS sectionName FROM announcements a LEFT JOIN sections sec ON sec.section_id=a.section_id WHERE ${conditions.join(' AND ')} ORDER BY a.created_at DESC`, params)
     res.json({ data: rows.map(mapAnnouncementRow) })
   } catch (error) { next(error) }
@@ -1223,7 +1265,8 @@ app.get('/api/remarks', authRequired, async (req, res, next) => {
     const requestedSection = req.query.section ? String(req.query.section).toUpperCase() : ''
     const requestedDepartment = req.user.role === 'teacher' ? req.user.department : selectedAdminDepartment(req) || (cleanString(req.query.department).toUpperCase() || (req.user.department === 'ALL' ? '' : req.user.department))
     if (useDemoData) {
-      const items = (req.user.role === 'teacher' || req.user.role === 'admin' ? demoStore.remarks : demoStore.remarks.filter((remark) => remark.studentId === 4)).filter((remark) => {
+      const linkedStudent = req.user.role === 'student' || req.user.role === 'parent' ? demoStore.students.find((student) => String(student.usn).toUpperCase() === String(req.user.usn || '').toUpperCase()) : null
+      const items = (req.user.role === 'teacher' || req.user.role === 'admin' ? demoStore.remarks : demoStore.remarks.filter((remark) => linkedStudent && Number(remark.studentId) === Number(linkedStudent.id))).filter((remark) => {
         const student = demoStore.students.find((item) => item.id === remark.studentId)
         return student && scopeStudent(req, student) && (!requestedDepartment || student.department === requestedDepartment) && (!requestedSemester || Number(student.semester) === Number(requestedSemester)) && (!requestedSection || String(student.section || '').toUpperCase() === requestedSection)
       })
@@ -1234,6 +1277,7 @@ app.get('/api/remarks', authRequired, async (req, res, next) => {
     if (requestedDepartment) { conditions.push('s.department_code=:department'); params.department = requestedDepartment }
     if (requestedSemester) { conditions.push('s.semester=:semester'); params.semester = Number(requestedSemester) }
     if (requestedSection) { conditions.push('COALESCE(sec.section_name, s.section)=:section'); params.section = requestedSection }
+    if (req.user.role === 'student' || req.user.role === 'parent') { conditions.push('s.usn=:userUsn'); params.userUsn = req.user.usn }
     const rows = await query(`SELECT r.*, s.name AS student_name FROM remarks r JOIN students s ON s.id=r.student_id LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE ${conditions.join(' AND ')} ORDER BY r.created_at DESC`, params); res.json({ data: rows.map(mapRemarkRow) })
   } catch (error) { next(error) }
 })
