@@ -6,22 +6,30 @@
 
 :root {
   font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #15263a;
-  background: #f7f5ef;
+  color: #102a43;
+  background: #f4f8fb;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --ink: #081728;
-  --ink-soft: #183047;
-  --muted: #7d8994;
-  --cream: #f7f5ef;
-  --cream-dark: #efede5;
-  --coral: #f07e5e;
-  --coral-dark: #d96344;
-  --mint: #bce7d7;
-  --sky: #cce7f4;
-  --line: #e6e4de;
+  --ink: #0b2239;
+  --ink-soft: #183a56;
+  --muted: #6d8292;
+  --cream: #f4f8fb;
+  --cream-dark: #e7f0f5;
+  --coral: #2b78a0;
+  --coral-dark: #1e5e82;
+  --mint: #c4e9df;
+  --sky: #d9ecf6;
+  --line: #d9e4ec;
   --white: #ffffff;
+  --primary: #2b78a0;
+  --primary-dark: #1e5e82;
+  --teal: #319d96;
+  --teal-dark: #267b77;
+  --surface: #ffffff;
+  --surface-soft: #f7fafc;
+  --warning: #bf8729;
+  --danger: #c45b5b;
 }
 
 * { box-sizing: border-box; }
@@ -1859,3 +1867,232 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .admin-selected-scope { align-items: flex-start; flex-wrap: wrap; }
   .admin-selected-scope em { width: 100%; margin-left: 0; padding-left: 46px; white-space: normal; }
 }
+
+/* Professional blue and teal visual theme */
+:root {
+  color-scheme: light;
+  accent-color: var(--primary);
+}
+
+body,
+.app-shell,
+.landing-page,
+.erp-entry-page,
+.erp-login-page,
+.admin-control-page {
+  color: #102a43;
+  background: var(--cream);
+}
+
+/* Entry and authentication surfaces */
+.erp-entry-page,
+.erp-login-page {
+  background:
+    radial-gradient(circle at 92% 6%, rgba(49, 157, 150, .11), transparent 28%),
+    linear-gradient(145deg, #f4f8fb 0%, #eef5f9 52%, #f8fbfd 100%);
+}
+
+.erp-entry-header .brand-mark,
+.erp-login-header .brand-mark {
+  background: var(--ink);
+  box-shadow: 0 8px 18px rgba(11, 34, 57, .16);
+}
+
+.brand-mark::after { background: var(--teal); }
+.erp-entry-header .brand-wordmark strong,
+.erp-login-header .brand-wordmark strong,
+.erp-step-heading h1,
+.erp-department-copy strong,
+.erp-department-action,
+.erp-login-card h1,
+.erp-login-continue > span strong {
+  color: var(--ink);
+}
+
+.erp-entry-badge,
+.erp-login-card,
+.erp-department-card {
+  border-color: #d9e7ef;
+}
+
+.erp-entry-badge {
+  color: #52718a;
+  background: rgba(255, 255, 255, .84);
+}
+
+.erp-entry-badge i { background: var(--teal); box-shadow: 0 0 0 4px rgba(49, 157, 150, .13); }
+.erp-step-label,
+.erp-department-code,
+.erp-login-department { color: var(--primary); }
+.erp-step-heading p,
+.erp-department-copy small,
+.erp-login-step p,
+.erp-login-card-heading p { color: #6d8292; }
+
+.erp-department-card {
+  color: var(--ink);
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 14px 30px rgba(30, 94, 130, .08);
+}
+.erp-department-card::after { background: #e8f3f8; }
+.erp-department-card:hover,
+.erp-department-card.selected {
+  border-color: #8fc7d7;
+  box-shadow: 0 19px 36px rgba(30, 94, 130, .15);
+}
+.erp-department-card.selected::after { background: #e2f4f1; }
+.erp-department-card:focus-visible { outline-color: rgba(43, 120, 160, .3); }
+.erp-department-action svg { color: var(--primary); }
+
+.erp-role-section {
+  border-color: #c8e5e1;
+  background: rgba(232, 247, 245, .88);
+  box-shadow: 0 13px 25px rgba(30, 94, 130, .07);
+}
+.erp-role-copy h2,
+.erp-login-card h1 { color: var(--ink); }
+.erp-role-copy p strong { color: var(--teal-dark); }
+.erp-role-tabs button,
+.erp-login-role-tabs button {
+  border-color: #d6e2ea;
+  color: #31536d;
+  background: rgba(255, 255, 255, .82);
+}
+.erp-role-tabs button svg,
+.erp-login-role-tabs button svg,
+.erp-login-step p svg { color: var(--primary); }
+.erp-role-tabs button:hover,
+.erp-role-tabs button.active,
+.erp-login-role-tabs button:hover,
+.erp-login-role-tabs button.active {
+  border-color: var(--primary);
+  color: var(--ink);
+  background: #fff;
+}
+.erp-login-continue > span svg { color: var(--teal); }
+.erp-login-continue button { background: var(--ink); }
+.erp-login-continue button:hover { background: var(--primary-dark); }
+.erp-login-card { box-shadow: 0 22px 45px rgba(30, 94, 130, .11); }
+.erp-login-icon { background: #e4f3f4; }
+.erp-login-input:focus-within { border-color: #6bb7bd; box-shadow: 0 0 0 3px rgba(49, 157, 150, .12); }
+.erp-login-input input { color: var(--ink); }
+.erp-login-submit { background: var(--primary); box-shadow: 0 10px 20px rgba(43, 120, 160, .2); }
+.erp-login-submit:hover { background: var(--primary-dark); }
+.erp-login-security svg,
+.erp-entry-footer svg { color: var(--teal); }
+.erp-entry-footer { border-color: #d9e4ec; color: #7b91a1; }
+
+/* Shared dashboard surfaces */
+.dashboard-sidebar,
+.semester-selection-page,
+.section-selection-page,
+.teacher-account-page { background: var(--ink); }
+.dashboard-sidebar .sidebar-nav button.active { background: #153b58; box-shadow: inset 3px 0 0 var(--primary); }
+.dashboard-sidebar .sidebar-nav button.active svg,
+.logout-btn:hover { color: #72c4ba; }
+.dashboard-main { background: var(--cream); }
+.dashboard-topbar { border-color: var(--line); }
+
+.button-primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: 0 7px 16px rgba(43, 120, 160, .18);
+}
+.button-primary:hover { border-color: var(--primary-dark); background: var(--primary-dark); }
+.button-ghost { border-color: #cfdee7; color: var(--ink); background: #fff; }
+.button-ghost:hover { border-color: #9dbbca; background: #f7fbfd; }
+
+.content-card,
+.kpi-card,
+.student-detail-card,
+.modal-card {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, .82);
+}
+.content-card { box-shadow: 0 8px 24px rgba(30, 94, 130, .035); }
+.kpi-card.primary { border-color: var(--ink); background: var(--ink); }
+.kpi-card.mint { border-color: #bfe2dc; background: #e8f6f3; }
+.kpi-card.sky { border-color: #c8e1ed; background: #edf6fa; }
+.kpi-card.peach { border-color: #ead8c3; background: #fff8ed; }
+.kpi-card.primary .kpi-icon { background: var(--primary); }
+.kpi-card.mint .kpi-icon { background: rgba(49, 157, 150, .18); }
+.kpi-card.peach .kpi-icon { background: rgba(191, 135, 41, .16); }
+.kpi-card.sky .kpi-icon { background: rgba(43, 120, 160, .14); }
+
+.semester-picker-card,
+.semester-context-banner {
+  border-color: #cde3e9;
+  background: #edf7f9;
+}
+.semester-picker-item { border-color: #d7e5eb; background: rgba(255, 255, 255, .78); }
+.semester-picker-item:hover { border-color: #75b4c5; background: #fff; }
+.semester-picker-item.active { border-color: var(--ink); background: var(--ink); }
+.semester-picker-number { color: var(--teal-dark); }
+.semester-context-banner { color: #537383; }
+.semester-context-banner svg { color: var(--teal); }
+.semester-context-banner strong { color: var(--teal-dark); }
+
+.semester-tabs { border-color: var(--line); }
+.semester-tab.active { border-bottom-color: var(--primary); }
+.student-table th { border-color: #e1eaf0; color: #7890a0; }
+.student-table td { border-color: #edf2f5; color: #60798a; }
+.student-table tbody tr:hover { background: #f7fbfd; }
+.student-name,
+.page-title,
+.card-title { color: var(--ink); }
+.page-eyebrow,
+.section-label,
+.profile-text-link { color: var(--primary-dark); }
+
+.field-control,
+.input-wrap input,
+.input-wrap select,
+.input-wrap textarea {
+  border-color: #d7e3ea;
+  color: var(--ink);
+  background: #fff;
+}
+.field-control:focus,
+.input-wrap input:focus,
+.input-wrap select:focus,
+.input-wrap textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(43, 120, 160, .12);
+}
+.form-field .plain-label,
+.form-field label { color: #45647a; }
+
+.toast {
+  border-color: #bfe2dc;
+  color: #27756f;
+  background: #ecf8f5;
+}
+
+/* Section and profile accents */
+.section-add-button,
+.section-add-save,
+.profile-prediction-link { color: var(--ink); background: var(--mint); }
+.section-add-button:hover,
+.section-add-save:hover,
+.profile-prediction-link:hover { background: #b2ddd5; }
+.section-list-row:hover { border-color: var(--teal); }
+.section-list-badge { background: #dff2ef; }
+.profile-prediction-card { background: var(--ink); }
+.profile-prediction-card .profile-card-heading > svg { color: #72c4ba; }
+.profile-remark-list > div,
+.section-remark-row { border-left-color: var(--primary); }
+
+/* Admin controls */
+.admin-control-topbar { background: #102f49; box-shadow: 0 8px 22px rgba(16, 47, 73, .16); }
+.admin-control-page { background: #f4f8fb; }
+.admin-selected-scope,
+.admin-sync-banner { border-color: #c9e4e4; background: #edf8f7; }
+.admin-selected-scope > div > strong,
+.admin-sync-banner strong { color: #256d71; }
+.admin-department-option.active { border-color: #8fcfd0; background: #e6f5f4; box-shadow: inset 3px 0 var(--teal); }
+.admin-department-option:hover { border-color: #b0d9df; background: #f1f9fb; }
+.admin-semester-option:hover { border-color: #9ccbd5; box-shadow: 0 8px 18px rgba(43, 120, 160, .1); }
+.admin-subject-code,
+.subject-catalog-item > span { color: #a64f4f; background: #fff0ee; }
+.admin-row-action:hover { border-color: #9fcfd5; color: var(--teal-dark); background: #edf8f7; }
+.admin-sync-status i { background: var(--teal); }
