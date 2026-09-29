@@ -58,7 +58,7 @@ export default function Login() {
   }
 
   return <main className="erp-login-page">
-    <header className="erp-login-header"><Brand /><BackButton fallbackPath="/" label="Back" minHistoryIndex={1} className="erp-back-button" /></header>
+    <header className="erp-login-header"><Brand /><BackButton fallbackPath="/" label="Back" minHistoryIndex={1} /></header>
     <section className="erp-login-shell" aria-labelledby="login-heading">
       <div className="erp-login-step"><span className="erp-step-label">Step 2</span><p>{departmentDetails.label} <span aria-hidden="true">→</span> Choose role and sign in</p></div>
       <div className="erp-login-card">
