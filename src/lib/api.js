@@ -4,7 +4,17 @@ import axios from 'axios'
 export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
 export const LOCAL_SESSION_TOKEN = 'demo-session-token'
 
-let authToken = ''
+function readStoredToken() {
+  try {
+    return JSON.parse(localStorage.getItem('camps_session'))?.token || ''
+  } catch {
+    return ''
+  }
+}
+
+// Hydrate the request interceptor immediately so a refresh cannot render a
+// protected page before AuthProvider's effect has copied the session token.
+let authToken = readStoredToken()
 
 export function setAuthToken(token) {
   authToken = token || ''
@@ -20,7 +30,7 @@ client.interceptors.request.use((config) => {
   try {
     const session = JSON.parse(localStorage.getItem('camps_session'))
     const token = authToken || session?.token
-    if (token) config.headers.Authorization = `Bearer ${token}`
+    if (token && token !== LOCAL_SESSION_TOKEN) config.headers.Authorization = `Bearer ${token}`
   } catch { /* ignore malformed local storage */ }
   return config
 })
@@ -40,7 +50,7 @@ const api = {
   saveSubjectAttendance: (id, payload) => unwrap(client.put(`/subjects/${id}/attendance`, payload)),
   saveSubjectMarks: (id, payload) => unwrap(client.put(`/subjects/${id}/marks`, payload)),
   getStudents: (params) => unwrap(client.get('/students', { params })),
-  createStudent: (payload) => unwrap(client.post('/students', payload)),
+  createStudent: (payload, token = '') => unwrap(client.post('/students', payload, token && token !== LOCAL_SESSION_TOKEN ? { headers: { Authorization: `Bearer ${token}` } } : undefined)),
   updateStudent: (id, payload) => unwrap(client.put(`/students/${id}`, payload)),
   deleteStudent: (id) => unwrap(client.delete(`/students/${id}`)),
   uploadStudents: (file, commit = false, scope = {}) => {

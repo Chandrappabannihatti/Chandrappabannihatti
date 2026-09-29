@@ -20,7 +20,15 @@ function persistSession(next) {
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('camps_session')) || null } catch { return null }
+    try {
+      const stored = JSON.parse(localStorage.getItem('camps_session')) || null
+      // Keep the API interceptor in sync before protected child effects run.
+      setAuthToken(stored?.token || '')
+      return stored
+    } catch {
+      setAuthToken('')
+      return null
+    }
   })
 
   useEffect(() => {

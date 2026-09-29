@@ -55,7 +55,7 @@ import {
 import * as XLSX from 'xlsx'
 import { useAuth } from '../context/AuthContext'
 import { achievementTypes, cloneDemoStudents, demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, getDemoSubjects } from '../data/demo'
-import api, { DEMO_MODE, LOCAL_SESSION_TOKEN } from '../lib/api'
+import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
 import { Brand } from './Landing'
 import SectionSelection from './SectionSelection'
@@ -692,7 +692,17 @@ export default function TeacherSemester() {
     const localRecord = { ...scopedInput, ...academic, ...outcome, id: Date.now(), initials: scopedInput.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
     let saved = localRecord
     if (apiSession) {
-      try { const response = await api.createStudent(scopedInput); saved = response.data || localRecord } catch (error) { if (error.response) { notify(error.response.data?.message || 'Student could not be saved in this section'); return false } notify('API unavailable · student saved locally for this session') }
+      try {
+        // The form can be submitted immediately after a restored session is
+        // rendered. Re-seed the interceptor with the current JWT before the
+        // protected create request so it cannot be sent without auth.
+        setAuthToken(token)
+        const response = await api.createStudent(scopedInput, token)
+        saved = response.data || localRecord
+      } catch (error) {
+        if (error.response) { notify(error.response.data?.message || 'Student could not be saved in this section'); return false }
+        notify('API unavailable · student saved locally for this session')
+      }
     }
     setStudents((current) => [saved, ...current])
     notify(`${saved.name} added to Semester ${semester}${section ? ` · Section ${section}` : ''}`)
