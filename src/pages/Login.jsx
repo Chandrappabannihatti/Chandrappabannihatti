@@ -31,7 +31,7 @@ export default function Login() {
   const [password, setPassword] = useState(accountDetails[initialRole].password)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(params.get('reason') === 'session' ? 'Your session expired. Please sign in again to continue.' : '')
   const details = useMemo(() => accountDetails[role], [role])
   if (!departmentCards.some((item) => item.code === department)) return <Navigate to="/" replace />
 

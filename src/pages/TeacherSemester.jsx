@@ -700,6 +700,11 @@ export default function TeacherSemester() {
         const response = await api.createStudent(scopedInput, token)
         saved = response.data || localRecord
       } catch (error) {
+        if (error.response?.status === 401) {
+          await logout()
+          navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
+          return false
+        }
         if (error.response) { notify(error.response.data?.message || 'Student could not be saved in this section'); return false }
         notify('API unavailable · student saved locally for this session')
       }
