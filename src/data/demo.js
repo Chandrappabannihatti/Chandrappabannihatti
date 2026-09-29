@@ -63,8 +63,8 @@ export const demoStudents = [
 ]
 
 export const demoMessages = [
-  { id: 1, department: 'CSE', semester: 7, section: 'B', sender: 'Dr. Ananya Rao', recipient: 'Ishita Kulkarni', audience: 'Student', subject: 'Let us make a plan for your attendance', body: 'I noticed your attendance has dipped this month. Please meet me after class so we can make a simple recovery plan.', time: 'Today, 09:42 AM', read: false, initials: 'AR' },
-  { id: 2, department: 'CSE', semester: 7, section: 'B', sender: 'Dr. Ananya Rao', recipient: 'Suresh Kulkarni', audience: 'Parent', subject: 'A quick academic update for Ishita', body: 'Ishita would benefit from a little extra support with attendance and the upcoming internal assessment.', time: 'Yesterday, 04:18 PM', read: true, initials: 'SK' },
+  { id: 1, senderId: 1, senderRole: 'teacher', receiverId: 4, receiverRole: 'student', studentId: 4, department: 'CSE', semester: 7, section: 'B', sender: 'Dr. Ananya Rao', recipient: 'Ishita Kulkarni', audience: 'Student', subject: 'Let us make a plan for your attendance', body: 'I noticed your attendance has dipped this month. Please meet me after class so we can make a simple recovery plan.', time: 'Today, 09:42 AM', read: false, initials: 'AR' },
+  { id: 2, senderId: 1, senderRole: 'teacher', receiverId: 2, receiverRole: 'parent', studentId: 4, department: 'CSE', semester: 7, section: 'B', sender: 'Dr. Ananya Rao', recipient: 'Suresh Kulkarni', audience: 'Parent', subject: 'A quick academic update for Ishita', body: 'Ishita would benefit from a little extra support with attendance and the upcoming internal assessment.', time: 'Yesterday, 04:18 PM', read: true, initials: 'SK' },
   { id: 3, department: 'CSE', semester: 7, sender: 'Placement Cell', recipient: 'CSE · Semester 7', audience: 'Students', subject: 'Product engineering orientation', body: 'An industry mentor joins us on Friday at 2 PM in Seminar Hall 2. Bring your updated resume.', time: '18 Aug 2026', read: true, initials: 'PC' },
   { id: 4, department: 'CSE', semester: 7, sender: 'Dr. Ananya Rao', recipient: 'All CSE students', audience: 'Students', subject: 'Project review checkpoints', body: 'Please keep your problem statement and sprint board ready for the review next Tuesday.', time: '15 Aug 2026', read: true, initials: 'AR' },
   { id: 5, department: 'CSE', semester: 1, sender: 'Academic Office', recipient: 'CSE · Semester 1', audience: 'Students', subject: 'Welcome to your first semester', body: 'Your mentor introduction and foundation course orientation are scheduled for this week.', time: '19 Aug 2026', read: true, initials: 'AO' },
@@ -75,6 +75,33 @@ export const demoMessages = [
   { id: 10, department: 'CSE', semester: 6, sender: 'CSE Department', recipient: 'CSE · Semester 6', audience: 'Students', subject: 'Placement profile review', body: 'Please complete your placement profile and upload the latest project links.', time: '14 Aug 2026', read: true, initials: 'CD' },
   { id: 11, department: 'CSE', semester: 8, sender: 'Placement Cell', recipient: 'CSE · Semester 8', audience: 'Students', subject: 'Final placement sprint', body: 'Mock interviews and technical preparation slots are open for final semester students.', time: '13 Aug 2026', read: true, initials: 'PC' },
 ]
+
+export function getDemoMessages() {
+  if (typeof window === 'undefined') return demoMessages.map((message) => ({ ...message }))
+  try {
+    const stored = JSON.parse(window.localStorage.getItem('camps_messages') || 'null')
+    if (Array.isArray(stored)) return stored
+  } catch { /* use bundled demo messages */ }
+  return demoMessages.map((message) => ({ ...message }))
+}
+
+export function saveDemoMessages(messages) {
+  if (typeof window === 'undefined') return
+  try { window.localStorage.setItem('camps_messages', JSON.stringify(messages)) } catch { /* keep the in-memory message state */ }
+}
+
+export function upsertDemoMessage(message) {
+  const messages = getDemoMessages()
+  const index = messages.findIndex((item) => Number(item.id) === Number(message.id))
+  if (index >= 0) messages[index] = { ...messages[index], ...message }
+  else messages.unshift(message)
+  saveDemoMessages(messages)
+}
+
+export function markDemoMessageRead(id) {
+  const messages = getDemoMessages().map((message) => Number(message.id) === Number(id) ? { ...message, read: true, readStatus: true, readAt: new Date().toISOString() } : message)
+  saveDemoMessages(messages)
+}
 
 export const demoAnnouncements = [
   { id: 1, title: 'Project review checkpoints', section: 'B', body: 'Project review 2 is scheduled for Tuesday, 25 August. Teams should carry their sprint board and current build.', type: 'Department', department: 'CSE', semester: 7, author: 'Dr. Ananya Rao', date: '24 Aug 2026', priority: 'High' },
@@ -123,6 +150,7 @@ export const subjectPerformance = [
 ]
 
 export const currentUser = {
+  id: 1,
   name: 'Dr. Ananya Rao',
   role: 'teacher',
   department: 'CSE',
@@ -136,6 +164,7 @@ export const demoTeachers = [
 ]
 
 export const studentUser = {
+  id: 4,
   name: 'Ishita Kulkarni',
   role: 'student',
   department: 'CSE',
@@ -146,6 +175,7 @@ export const studentUser = {
 }
 
 export const parentUser = {
+  id: 2,
   name: 'Suresh Kulkarni',
   role: 'parent',
   department: 'CSE',

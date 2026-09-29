@@ -53,7 +53,7 @@ import {
 } from 'react-icons/fi'
 import * as XLSX from 'xlsx'
 import { useAuth } from '../context/AuthContext'
-import { achievementTypes, cloneDemoStudents, demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, getDemoSubjects } from '../data/demo'
+import { achievementTypes, cloneDemoStudents, demoAchievements, demoAnnouncements, demoRemarks, demoSections, getDemoMessages, getDemoSubjects, markDemoMessageRead, upsertDemoMessage } from '../data/demo'
 import api, { DEMO_MODE, getAuthToken, isApiToken, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
 import { importStatusLabel, importSummary, normalizeImportRows } from '../lib/studentImport'
@@ -158,7 +158,7 @@ function riskSummary(students) {
   ]
 }
 
-function TeacherShell({ user, semester, section = '', activeModule, children, onLogout }) {
+function TeacherShell({ user, semester, section = '', activeModule, children, onLogout, unreadCount = 0 }) {
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const base = section ? `/teacher/semester/${semester}/section/${encodeURIComponent(section)}` : `/teacher/semester/${semester}`
@@ -176,12 +176,12 @@ function TeacherShell({ user, semester, section = '', activeModule, children, on
       <button className="sidebar-close" type="button" onClick={() => setSidebarOpen(false)} aria-label="Close navigation"><FiX /></button>
       <button className="teacher-scope-link" type="button" onClick={() => goTo('selection')}><FiArrowDown /><span>{section ? 'Change section' : 'Change semester'}</span></button>
       <p className="sidebar-section-label">{section ? `Section ${section}` : `Semester ${semester}`}</p>
-      <div className="sidebar-nav">{teacherNav.map(({ key, label, icon: Icon }) => <button key={key} type="button" className={activeModule === key ? 'active' : ''} onClick={() => goTo(key)}><Icon /><span>{label}</span></button>)}</div>
+      <div className="sidebar-nav">{teacherNav.map(({ key, label, icon: Icon }) => <button key={key} type="button" className={activeModule === key ? 'active' : ''} onClick={() => goTo(key)}><Icon /><span>{label}</span>{key === 'messages' && unreadCount > 0 && <span className="sidebar-badge">{unreadCount}</span>}</button>)}</div>
       <p className="sidebar-section-label teacher-account-label">Account</p>
       <div className="sidebar-nav teacher-account-nav"><button type="button" onClick={() => goTo('profile')}><FiUser /><span>Profile</span></button><button type="button" onClick={() => goTo('settings')}><FiSettings /><span>Settings</span></button></div>
       <div className="sidebar-bottom"><div className="sidebar-help"><strong><FiHeart style={{ verticalAlign: 'middle', marginRight: 5 }} /> Human-first insight</strong><p>Use every signal as a starting point for a better conversation.</p></div><div className="sidebar-profile"><Avatar initials={user.initials || 'AR'} /><div className="profile-meta"><strong>{user.name}</strong><span>{user.department} · Sem {semester}{section ? ` · Sec ${section}` : ''}</span></div><button className="logout-btn" type="button" onClick={onLogout} aria-label="Sign out"><FiLogOut /></button></div></div>
     </aside>
-    <main className="dashboard-main"><header className="dashboard-topbar"><div className="dashboard-topbar-leading"><div className="breadcrumb"><button className="mobile-sidebar-trigger" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><FiMenu /></button><span>CAMPS</span><FiChevronRight /><strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong></div></div><div className="topbar-actions"><button className="topbar-icon" type="button" aria-label="Secure workspace"><FiShield /></button><button className="topbar-icon" type="button" aria-label="Notifications"><FiBell /><i className="notification-dot" /></button><span className="topbar-divider" /><div className="topbar-user"><Avatar initials={user.initials || 'AR'} /><div className="topbar-user-meta"><strong>{user.name}</strong><span>{user.department} · Semester {semester}</span></div></div></div></header><div className="dashboard-page-back"><BackButton fallbackPath={backFallback} minHistoryIndex={2} /></div>{children}</main>
+    <main className="dashboard-main"><header className="dashboard-topbar"><div className="dashboard-topbar-leading"><div className="breadcrumb"><button className="mobile-sidebar-trigger" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><FiMenu /></button><span>CAMPS</span><FiChevronRight /><strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong></div></div><div className="topbar-actions"><button className="topbar-icon" type="button" aria-label="Secure workspace"><FiShield /></button><button className="topbar-icon" type="button" aria-label="Notifications"><FiBell />{unreadCount > 0 && <i className="notification-dot" />}</button><span className="topbar-divider" /><div className="topbar-user"><Avatar initials={user.initials || 'AR'} /><div className="topbar-user-meta"><strong>{user.name}</strong><span>{user.department} · Semester {semester}</span></div></div></div></header><div className="dashboard-page-back"><BackButton fallbackPath={backFallback} minHistoryIndex={2} /></div>{children}</main>
   </div>
 }
 
@@ -367,16 +367,80 @@ function SemesterAnnouncements({ user, semester, section = '', announcements, se
   return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Announcements" description={`Publish updates only to ${section ? `Section ${section} · ` : ''}this semester’s students.`} actions={<button className="button-primary" type="button" onClick={() => setOpen((value) => !value)}><FiPlus /> New announcement</button>} /><div className="semester-context-banner"><FiShield /><span>Every announcement on this page is addressed to <strong>{scope}</strong>.</span></div>{open && <form className="content-card inline-composer" onSubmit={publish}><div className="form-grid"><div className="form-field full"><label className="plain-label">Title</label><input className="field-control" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="e.g. Project review tomorrow" required /></div><div className="form-field"><label className="plain-label">Priority</label><select className="field-control" value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>Normal</option><option>Medium</option><option>High</option></select></div><div className="form-field full"><label className="plain-label">Message</label><textarea className="field-control" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} placeholder="Write a clear next step…" required /></div></div><div className="composer-actions"><button className="button-ghost" type="button" onClick={() => setOpen(false)}>Cancel</button><button className="button-primary" type="submit"><FiBell /> Publish to {section ? `Section ${section}` : `Semester ${semester}`}</button></div></form>}<div className="toolbar-card"><div><strong style={{ color: '#15263a', fontSize: 12 }}>{section ? `Section ${section}` : `Semester ${semester}`} updates</strong><span style={{ display: 'block', marginTop: 4, color: '#99a2a1', fontSize: 10 }}>{visible.length} scoped announcements</span></div><div className="toolbar-filters">{['All', section ? 'Section' : 'Semester'].map((item) => <button key={item} className={`filter-btn ${filter === item ? 'selected-filter' : ''}`} type="button" onClick={() => setFilter(item)}>{item}</button>)}</div></div><div className="announcement-grid">{visible.map((item) => <article className="announcement-card" key={item.id}><span className="announcement-type semester">{section ? `Section ${section}` : `Semester ${semester}`}</span><h3>{item.title}</h3><p>{item.body}</p><div className="announcement-footer"><span>{item.date} · <strong>{item.author}</strong></span><div className="announcement-actions"><button type="button" onClick={() => notify('This scoped announcement is ready to edit')} aria-label="Edit announcement"><FiEdit3 /></button><button type="button" onClick={() => { setAnnouncements((current) => current.filter((notice) => notice.id !== item.id)); notify('Announcement deleted') }} aria-label="Delete announcement"><FiTrash2 /></button></div></div></article>)}{!visible.length && <div className="empty-state"><FiBell /><span>No announcements for {scope} yet.</span></div>}</div></div>
 }
 
-function SemesterMessages({ user, semester, section = '', messages, setMessages, notify }) {
+function SemesterMessages({ user, semester, section = '', students, messages, setMessages, notify, apiSession = false }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
   const [selectedId, setSelectedId] = useState(messages[0]?.id)
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ recipient: 'Semester students', subject: '', body: '' })
-  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
-  const visible = messages.filter((message) => `${message.sender} ${message.recipient} ${message.subject}`.toLowerCase().includes(search.toLowerCase()))
+  const [sending, setSending] = useState(false)
+  const [reply, setReply] = useState('')
+  const [replySending, setReplySending] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({ recipientRole: 'parent', studentId: students[0]?.id || '', subject: '', body: '' })
+  const visible = messages.filter((message) => `${message.sender} ${message.recipient} ${message.subject} ${message.body}`.toLowerCase().includes(search.toLowerCase()))
   const selected = visible.find((message) => message.id === selectedId) || visible[0]
-  const send = async (event) => { event.preventDefault(); if (!form.subject || !form.body) return; let message = { ...form, id: Date.now(), sender: user.name, audience: 'Students', department: user.department, semester, section: section || undefined, time: 'Just now', read: true, initials: user.initials }; if (!DEMO_MODE) { try { const response = await api.sendMessage({ ...form, recipient: form.recipient, audience: 'Students', department: user.department, semester, section }); message = response.data || message } catch { notify('API unavailable · message kept in this session') } } setMessages((current) => [message, ...current]); setOpen(false); setForm({ recipient: 'Semester students', subject: '', body: '' }); notify(`Message sent to ${scope}`) }
-  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Messages" description={`Conversations and messages for ${section ? `Section ${section} · ` : ''}this semester’s students and families.`} actions={<button className="button-primary" type="button" onClick={() => setOpen((value) => !value)}><FiPlus /> New message</button>} /><div className="semester-context-banner"><FiShield /><span>This inbox is locked to <strong>{scope}</strong>.</span></div>{open && <form className="content-card inline-composer" onSubmit={send}><div className="form-grid"><div className="form-field"><label className="plain-label">Recipient</label><select className="field-control" value={form.recipient} onChange={(event) => setForm({ ...form, recipient: event.target.value })}><option>Semester students</option><option>Student parents</option><option>Selected student</option></select></div><div className="form-field"><label className="plain-label">Subject</label><input className="field-control" value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} placeholder="Subject" required /></div><div className="form-field full"><label className="plain-label">Message</label><textarea className="field-control" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} placeholder="Write your message…" required /></div></div><div className="composer-actions"><button className="button-ghost" type="button" onClick={() => setOpen(false)}>Cancel</button><button className="button-primary" type="submit"><FiSend /> Send message</button></div></form>}<div className="messages-layout"><div className="message-list"><div className="message-list-head"><h3>{section ? `Section ${section}` : `Semester ${semester}`} inbox</h3><button type="button" onClick={() => setOpen(true)} aria-label="Compose message"><FiPlus /></button></div><div className="message-search search-field"><FiSearch /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search scoped messages" /></div>{visible.map((message) => <button className={`message-item ${selected?.id === message.id ? 'active' : ''}`} type="button" key={message.id} onClick={() => setSelectedId(message.id)}><Avatar initials={message.initials || 'AR'} tone="mint" /><span className="message-item-content"><span className="message-item-line"><strong>{message.sender}</strong><time>{String(message.time || message.created_at || '').replace('Today, ', '')}</time></span><p>{message.subject}</p></span></button>)}{!visible.length && <div className="empty-state"><FiMailIcon /><span>No messages for {scope} yet.</span></div>}</div><div className="message-detail">{selected ? <><div className="message-detail-head"><div><h2>{selected.subject}</h2><p>From {selected.sender} · To {selected.recipient} · Semester {semester}</p></div><button className="row-action" type="button" aria-label="More message actions"><FiMoreHorizontal /></button></div><div className="message-body"><div className="message-bubble">{selected.body}</div></div><div className="message-detail-footer"><input placeholder="Reply within this semester…" /><button type="button" onClick={() => notify('Reply composer is ready')} aria-label="Send reply"><FiSend /></button></div></> : <div className="empty-state"><FiMessageCircle /><span>Select a scoped message to read it.</span></div>}</div></div></div>
+  const selectedStudent = students.find((student) => Number(student.id) === Number(form.studentId))
+  const parentIdFor = (student) => Number(student?.id) === 4 ? 2 : 10000 + Number(student?.id || 0)
+  const updateForm = (key, value) => { setError(''); setForm((current) => ({ ...current, [key]: value })) }
+  const markRead = async (message) => {
+    setSelectedId(message.id)
+    const incoming = message.receiverRole === user.role && Number(message.receiverId) === Number(user.id)
+    setMessages((current) => current.map((item) => item.id === message.id ? { ...item, read: true, readStatus: true } : item))
+    if (DEMO_MODE) markDemoMessageRead(message.id)
+    if (apiSession && !message.read && incoming) {
+      try { await api.markMessageRead(message.id) } catch (readError) { notify(readError.response?.data?.message || 'The message could not be marked as read.') }
+    }
+  }
+  const send = async (event) => {
+    event.preventDefault()
+    const student = students.find((item) => Number(item.id) === Number(form.studentId))
+    if (!student) { setError('Select a student or parent recipient.'); return }
+    if (!form.subject.trim() || !form.body.trim()) { setError('Subject and message content are required.'); return }
+    setSending(true)
+    const recipientRole = form.recipientRole
+    const recipientId = recipientRole === 'parent' ? parentIdFor(student) : Number(student.id)
+    const fallback = { id: Date.now(), senderId: 1, senderRole: 'teacher', sender: user.name, receiverId: recipientId, receiverRole: recipientRole, recipientId, recipientRole, recipient: recipientRole === 'parent' ? (student.parentName || `${student.name} Parent`) : student.name, audience: recipientRole === 'parent' ? 'Parent' : 'Student', subject: form.subject.trim(), body: form.body.trim(), department: user.department, semester, section: section || student.section, studentId: Number(student.id), studentName: student.name, time: 'Just now', createdAt: new Date().toISOString(), read: true, readStatus: true, initials: user.initials }
+    try {
+      let saved = fallback
+      if (!DEMO_MODE) {
+        const response = await api.sendMessage({ recipientRole, recipientId, studentId: Number(student.id), subject: form.subject.trim(), body: form.body.trim(), department: user.department, semester, section })
+        saved = response.data || fallback
+      }
+      setMessages((current) => [saved, ...current])
+      if (DEMO_MODE) upsertDemoMessage(saved)
+      window.dispatchEvent(new window.Event('camps-messages-updated'))
+      setOpen(false)
+      setForm({ recipientRole: 'parent', studentId: students[0]?.id || '', subject: '', body: '' })
+      setError('')
+      notify(`Message delivered to ${saved.recipient || fallback.recipient}`)
+    } catch (sendError) {
+      console.error('[messages] Teacher delivery failed.', { status: sendError.response?.status || 'network', message: sendError.response?.data?.message || sendError.message, studentId: student.id, recipientRole })
+      setError(sendError.response?.data?.message || 'Message delivery failed. Nothing was saved.')
+    } finally { setSending(false) }
+  }
+  const sendReply = async (event) => {
+    event.preventDefault()
+    if (!selected || !reply.trim()) { notify('Write a reply before sending.'); return }
+    const recipientRole = selected.senderRole === 'teacher' ? selected.receiverRole : selected.senderRole
+    const recipientId = selected.senderRole === 'teacher' ? selected.receiverId : selected.senderId
+    if (!recipientRole || !recipientId) { notify('This conversation cannot be replied to because its recipient mapping is unavailable.'); return }
+    setReplySending(true)
+    try {
+      const payload = { recipientRole, recipientId: Number(recipientId), studentId: selected.studentId, subject: `Re: ${selected.subject}`.replace(/^Re: Re:/, 'Re:'), body: reply.trim(), department: user.department, semester, section }
+      const fallback = { id: Date.now(), senderId: 1, senderRole: 'teacher', sender: user.name, receiverId: Number(recipientId), receiverRole: recipientRole, recipientId: Number(recipientId), recipientRole, recipient: selected.recipient, audience: recipientRole === 'parent' ? 'Parent' : 'Student', subject: payload.subject, body: payload.body, department: user.department, semester, section, studentId: selected.studentId, time: 'Just now', createdAt: new Date().toISOString(), read: true, readStatus: true, initials: user.initials }
+      const response = DEMO_MODE ? null : await api.sendMessage(payload)
+      const savedReply = response?.data || fallback
+      setMessages((current) => [savedReply, ...current])
+      if (DEMO_MODE) upsertDemoMessage(savedReply)
+      window.dispatchEvent(new window.Event('camps-messages-updated'))
+      setReply('')
+      notify(`Reply delivered to ${response?.data?.recipient || fallback.recipient}`)
+    } catch (sendError) {
+      console.error('[messages] Teacher reply failed.', { status: sendError.response?.status || 'network', message: sendError.response?.data?.message || sendError.message })
+      notify(sendError.response?.data?.message || 'Reply delivery failed. Nothing was saved.')
+    } finally { setReplySending(false) }
+  }
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Messages" description={`Send a direct message to one student or the selected student’s parent. Replies stay in the same conversation.`} actions={<button className="button-primary" type="button" onClick={() => { setOpen((value) => !value); setError('') }}><FiPlus /> {open ? 'Close composer' : 'New direct message'}</button>} /><div className="semester-context-banner"><FiShield /><span>This inbox is locked to <strong>{scope}</strong>. Delivery is limited to the selected recipient.</span></div>{open && <form className="content-card inline-composer" onSubmit={send}><div className="form-grid"><div className="form-field"><label className="plain-label">Recipient type</label><select className="field-control" value={form.recipientRole} onChange={(event) => updateForm('recipientRole', event.target.value)}><option value="parent">Parent of selected student</option><option value="student">Selected student</option></select></div><div className="form-field"><label className="plain-label">Recipient</label><select className="field-control" value={form.studentId} onChange={(event) => updateForm('studentId', event.target.value)} required><option value="">Choose a student</option>{students.map((student) => <option value={student.id} key={student.id}>{form.recipientRole === 'parent' ? `${student.parentName || `${student.name} Parent`} · ${student.name}` : `${student.name} · ${student.usn}`}</option>)}</select></div><div className="form-field full"><label className="plain-label">Subject</label><input className="field-control" value={form.subject} onChange={(event) => updateForm('subject', event.target.value)} placeholder="Subject" maxLength="180" required /></div><div className="form-field full"><label className="plain-label">Message</label><textarea className="field-control" value={form.body} onChange={(event) => updateForm('body', event.target.value)} placeholder="Write a direct message…" maxLength="10000" required /></div></div>{error && <div className="validation-error">{error}</div>}<div className="composer-actions"><button className="button-ghost" type="button" onClick={() => setOpen(false)} disabled={sending}>Cancel</button><button className="button-primary" type="submit" disabled={sending || !selectedStudent}><FiSend /> {sending ? 'Delivering…' : 'Send direct message'}</button></div></form>}<div className="messages-layout"><div className="message-list"><div className="message-list-head"><h3>{section ? `Section ${section}` : `Semester ${semester}`} inbox <span style={{ color: '#F07E5E' }}>· {messages.filter((message) => !message.read && message.receiverRole === user.role && Number(message.receiverId) === Number(user.id)).length} unread</span></h3><button type="button" onClick={() => setOpen(true)} aria-label="Compose message"><FiPlus /></button></div><div className="message-search search-field"><FiSearch /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search scoped messages" /></div>{visible.map((message) => <button className={`message-item ${selected?.id === message.id ? 'active' : ''}`} type="button" key={message.id} onClick={() => markRead(message)}><Avatar initials={message.initials || 'AR'} tone={message.receiverRole === 'parent' || message.senderRole === 'parent' ? 'sky' : 'mint'} /><span className="message-item-content"><span className="message-item-line"><strong>{message.sender}{!message.read && <i className="unread-dot" />}</strong><time>{String(message.time || message.created_at || '').replace('Today, ', '')}</time></span><p>{message.subject}</p><small>{message.recipient}</small></span></button>)}{!visible.length && <div className="empty-state"><FiMailIcon /><span>No messages for {scope} yet.</span></div>}</div><div className="message-detail">{selected ? <><div className="message-detail-head"><div><h2>{selected.subject}</h2><p>From {selected.sender} · To {selected.recipient} · {selected.time || selected.createdAt}</p></div><button className="row-action" type="button" aria-label="More message actions"><FiMoreHorizontal /></button></div><div className="message-body"><div className="message-bubble">{selected.body}</div></div><form className="message-detail-footer" onSubmit={sendReply}><input value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Reply to this conversation…" aria-label="Reply to this conversation" /><button type="submit" disabled={replySending || !selected.senderRole} aria-label="Send reply"><FiSend /></button></form></> : <div className="empty-state"><FiMessageCircle /><span>Select a scoped message to read it.</span></div>}</div></div></div>
 }
 
 function FiMailIcon() {
@@ -634,7 +698,7 @@ export default function TeacherSemester() {
   const [students, setStudents] = useState(() => valid ? scopedStudents(cloneDemoStudents(), user.department, semester).filter((student) => !section || student.section === section) : [])
   const [sections, setSections] = useState(() => valid ? demoSections.filter((item) => item.department === user.department && Number(item.semester) === semester) : [])
   const [announcements, setAnnouncements] = useState(() => valid ? (section ? scopedSectionAnnouncements(demoAnnouncements, user.department, semester, section) : scopedAnnouncements(demoAnnouncements, user.department, semester)) : [])
-  const [messages, setMessages] = useState(() => valid ? (section ? scopedSectionMessages(demoMessages, user.department, semester, section) : scopedMessages(demoMessages, user.department, semester)) : [])
+  const [messages, setMessages] = useState(() => valid ? (section ? scopedSectionMessages(getDemoMessages(), user.department, semester, section) : scopedMessages(getDemoMessages(), user.department, semester)) : [])
   const [remarks, setRemarks] = useState(() => valid ? demoRemarks.filter((remark) => cloneDemoStudents().some((student) => student.id === remark.studentId && student.department === user.department && student.semester === semester && (!section || student.section === section))) : [])
   const [achievements, setAchievements] = useState(() => valid ? scopedAchievements(demoAchievements, user.department, semester, section) : [])
   const [subjects, setSubjects] = useState(() => valid ? scopedSubjects(getDemoSubjects(), user.department, semester) : [])
@@ -656,7 +720,7 @@ export default function TeacherSemester() {
       if (sectionResult.status === 'fulfilled' && sectionResult.value?.data) setSections(sectionResult.value.data.filter((item) => item.department === user.department && Number(item.semester) === semester))
       if (studentResult.status === 'fulfilled' && studentResult.value?.data) setStudents(studentResult.value.data.filter((student) => student.department === user.department && Number(student.semester) === semester && (!section || student.section === section)))
       if (announcementResult.status === 'fulfilled' && announcementResult.value?.data) { const items = announcementResult.value.data.filter((item) => item.department === user.department && Number(item.semester) === semester && (!section || item.section === section)); if (items.length) setAnnouncements(items) }
-      if (messageResult.status === 'fulfilled' && messageResult.value?.data) { const items = messageResult.value.data.filter((item) => item.department === user.department && Number(item.semester) === semester && (!section || item.section === section)); if (items.length) setMessages(items) }
+      if (messageResult.status === 'fulfilled' && messageResult.value?.data) { const items = messageResult.value.data.filter((item) => item.department === user.department && Number(item.semester) === semester && (!section || item.section === section)); setMessages(items) }
       if (remarkResult.status === 'fulfilled' && remarkResult.value?.data) { const scopedStudentIds = new Set((studentResult.value?.data || []).filter((student) => student.department === user.department && Number(student.semester) === semester && (!section || student.section === section)).map((student) => Number(student.id))); setRemarks(remarkResult.value.data.filter((remark) => scopedStudentIds.has(Number(remark.studentId)))) }
       if (achievementResult.status === 'fulfilled' && achievementResult.value?.data) { const scopedStudentIds = new Set((studentResult.value?.data || []).filter((student) => student.department === user.department && Number(student.semester) === semester && (!section || student.section === section)).map((student) => Number(student.id))); setAchievements(achievementResult.value.data.filter((achievement) => scopedStudentIds.has(Number(achievement.studentId)))) }
       if (subjectResult.status === 'fulfilled' && subjectResult.value?.data) setSubjects(scopedSubjects(subjectResult.value.data, user.department, semester))
@@ -668,19 +732,40 @@ export default function TeacherSemester() {
     if (!valid || apiSession) return
     setStudents(scopedStudents(cloneDemoStudents(), user.department, semester).filter((student) => !section || student.section === section))
     setAnnouncements(section ? scopedSectionAnnouncements(demoAnnouncements, user.department, semester, section) : scopedAnnouncements(demoAnnouncements, user.department, semester))
-    setMessages(section ? scopedSectionMessages(demoMessages, user.department, semester, section) : scopedMessages(demoMessages, user.department, semester))
+    setMessages(section ? scopedSectionMessages(getDemoMessages(), user.department, semester, section) : scopedMessages(getDemoMessages(), user.department, semester))
     setRemarks(demoRemarks.filter((remark) => cloneDemoStudents().some((student) => student.id === remark.studentId && student.department === user.department && Number(student.semester) === semester && (!section || student.section === section))))
     setAchievements(scopedAchievements(demoAchievements, user.department, semester, section))
     setSubjects(scopedSubjects(getDemoSubjects(), user.department, semester))
   }, [valid, user.department, semester, section, apiSession])
 
   useEffect(() => {
+    if (!valid || !apiSession) return undefined
+    let mounted = true
+    const refreshMessages = async () => {
+      try {
+        const response = await api.getMessages({ department: user.department, semester, section: section || undefined })
+        if (!mounted) return
+        const items = (response?.data || []).filter((item) => item.department === user.department && Number(item.semester) === semester && (!section || item.section === section))
+        setMessages(items)
+      } catch (error) {
+        console.warn('[messages] Teacher inbox refresh failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message })
+      }
+    }
+    const interval = window.setInterval(refreshMessages, 10000)
+    window.addEventListener('camps-messages-updated', refreshMessages)
+    return () => { mounted = false; window.clearInterval(interval); window.removeEventListener('camps-messages-updated', refreshMessages) }
+  }, [valid, user.department, semester, section, apiSession])
+
+  useEffect(() => {
     if (!valid || apiSession) return undefined
     const syncSubjects = () => setSubjects(scopedSubjects(getDemoSubjects(), user.department, semester))
+    const syncMessages = () => setMessages(section ? scopedSectionMessages(getDemoMessages(), user.department, semester, section) : scopedMessages(getDemoMessages(), user.department, semester))
     window.addEventListener('storage', syncSubjects)
     window.addEventListener('camps-subjects-updated', syncSubjects)
-    return () => { window.removeEventListener('storage', syncSubjects); window.removeEventListener('camps-subjects-updated', syncSubjects) }
-  }, [valid, user.department, semester])
+    window.addEventListener('storage', syncMessages)
+    window.addEventListener('camps-messages-updated', syncMessages)
+    return () => { window.removeEventListener('storage', syncSubjects); window.removeEventListener('camps-subjects-updated', syncSubjects); window.removeEventListener('storage', syncMessages); window.removeEventListener('camps-messages-updated', syncMessages) }
+  }, [valid, user.department, semester, section, apiSession])
 
   if (!valid) return <main className="app-shell"><div className="dashboard-content invalid-route-page"><BackButton fallbackPath="/teacher/semesters" /><div className="empty-state" style={{ minHeight: '70vh' }}><span>Choose a semester from the teacher workspace.</span></div></div></main>
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(''), 3000) }
@@ -839,6 +924,7 @@ export default function TeacherSemester() {
   const sectionStudents = students.filter((student) => student.section === section)
   const sectionAnnouncements = announcements.filter((item) => item.section === section)
   const sectionMessages = messages.filter((item) => item.section === section)
+  const unreadCount = messages.filter((item) => !item.read && item.receiverRole === user.role && Number(item.receiverId) === Number(user.id)).length
   const sidebarModule = sectionModule === 'student' ? 'students' : sectionModule
   let content
   if (sectionModule === 'students' && sectionSubroute === 'new') content = <AddSemesterStudentPage user={user} semester={semester} section={section} students={sectionStudents} onCancel={() => navigateModule('students')} onSave={saveNewStudent} />
@@ -850,9 +936,9 @@ export default function TeacherSemester() {
   else if (sectionModule === 'achievements') content = <SemesterAchievements user={user} semester={semester} section={section} students={sectionStudents} achievements={achievements} onCreateAchievement={createAchievement} onNavigate={navigateModule} />
   else if (sectionModule === 'remarks') content = <SemesterRemarks user={user} semester={semester} section={section} students={sectionStudents} remarks={remarks} onNavigate={navigateModule} />
   else if (sectionModule === 'announcements') content = <SemesterAnnouncements user={user} semester={semester} section={section} announcements={sectionAnnouncements} setAnnouncements={setAnnouncements} notify={notify} />
-  else if (sectionModule === 'messages') content = <SemesterMessages user={user} semester={semester} section={section} messages={sectionMessages} setMessages={setMessages} notify={notify} />
+  else if (sectionModule === 'messages') content = <SemesterMessages user={user} semester={semester} section={section} students={sectionStudents} messages={sectionMessages} setMessages={setMessages} notify={notify} apiSession={apiSession} />
   else if (sectionModule === 'analytics') content = <SemesterAnalytics user={user} semester={semester} section={section} students={sectionStudents} />
   else if (sectionModule === 'predictions') content = <SemesterPredictions user={user} semester={semester} section={section} students={sectionStudents} notify={notify} />
   else content = <SemesterDashboard user={user} semester={semester} section={section} students={sectionStudents} announcements={sectionAnnouncements} onNavigate={navigateModule} />
-  return <TeacherShell user={user} semester={semester} section={section} activeModule={sidebarModule} onLogout={signOut}>{content}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</TeacherShell>
+  return <TeacherShell user={user} semester={semester} section={section} activeModule={sidebarModule} onLogout={signOut} unreadCount={unreadCount}>{content}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</TeacherShell>
 }

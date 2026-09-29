@@ -187,5 +187,28 @@ if (await tableExists('internal_marks')) {
   }
 }
 
+// Upgrade the legacy scope-only message table to explicit role-aware delivery.
+// Message IDs are role-table IDs (teacher, parent, student or admin), so a
+// teacher ID can never accidentally resolve to a parent or user-table ID.
+if (await tableExists('messages')) {
+  await addColumns('messages', {
+    sender_role: "ENUM('admin', 'teacher', 'student', 'parent') NULL",
+    receiver_id: 'BIGINT UNSIGNED NULL',
+    receiver_role: "ENUM('admin', 'teacher', 'student', 'parent') NULL",
+    read_status: 'BOOLEAN NOT NULL DEFAULT FALSE',
+  })
+  const [legacyRecipientIndexRows] = await connection.query("SELECT COLUMN_NAME AS columnName FROM information_schema.statistics WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'messages' AND INDEX_NAME = 'idx_message_recipient'")
+  if (legacyRecipientIndexRows.some((row) => row.columnName === 'recipient_user_id')) await connection.query(`ALTER TABLE ${identifier('messages')} DROP INDEX ${identifier('idx_message_recipient')}`)
+  const messageIndexes = await getIndexes('messages')
+  if (!messageIndexes.includes('idx_message_recipient')) await connection.query(`ALTER TABLE ${identifier('messages')} ADD KEY ${identifier('idx_message_recipient')} (receiver_id, receiver_role, read_status, created_at)`)
+  // Existing records used users.id in sender_id/recipient_user_id. Preserve
+  // their displayability while new records use the explicit role IDs above.
+  await connection.query(`UPDATE ${identifier('messages')} m JOIN ${identifier('users')} u ON u.id = m.sender_id SET m.sender_role = u.role WHERE m.sender_role IS NULL`)
+  await connection.query(`UPDATE ${identifier('messages')} m JOIN ${identifier('users')} u ON u.id = m.recipient_user_id SET m.receiver_id = m.recipient_user_id, m.receiver_role = u.role WHERE m.receiver_id IS NULL AND m.recipient_user_id IS NOT NULL`)
+  await connection.query(`UPDATE ${identifier('messages')} SET read_status = TRUE WHERE read_at IS NOT NULL`)
+  const foreignKeys = (await connection.query(`SELECT CONSTRAINT_NAME AS name FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'messages' AND REFERENCED_TABLE_NAME IS NOT NULL`))[0].map((row) => row.name)
+  for (const key of ['fk_message_sender', 'fk_message_recipient']) if (foreignKeys.includes(key)) await connection.query(`ALTER TABLE ${identifier('messages')} DROP FOREIGN KEY ${identifier(key)}`)
+}
+
 await connection.end()
-console.log('CAMPS schema created or upgraded with the Average Academic Performance contract.')
+console.log('CAMPS schema created or upgraded with the Average Academic Performance and role-aware messaging contracts.')

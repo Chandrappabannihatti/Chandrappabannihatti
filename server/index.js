@@ -23,7 +23,7 @@ app.use(cors({ origin: process.env.CLIENT_ORIGIN?.split(',') || true, credential
 app.use(express.json({ limit: '2mb' }))
 app.use(express.urlencoded({ extended: true }))
 
-const publicUser = (user) => ({ id: user.id, name: user.name, role: user.role, department: user.department, semester: user.semester, usn: user.usn, email: user.email, designation: user.designation, initials: user.initials })
+const publicUser = (user) => ({ id: user.id, name: user.name, role: user.role, department: user.department, semester: user.semester, usn: user.usn, studentId: user.studentId, studentName: user.studentName, email: user.email, designation: user.designation, relationship: user.relationship, initials: user.initials })
 
 function publicTeacher(teacher) {
   return {
@@ -42,12 +42,31 @@ function publicTeacher(teacher) {
 const demoAccounts = {
   admin: { id: 1, secret: 'admin@camps.edu', password: 'Admin@123', name: 'Kavya Menon', role: 'admin', department: 'ALL', email: 'admin@camps.edu', designation: 'Academic Administrator', initials: 'KM' },
   teacher: { id: 1, secret: 'teacher@camps.edu', password: 'Teacher@123', name: 'Dr. Ananya Rao', role: 'teacher', department: 'CSE', email: 'ananya.rao@pestrust.edu.in', designation: 'Assistant Professor', initials: 'AR' },
-  student: { id: 33, secret: '4PM21CS033', password: 'Student@123', name: 'Ishita Kulkarni', role: 'student', department: 'CSE', semester: 7, usn: '4PM21CS033', email: 'ishita.k@pestrust.edu.in', initials: 'IK' },
-  parent: { id: 2, secret: '4PM21CS033', password: 'Parent@123', name: 'Suresh Kulkarni', role: 'parent', department: 'CSE', semester: 7, usn: '4PM21CS033', initials: 'SK' },
+  student: { id: 4, secret: '4PM21CS033', password: 'Student@123', name: 'Ishita Kulkarni', role: 'student', department: 'CSE', semester: 7, usn: '4PM21CS033', email: 'ishita.k@pestrust.edu.in', initials: 'IK' },
+  parent: { id: 2, secret: '4PM21CS033', password: 'Parent@123', name: 'Suresh Kulkarni', role: 'parent', department: 'CSE', semester: 7, usn: '4PM21CS033', studentId: 4, studentName: 'Ishita Kulkarni', email: 'suresh.kulkarni@example.com', relationship: 'Parent', initials: 'SK' },
+}
+
+function demoParentForStudent(student) {
+  if (!student) return null
+  return {
+    id: Number(student.id) === 4 ? 2 : 10000 + Number(student.id),
+    secret: student.usn,
+    password: 'Parent@123',
+    name: student.parentName || `${student.name} Parent`,
+    role: 'parent',
+    department: student.department,
+    semester: Number(student.semester),
+    usn: student.usn,
+    studentId: Number(student.id),
+    studentName: student.name,
+    email: student.parentEmail || `${String(student.usn).toLowerCase()}@parents.camps.edu`,
+    relationship: 'Parent',
+    initials: String(student.parentName || `${student.name} Parent`).split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(),
+  }
 }
 
 function sign(user) {
-  return jwt.sign({ sub: user.id, role: user.role, department: user.department, semester: user.semester, usn: user.usn, name: user.name, email: user.email }, jwtSecret, { expiresIn: '8h' })
+  return jwt.sign({ sub: user.id, role: user.role, department: user.department, semester: user.semester, usn: user.usn, studentId: user.studentId, name: user.name, email: user.email }, jwtSecret, { expiresIn: '8h' })
 }
 
 function authRequired(req, res, next) {
@@ -181,7 +200,34 @@ function mapSubjectRow(row) {
 }
 
 function mapMessageRow(row) {
-  return { ...row, section: row.section || row.sectionName, sender: row.sender || row.sender_name, recipient: row.recipient || row.recipient_scope, time: row.time || row.created_at, read: Boolean(row.read || row.read_at), initials: row.initials || String(row.sender_name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
+  const sender = row.sender || row.sender_name || row.senderName || 'CAMPS'
+  const recipient = row.recipient || row.recipient_name || row.recipient_scope || (row.receiver_role ? `${row.receiver_role} ${row.receiver_id}` : 'Recipient')
+  const senderRole = row.senderRole || row.sender_role || ''
+  const receiverRole = row.receiverRole || row.receiver_role || ''
+  const read = Boolean(row.read ?? row.readStatus ?? row.read_status ?? row.read_at)
+  return {
+    ...row,
+    sender,
+    senderId: row.senderId ?? row.sender_id,
+    senderRole,
+    receiverId: row.receiverId ?? row.receiver_id,
+    receiverRole,
+    recipient,
+    recipientId: row.recipientId ?? row.receiver_id,
+    recipientRole: receiverRole,
+    body: row.body || row.content || '',
+    studentId: row.studentId ?? row.student_id,
+    studentName: row.studentName || row.student_name,
+    department: row.department || row.department_code,
+    semester: row.semester == null ? row.semester : Number(row.semester),
+    section: row.section || row.sectionName,
+    sectionId: row.sectionId ?? row.section_id,
+    time: row.time || row.created_at || row.createdAt,
+    createdAt: row.createdAt || row.created_at,
+    read,
+    readStatus: read,
+    initials: row.initials || String(sender).split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(),
+  }
 }
 
 function mapAnnouncementRow(row) {
@@ -246,7 +292,11 @@ app.post('/api/auth/login', async (req, res, next) => {
           account = { ...savedTeacher, secret: savedTeacher.email, role: 'teacher' }
         }
       }
-      if (!account || identifier.toLowerCase() !== account.secret.toLowerCase() || (role !== 'teacher' && password !== account.password)) return res.status(401).json({ message: 'Invalid demo credentials.' })
+      if (role === 'parent') {
+        const linkedStudent = demoStore.students.find((student) => String(student.usn).toUpperCase() === identifier.toUpperCase())
+        account = demoParentForStudent(linkedStudent) || demoAccounts.parent
+      }
+      if (!account || identifier.toLowerCase() !== String(account.secret).toLowerCase() || (role !== 'teacher' && password !== account.password)) return res.status(401).json({ message: 'Invalid demo credentials.' })
       const requestedDepartment = cleanString(req.body.department).toUpperCase()
       if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
       if (role !== 'admin' && requestedDepartment && requestedDepartment !== account.department) return res.status(403).json({ message: `This demo ${role} account is scoped to ${account.department}. Choose that department to continue.` })
@@ -257,7 +307,7 @@ app.post('/api/auth/login', async (req, res, next) => {
     let rows
     if (role === 'teacher') rows = await query('SELECT id, name, email, password_hash, department_code AS department, designation FROM teachers WHERE email = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toLowerCase() })
     else if (role === 'student') rows = await query('SELECT id, name, usn, email, password_hash, department_code AS department, semester FROM students WHERE usn = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toUpperCase() })
-    else if (role === 'parent') rows = await query('SELECT p.id, p.name, p.password_hash, s.usn, s.name AS student_name, s.department_code AS department, s.semester FROM parents p JOIN students s ON s.id = p.student_id WHERE s.usn = :identifier AND p.is_active = 1 LIMIT 1', { identifier: identifier.toUpperCase() })
+    else if (role === 'parent') rows = await query('SELECT p.id, p.name, p.email, p.password_hash, p.student_id AS studentId, s.usn, s.name AS studentName, s.department_code AS department, s.semester FROM parents p JOIN students s ON s.id = p.student_id WHERE s.usn = :identifier AND p.is_active = 1 AND s.is_active = 1 ORDER BY p.id LIMIT 1', { identifier: identifier.toUpperCase() })
     else rows = await query('SELECT id, name, email, password_hash FROM admins WHERE email = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toLowerCase() })
     const found = rows[0]
     if (!found || !(await bcrypt.compare(password, found.password_hash))) return res.status(401).json({ message: 'Invalid credentials.' })
@@ -873,56 +923,219 @@ app.post('/api/achievements', authRequired, roleRequired('teacher', 'admin'), as
   }
 })
 
+const messageRoles = new Set(['admin', 'teacher', 'student', 'parent'])
+
+async function findMessageTarget(role, id) {
+  const normalizedRole = cleanString(role).toLowerCase()
+  const targetId = Number(id)
+  if (!messageRoles.has(normalizedRole) || !Number.isInteger(targetId) || targetId <= 0) return null
+  if (useDemoData) {
+    if (normalizedRole === 'parent') {
+      const student = demoStore.students.find((item) => Number(demoParentForStudent(item)?.id) === targetId)
+      return student ? { id: targetId, role: normalizedRole, name: demoParentForStudent(student).name, email: demoParentForStudent(student).email, studentId: Number(student.id), studentName: student.name, usn: student.usn, department: student.department, semester: Number(student.semester), section: student.section } : null
+    }
+    if (normalizedRole === 'student') {
+      const student = demoStore.students.find((item) => Number(item.id) === targetId)
+      return student ? { id: Number(student.id), role: normalizedRole, name: student.name, email: student.email, studentId: Number(student.id), studentName: student.name, usn: student.usn, department: student.department, semester: Number(student.semester), section: student.section } : null
+    }
+    if (normalizedRole === 'teacher') {
+      const teacher = demoStore.teachers.find((item) => Number(item.id) === targetId)
+      return teacher ? { id: Number(teacher.id), role: normalizedRole, name: teacher.name, email: teacher.email, department: teacher.department } : null
+    }
+    const admin = demoAccounts.admin
+    return targetId === Number(admin.id) ? { id: targetId, role: normalizedRole, name: admin.name, email: admin.email, department: admin.department } : null
+  }
+  if (normalizedRole === 'parent') {
+    const rows = await query('SELECT p.id, p.name, p.email, p.student_id AS studentId, s.name AS studentName, s.usn, s.department_code AS department, s.semester, COALESCE(sec.section_name, s.section) AS section FROM parents p JOIN students s ON s.id=p.student_id LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE p.id=:id AND p.is_active=1 AND s.is_active=1 LIMIT 1', { id: targetId })
+    return rows[0] ? { ...rows[0], id: Number(rows[0].id), role: normalizedRole, studentId: Number(rows[0].studentId), semester: Number(rows[0].semester) } : null
+  }
+  if (normalizedRole === 'student') {
+    const rows = await query('SELECT id, name, email, usn, department_code AS department, semester, COALESCE(sec.section_name, section) AS section FROM students s LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE s.id=:id AND s.is_active=1 LIMIT 1', { id: targetId })
+    return rows[0] ? { ...rows[0], id: Number(rows[0].id), role: normalizedRole, studentId: Number(rows[0].id), studentName: rows[0].name, semester: Number(rows[0].semester) } : null
+  }
+  if (normalizedRole === 'teacher') {
+    const rows = await query('SELECT id, name, email, department_code AS department FROM teachers WHERE id=:id AND is_active=1 LIMIT 1', { id: targetId })
+    return rows[0] ? { ...rows[0], id: Number(rows[0].id), role: normalizedRole } : null
+  }
+  const rows = await query('SELECT id, name, email FROM admins WHERE id=:id AND is_active=1 LIMIT 1', { id: targetId })
+  return rows[0] ? { ...rows[0], id: Number(rows[0].id), role: normalizedRole, department: 'ALL' } : null
+}
+
+async function findMessageStudent(studentId, usn = '') {
+  if (studentId) {
+    const id = Number(studentId)
+    if (useDemoData) return demoStore.students.find((student) => Number(student.id) === id) || null
+    const rows = await query('SELECT s.id, s.usn, s.name, s.department_code AS department, s.semester, COALESCE(sec.section_name, s.section) AS section, s.section_id AS sectionId FROM students s LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE s.id=:id AND s.is_active=1 LIMIT 1', { id })
+    return rows[0] || null
+  }
+  if (!usn) return null
+  if (useDemoData) return demoStore.students.find((student) => String(student.usn).toUpperCase() === String(usn).toUpperCase()) || null
+  const rows = await query('SELECT s.id, s.usn, s.name, s.department_code AS department, s.semester, COALESCE(sec.section_name, s.section) AS section, s.section_id AS sectionId FROM students s LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE s.usn=:usn AND s.is_active=1 LIMIT 1', { usn: String(usn).toUpperCase() })
+  return rows[0] || null
+}
+
+async function findParentForStudent(studentId) {
+  if (useDemoData) {
+    const student = demoStore.students.find((item) => Number(item.id) === Number(studentId))
+    const parent = demoParentForStudent(student)
+    return parent ? { id: parent.id, role: 'parent', name: parent.name, email: parent.email, studentId: Number(student.id), studentName: student.name, usn: student.usn, department: student.department, semester: Number(student.semester), section: student.section } : null
+  }
+  const rows = await query('SELECT p.id, p.name, p.email, p.student_id AS studentId, s.name AS studentName, s.usn, s.department_code AS department, s.semester, COALESCE(sec.section_name, s.section) AS section FROM parents p JOIN students s ON s.id=p.student_id LEFT JOIN sections sec ON sec.section_id=s.section_id WHERE p.student_id=:studentId AND p.is_active=1 AND s.is_active=1 ORDER BY p.id LIMIT 1', { studentId: Number(studentId) })
+  return rows[0] ? { ...rows[0], id: Number(rows[0].id), role: 'parent', studentId: Number(rows[0].studentId), semester: Number(rows[0].semester) } : null
+}
+
+function messageScopeMatches(message, department, semester, section) {
+  return (!department || !message.department || message.department === department)
+    && (!semester || !message.semester || Number(message.semester) === Number(semester))
+    && (!section || !message.section || String(message.section).toUpperCase() === section)
+}
+
 app.get('/api/messages', authRequired, async (req, res, next) => {
   try {
     const requestedDepartment = req.user.role === 'teacher' ? req.user.department : selectedAdminDepartment(req) || (cleanString(req.query.department).toUpperCase() || (req.user.department === 'ALL' ? '' : req.user.department))
-    const requestedSemester = req.query.semester || req.user.semester
+    const requestedSemester = req.query.semester || (req.user.role === 'student' || req.user.role === 'parent' ? req.user.semester : '')
     const requestedSection = req.query.section ? String(req.query.section).toUpperCase() : ''
     if (useDemoData) {
-      const messages = (req.user.role === 'teacher' || req.user.role === 'admin'
-        ? demoStore.messages
-        : demoStore.messages.filter((message) => String(message.recipient).toLowerCase().includes(String(req.user.name || req.user.usn).toLowerCase()) || message.audience === 'Students'))
-        .filter((message) => (!requestedDepartment || message.department === requestedDepartment) && (!requestedSemester || Number(message.semester) === Number(requestedSemester)) && (!requestedSection || String(message.section || '').toUpperCase() === requestedSection))
-      return res.json({ data: messages })
+      const messages = demoStore.messages.filter((message) => {
+        const directReceiver = Number(message.receiverId || message.receiver_id) === Number(req.user.sub) && String(message.receiverRole || message.receiver_role || '').toLowerCase() === req.user.role
+        const directSender = Number(message.senderId || message.sender_id) === Number(req.user.sub) && String(message.senderRole || message.sender_role || '').toLowerCase() === req.user.role
+        const legacyMatch = !message.receiverId && (req.user.role === 'teacher' || req.user.role === 'admin' || String(message.recipient || '').toLowerCase().includes(String(req.user.name || req.user.usn).toLowerCase()) || (req.user.role === 'student' && String(message.recipient || '').toLowerCase().includes(String(req.user.name || '').toLowerCase())))
+        const visible = req.user.role === 'teacher' || req.user.role === 'admin' ? directReceiver || directSender || legacyMatch : directReceiver || legacyMatch
+        return visible && messageScopeMatches(message, requestedDepartment, requestedSemester, requestedSection)
+      }).map(mapMessageRow)
+      return res.json({ data: messages, unreadCount: messages.filter((message) => !message.read && ((Number(message.receiverId || message.receiver_id) === Number(req.user.sub) && String(message.receiverRole || message.receiver_role || '').toLowerCase() === String(req.user.role).toLowerCase()) || (!message.receiverId && message.sender !== req.user.name))).length })
     }
-    const conditions = ['(m.recipient_user_id = :userId OR m.recipient_scope = :scope OR m.sender_id = :userId)']
-    const params = { userId: req.user.sub, scope: requestedDepartment || 'ALL' }
-    if (requestedDepartment) { conditions.push('m.department_code = :department'); params.department = requestedDepartment }
-    if (requestedSemester) { conditions.push('m.semester = :semester'); params.semester = Number(requestedSemester) }
-    if (requestedSection) { conditions.push('sec.section_name = :section'); params.section = requestedSection }
-    const rows = await query(`SELECT m.*, sec.section_name AS sectionName, u.display_name AS sender_name FROM messages m LEFT JOIN sections sec ON sec.section_id=m.section_id LEFT JOIN users u ON u.id = m.sender_id WHERE ${conditions.join(' AND ')} ORDER BY m.created_at DESC`, params)
-    res.json({ data: rows.map(mapMessageRow) })
+    const params = { currentId: Number(req.user.sub), currentRole: req.user.role }
+    const direct = req.user.role === 'teacher' || req.user.role === 'admin'
+      ? '((m.receiver_id=:currentId AND m.receiver_role=:currentRole) OR (m.sender_id=:currentId AND m.sender_role=:currentRole) OR (m.receiver_id IS NULL AND m.sender_id=:currentId))'
+      : '(m.receiver_id=:currentId AND m.receiver_role=:currentRole)'
+    const conditions = [direct]
+    if (requestedDepartment) { conditions.push('(m.department_code=:department OR m.department_code IS NULL)'); params.department = requestedDepartment }
+    if (requestedSemester) { conditions.push('(m.semester=:semester OR m.semester IS NULL)'); params.semester = Number(requestedSemester) }
+    if (requestedSection) { conditions.push('(sec.section_name=:section OR m.section_id IS NULL)'); params.section = requestedSection }
+    const rows = await query(`SELECT m.*, COALESCE(
+      CASE WHEN m.sender_role='teacher' THEN st.name WHEN m.sender_role='parent' THEN sp.name WHEN m.sender_role='student' THEN ss.name WHEN m.sender_role='admin' THEN sa.name END,
+      legacy_sender.display_name, 'CAMPS'
+    ) AS sender_name,
+    COALESCE(
+      CASE WHEN m.receiver_role='teacher' THEN rt.name WHEN m.receiver_role='parent' THEN rp.name WHEN m.receiver_role='student' THEN rs.name WHEN m.receiver_role='admin' THEN ra.name END,
+      m.recipient_scope, 'Recipient'
+    ) AS recipient_name,
+    sec.section_name AS sectionName
+    FROM messages m
+    LEFT JOIN users legacy_sender ON legacy_sender.id=m.sender_id AND m.sender_role IS NULL
+    LEFT JOIN teachers st ON m.sender_role='teacher' AND st.id=m.sender_id
+    LEFT JOIN parents sp ON m.sender_role='parent' AND sp.id=m.sender_id
+    LEFT JOIN students ss ON m.sender_role='student' AND ss.id=m.sender_id
+    LEFT JOIN admins sa ON m.sender_role='admin' AND sa.id=m.sender_id
+    LEFT JOIN teachers rt ON m.receiver_role='teacher' AND rt.id=m.receiver_id
+    LEFT JOIN parents rp ON m.receiver_role='parent' AND rp.id=m.receiver_id
+    LEFT JOIN students rs ON m.receiver_role='student' AND rs.id=m.receiver_id
+    LEFT JOIN admins ra ON m.receiver_role='admin' AND ra.id=m.receiver_id
+    LEFT JOIN sections sec ON sec.section_id=m.section_id
+    WHERE ${conditions.join(' AND ')} ORDER BY m.created_at DESC`, params)
+    const data = rows.map(mapMessageRow)
+    res.json({ data, unreadCount: data.filter((message) => !message.read && Number(message.receiverId) === Number(req.user.sub) && String(message.receiverRole).toLowerCase() === String(req.user.role).toLowerCase()).length })
   } catch (error) { next(error) }
 })
 
-app.post('/api/messages/send', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+app.post('/api/messages/send', authRequired, async (req, res, next) => {
   try {
-    const { recipient, audience, subject, body, studentId, department, semester, section } = req.body
-    if (!subject || !body) return res.status(422).json({ message: 'Subject and message body are required.' })
-    const requestedDepartment = cleanString(department || selectedAdminDepartment(req) || req.user.department).toUpperCase()
-    if (req.user.role === 'teacher' && requestedDepartment !== req.user.department) return res.status(403).json({ message: 'Teachers may only message their department.' })
-    if (selectedAdminDepartment(req) && requestedDepartment !== selectedAdminDepartment(req)) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
-    const normalizedSection = cleanString(section).toUpperCase() || undefined
-    const requestedSemester = Number(semester || req.user.semester || 0) || null
-    if (studentId) {
-      const linkedStudent = useDemoData ? demoStore.students.find((item) => item.id === Number(studentId)) : (await query('SELECT id, department_code AS department, semester, section, section_id AS sectionId FROM students WHERE id=:studentId AND is_active=1 LIMIT 1', { studentId: Number(studentId) }))[0]
-      if (!linkedStudent) return res.status(404).json({ message: 'Student not found.' })
-      const scopedLinkedStudent = { ...linkedStudent, department: linkedStudent.department || linkedStudent.department_code }
-      if (!scopeStudent(req, scopedLinkedStudent)) return res.status(403).json({ message: 'Student is outside your access scope.' })
-      if (scopedLinkedStudent.department !== requestedDepartment || (requestedSemester && Number(scopedLinkedStudent.semester) !== requestedSemester) || (normalizedSection && String(scopedLinkedStudent.section || '').toUpperCase() !== normalizedSection)) return res.status(403).json({ message: 'Message scope does not match the selected student.' })
+    if (!['teacher', 'admin', 'parent', 'student'].includes(req.user.role)) return res.status(403).json({ message: 'This account cannot send messages.' })
+    const subject = cleanString(req.body.subject)
+    const body = cleanString(req.body.body || req.body.content)
+    const receiverRole = cleanString(req.body.recipientRole || req.body.receiverRole).toLowerCase()
+    let receiverId = Number(req.body.recipientId || req.body.receiverId || req.body.parentId || req.body.teacherId || 0)
+    let linkedStudent = await findMessageStudent(req.body.studentId, req.user.role === 'parent' || req.user.role === 'student' ? req.user.usn : '')
+    if (!subject || !body) return res.status(422).json({ message: 'Subject and message content are required.' })
+    if (subject.length > 180) return res.status(422).json({ message: 'Subject must be 180 characters or fewer.' })
+    if (body.length > 10000) return res.status(422).json({ message: 'Message content must be 10,000 characters or fewer.' })
+    if (!messageRoles.has(receiverRole)) return res.status(422).json({ message: 'Select a specific student, parent or teacher recipient.' })
+    if (receiverRole === req.user.role && receiverRole !== 'admin') return res.status(422).json({ message: 'Choose a different recipient.' })
+
+    let target = receiverId ? await findMessageTarget(receiverRole, receiverId) : null
+    if (receiverRole === 'parent' && !target && linkedStudent) target = await findParentForStudent(linkedStudent.id)
+    if (!target) return res.status(404).json({ message: 'The selected recipient could not be found.' })
+    receiverId = Number(target.id)
+    if (target.studentId) {
+      linkedStudent = await findMessageStudent(target.studentId)
+      if (!linkedStudent) return res.status(404).json({ message: 'The recipient is not linked to an active student.' })
     }
-    const message = { id: useDemoData ? nextId(demoStore.messages) : undefined, sender: req.user.name, recipient: recipient || audience || 'Academic community', audience: audience || 'Student', department: requestedDepartment, semester: requestedSemester, section: normalizedSection, subject: cleanString(subject), body: cleanString(body), time: 'Just now', createdAt: new Date().toISOString(), read: false, initials: (req.user.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(), studentId }
-    if (normalizedSection) { const sectionRow = useDemoData ? demoSection(message.department, message.semester, normalizedSection) : await findSection(message.department, message.semester, normalizedSection); if (!sectionRow) return res.status(422).json({ message: `Section ${normalizedSection} does not exist for ${message.department} Semester ${message.semester}.` }); message.sectionId = sectionRow.sectionId }
-    if (useDemoData) demoStore.messages.unshift(message)
-    else await query('INSERT INTO messages (sender_id, recipient_scope, student_id, department_code, semester, section_id, audience, subject, body) VALUES (:senderId, :recipientScope, :studentId, :department, :semester, :sectionId, :audience, :subject, :body)', { senderId: req.user.sub, recipientScope: recipient || audience || 'Academic community', studentId: studentId || null, department: message.department, semester: message.semester, sectionId: message.sectionId || null, audience: message.audience, subject: message.subject, body: message.body })
+    if (req.user.role === 'parent' || req.user.role === 'student') {
+      const ownStudent = await findMessageStudent(null, req.user.usn)
+      if (!ownStudent || !linkedStudent || Number(ownStudent.id) !== Number(linkedStudent.id)) return res.status(403).json({ message: 'You may only message the teacher for your linked student.' })
+      if (!['teacher', 'admin'].includes(receiverRole)) return res.status(403).json({ message: 'Parents and students may reply only to a teacher or administrator.' })
+    } else if (linkedStudent && !scopeStudent(req, { ...linkedStudent, department: linkedStudent.department })) {
+      return res.status(403).json({ message: 'The selected recipient is outside your access scope.' })
+    }
+    const requestedDepartment = cleanString(req.body.department || linkedStudent?.department || req.user.department).toUpperCase()
+    const requestedSemester = Number(req.body.semester || linkedStudent?.semester || req.user.semester || 0) || null
+    const normalizedSection = cleanString(req.body.section || linkedStudent?.section).toUpperCase() || undefined
+    if (linkedStudent) {
+      if (requestedDepartment && requestedDepartment !== String(linkedStudent.department).toUpperCase()) return res.status(403).json({ message: 'Message department does not match the selected student.' })
+      if (requestedSemester && Number(linkedStudent.semester) !== requestedSemester) return res.status(403).json({ message: 'Message semester does not match the selected student.' })
+      if (normalizedSection && String(linkedStudent.section || '').toUpperCase() !== normalizedSection) return res.status(403).json({ message: 'Message section does not match the selected student.' })
+    }
+    let sectionId = linkedStudent?.sectionId || null
+    if (linkedStudent && !useDemoData && !sectionId) sectionId = (await findSection(linkedStudent.department, linkedStudent.semester, linkedStudent.section))?.sectionId || null
+    const audience = receiverRole === 'parent' ? 'Parent' : receiverRole === 'student' ? 'Student' : receiverRole === 'admin' ? 'Students' : 'Students'
+    const message = {
+      id: useDemoData ? nextId(demoStore.messages) : undefined,
+      senderId: Number(req.user.sub),
+      senderRole: req.user.role,
+      sender: req.user.name,
+      receiverId,
+      receiverRole,
+      recipientId: receiverId,
+      recipientRole: receiverRole,
+      recipient: target.name,
+      audience,
+      subject,
+      body,
+      content: body,
+      department: linkedStudent?.department || requestedDepartment,
+      semester: linkedStudent?.semester ? Number(linkedStudent.semester) : requestedSemester,
+      section: linkedStudent?.section || normalizedSection,
+      sectionId,
+      studentId: linkedStudent ? Number(linkedStudent.id) : null,
+      studentName: linkedStudent?.name || target.studentName,
+      time: 'Just now',
+      createdAt: new Date().toISOString(),
+      read: false,
+      readStatus: false,
+      initials: (req.user.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(),
+    }
+    if (useDemoData) {
+      demoStore.messages.unshift(message)
+    } else {
+      const result = await query('INSERT INTO messages (sender_id, sender_role, receiver_id, receiver_role, student_id, department_code, semester, section_id, audience, subject, body, read_status, read_at) VALUES (:senderId, :senderRole, :receiverId, :receiverRole, :studentId, :department, :semester, :sectionId, :audience, :subject, :body, FALSE, NULL)', { ...message, department: message.department || null, semester: message.semester || null })
+      message.id = result.insertId
+    }
+    console.info('[messages] Message delivered', { messageId: message.id, senderId: message.senderId, senderRole: message.senderRole, receiverId: message.receiverId, receiverRole: message.receiverRole, studentId: message.studentId, department: message.department, semester: message.semester, section: message.section })
     res.status(201).json({ data: message })
-  } catch (error) { next(error) }
+  } catch (error) {
+    console.error('[messages] Message creation failed', { userId: req.user?.sub, role: req.user?.role, recipientId: req.body?.recipientId || req.body?.receiverId, recipientRole: req.body?.recipientRole || req.body?.receiverRole, studentId: req.body?.studentId, code: error.code, message: error.message })
+    next(error)
+  }
 })
 
 app.put('/api/messages/:id/read', authRequired, async (req, res, next) => {
   try {
-    if (useDemoData) { const message = demoStore.messages.find((item) => item.id === Number(req.params.id)); if (message) message.read = true; return res.json({ ok: true }) }
-    await query('UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE id = :id', { id: Number(req.params.id) }); res.json({ ok: true })
+    const id = Number(req.params.id)
+    if (useDemoData) {
+      const message = demoStore.messages.find((item) => Number(item.id) === id)
+      if (!message) return res.status(404).json({ message: 'Message not found.' })
+      const ownsMessage = (Number(message.receiverId) === Number(req.user.sub) && String(message.receiverRole).toLowerCase() === req.user.role) || (!message.receiverId && (req.user.role === 'teacher' || String(message.recipient || '').toLowerCase().includes(String(req.user.name || req.user.usn).toLowerCase())))
+      if (!ownsMessage) return res.status(403).json({ message: 'This message is not in your inbox.' })
+      message.read = true
+      message.readStatus = true
+      message.readAt = new Date().toISOString()
+      return res.json({ ok: true, data: mapMessageRow(message) })
+    }
+    const result = await query('UPDATE messages SET read_status=TRUE, read_at=CURRENT_TIMESTAMP WHERE id=:id AND receiver_id=:receiverId AND receiver_role=:receiverRole', { id, receiverId: Number(req.user.sub), receiverRole: req.user.role })
+    if (!result.affectedRows) return res.status(404).json({ message: 'Message not found in your inbox.' })
+    console.info('[messages] Message marked read', { messageId: id, receiverId: req.user.sub, receiverRole: req.user.role })
+    res.json({ ok: true })
   } catch (error) { next(error) }
 })
 
