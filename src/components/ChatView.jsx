@@ -135,10 +135,12 @@ export default function ChatView({
   const typingTimer = useRef(null)
   const selectedKeyRef = useRef('')
   const contactsRef = useRef(contacts)
+  const notifyRef = useRef(notify)
   const aliveRef = useRef(true)
 
   useEffect(() => { selectedKeyRef.current = selectedKey }, [selectedKey])
   useEffect(() => { contactsRef.current = contacts }, [contacts])
+  useEffect(() => { notifyRef.current = notify }, [notify])
 
   const scopedParams = useMemo(() => ({
     ...(department ? { department } : {}),
@@ -260,6 +262,11 @@ export default function ChatView({
         if (packet.type === 'message:new' && packet.data) {
           setMessages((current) => mergeById(current, packet.data))
           setContacts((current) => current.map((contact) => messageBelongsToContact(packet.data, user, contact) ? { ...contact, online: contact.online } : contact))
+          if (!samePerson(packet.data, user.id, user.role, 'sender')) {
+            const senderName = packet.data.sender || packet.data.senderName || contactsRef.current.find((contact) => samePerson(packet.data, contact.id, contact.role, 'sender'))?.name || 'A contact'
+            notifyRef.current(`New message from ${senderName}`)
+            if (typeof window.Notification === 'function' && window.Notification.permission === 'granted') new window.Notification(`New message from ${senderName}`, { body: packet.data.body || 'Open CAMPS to read the message.' })
+          }
           return
         }
         if (packet.type === 'message:status' && packet.data) {
