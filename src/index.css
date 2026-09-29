@@ -41,6 +41,10 @@ a { color: inherit; text-decoration: none; }
 
 .font-display { font-family: 'Manrope', 'DM Sans', sans-serif; }
 .app-shell { min-height: 100vh; background: var(--cream); }
+.back-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; border: 1px solid var(--line); border-radius: 9px; padding: 0 11px; color: var(--ink-soft); background: rgba(255,255,255,.86); font-size: 10px; font-weight: 800; white-space: nowrap; transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease, box-shadow .18s ease; }
+.back-button svg { flex: 0 0 auto; color: var(--coral); font-size: 14px; }
+.back-button:hover { border-color: #9cc6d8; color: var(--primary-dark); background: #fff; box-shadow: 0 5px 13px rgba(16, 49, 72, .08); transform: translateY(-1px); }
+.back-button:focus-visible { outline: 3px solid rgba(49,157,150,.25); outline-offset: 2px; }
 
 /* Landing */
 .landing-page { min-height: 100vh; overflow: hidden; background: var(--cream); }
@@ -244,9 +248,11 @@ a { color: inherit; text-decoration: none; }
 .logout-btn:hover { color: var(--coral); background: rgba(255,255,255,.08); }
 .dashboard-main { width: calc(100% - 254px); min-height: 100vh; margin-left: 254px; padding: 0 38px 42px; }
 .dashboard-topbar { display: flex; align-items: center; justify-content: space-between; height: 85px; border-bottom: 1px solid #e5e4de; }
+.dashboard-topbar-leading { display: flex; align-items: center; min-width: 0; flex: 1; gap: 12px; }
+.dashboard-topbar-leading .back-button { flex: 0 0 auto; }
 .mobile-sidebar-trigger { display: none; }
 .breadcrumb { display: flex; align-items: center; gap: 7px; color: #9a9f9d; font-size: 11px; }
-.breadcrumb strong { color: var(--ink); font-weight: 800; }
+.breadcrumb strong { overflow: hidden; color: var(--ink); font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-actions { display: flex; align-items: center; gap: 14px; }
 .topbar-icon { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 9px; color: #819095; background: transparent; }
 .topbar-icon:hover { color: var(--ink); background: #eeede7; }
@@ -517,6 +523,8 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .dashboard-main { width: 100%; margin-left: 0; padding-right: 20px; padding-left: 20px; }
   .mobile-sidebar-trigger { display: grid; place-items: center; width: 32px; height: 32px; margin-right: 9px; border: 0; border-radius: 8px; color: var(--ink); background: #efeee8; }
   .dashboard-topbar { height: 70px; }
+  .dashboard-topbar-leading { gap: 7px; }
+  .dashboard-topbar-leading .back-button { min-height: 31px; padding: 0 8px; }
   .breadcrumb { font-size: 10px; }
   .topbar-user-meta, .topbar-divider { display: none; }
   .topbar-actions { gap: 5px; }
@@ -817,6 +825,8 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 .profile-back-link { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 18px; border: 0; padding: 0; color: #8b9798; background: transparent; font-size: 11px; font-weight: 800; }
 .profile-back-link:hover { color: var(--ink); }
 .profile-back-link svg { color: var(--coral); }
+.teacher-account-content > .back-button { margin-bottom: 24px; border-color: rgba(188,231,215,.2); color: #b9d9d3; background: rgba(255,255,255,.06); }
+.teacher-account-content > .back-button:hover { border-color: rgba(188,231,215,.45); color: #fff; background: rgba(255,255,255,.1); }
 .profile-hero-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 13px; border: 1px solid #dce8e2; border-radius: 16px; padding: 21px 23px; background: #edf7f2; }
 .profile-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .profile-identity .avatar { width: 57px; height: 57px; border-radius: 17px; font-size: 14px; }
@@ -950,6 +960,8 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 .section-selection-page .brand-wordmark small { color: #8ea2ad; }
 .section-selection-page .brand-mark { color: var(--ink); background: #fff; }
 .section-selection-content { max-width: 840px; padding-top: 52px; }
+.semester-selection-page .selection-content > .back-button, .section-selection-content > .back-button, .department-selection-content > .back-button { margin-bottom: 22px; border-color: rgba(188,231,215,.2); color: #b9d9d3; background: rgba(255,255,255,.06); }
+.semester-selection-page .selection-content > .back-button:hover, .section-selection-content > .back-button:hover, .department-selection-content > .back-button:hover { border-color: rgba(188,231,215,.45); color: #fff; background: rgba(255,255,255,.1); }
 .selection-back-link { display: inline-flex; align-items: center; gap: 7px; border: 0; padding: 0; color: #8ea2ad; background: transparent; font-size: 10px; font-weight: 800; }
 .selection-back-link:hover { color: #fff; }
 .selection-back-link svg { color: var(--coral); }
@@ -1505,8 +1517,8 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 .erp-entry-footer svg { color: #2aaca0; }
 
 /* Clean, non-promotional role login */
-.erp-back-button { display: inline-flex; align-items: center; gap: 7px; border: 0; color: #627996; background: transparent; font-size: 10px; font-weight: 800; }
-.erp-back-button:hover { color: #071d4a; }
+.erp-back-button { min-height: 0; border: 0; border-radius: 0; padding: 0; color: #627996; background: transparent; box-shadow: none; font-size: 10px; }
+.erp-back-button:hover { border-color: transparent; color: #071d4a; background: transparent; box-shadow: none; transform: none; }
 .erp-login-shell { width: min(100% - 40px, 540px); margin: 17px auto 48px; }
 .erp-login-step { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .erp-login-step .erp-step-label { margin: 0; }
@@ -1686,6 +1698,8 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 .admin-control-content { max-width: 1160px; margin: 0 auto; padding: 18px 24px 64px; }
 .admin-back-link { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 22px; border: 0; padding: 0; color: #66877d; background: transparent; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
 .admin-back-link:hover { color: #ef795f; }
+.admin-control-content > .back-button { margin-bottom: 22px; border-color: #d4e7df; color: #4f806e; background: #f2faf6; }
+.admin-control-content > .back-button:hover { border-color: #9ecab6; color: #316b58; background: #fff; }
 .admin-page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 25px; margin-bottom: 28px; }
 .admin-page-eyebrow { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; color: #70a68e; font-size: 9px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .admin-page-eyebrow svg { font-size: 12px; }

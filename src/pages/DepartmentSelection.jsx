@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { cloneDemoStudents } from '../data/demo'
 import { departmentCards } from '../data/departments'
 import { Brand } from './Landing'
+import BackButton from '../components/BackButton'
 import SemesterSelection from './SemesterSelection'
 
 export default function DepartmentSelection() {
@@ -16,6 +17,7 @@ export default function DepartmentSelection() {
   return <main className="department-selection-page">
     <header className="department-selection-toolbar"><Brand /><div className="department-account"><span className="department-account-avatar">{user.initials}</span><span><strong>{user.name}</strong><small>{user.department} · Teacher</small></span><div className="department-account-links"><button type="button" onClick={() => navigate('/teacher/profile')}><FiUser /> Profile</button><button type="button" onClick={() => navigate('/teacher/settings')}><FiSettings /> Settings</button></div><button className="department-account-logout" type="button" onClick={signOut} aria-label="Sign out"><FiLogOut /></button></div></header>
     <section className="department-selection-content" aria-labelledby="department-selection-title">
+      <BackButton fallbackPath="/teacher/semesters" />
       <h1 id="department-selection-title" className="sr-only">Choose a department</h1>
       <div className="department-list">{departmentCards.map((department) => {
         const allowed = department.code === user.department

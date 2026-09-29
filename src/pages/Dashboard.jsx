@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Area,
   AreaChart,
@@ -76,6 +76,7 @@ import {
   subjectPerformance,
 } from '../data/demo'
 import { Brand } from './Landing'
+import BackButton from '../components/BackButton'
 import api, { DEMO_MODE, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
 
@@ -155,7 +156,7 @@ function Layout({ user, activeView, onNavigate, onLogout, children }) {
         </div>
       </aside>
       <main className="dashboard-main">
-        <header className="dashboard-topbar"><div className="breadcrumb"><button className="mobile-sidebar-trigger" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><FiMenu /></button><span>CAMPS</span><FiChevronRight /><strong>{items.find((item) => item.key === activeView)?.label || 'Workspace'}</strong></div><div className="topbar-actions"><button className="topbar-icon" type="button" aria-label="Help"><FiShield /></button><button className="topbar-icon" type="button" aria-label="Notifications"><FiBell /><i className="notification-dot" /></button><span className="topbar-divider" /><div className="topbar-user"><Avatar initials={user.initials || 'CA'} tone={learner ? 'mint' : ''} /><div className="topbar-user-meta"><strong>{user.name}</strong><span>{workspaceLabel}</span></div></div></div></header>
+        <header className="dashboard-topbar"><div className="dashboard-topbar-leading">{activeView !== 'overview' && <BackButton fallbackPath="/app" minHistoryIndex={2} />}<div className="breadcrumb"><button className="mobile-sidebar-trigger" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><FiMenu /></button><span>CAMPS</span><FiChevronRight /><strong>{items.find((item) => item.key === activeView)?.label || 'Workspace'}</strong></div></div><div className="topbar-actions"><button className="topbar-icon" type="button" aria-label="Help"><FiShield /></button><button className="topbar-icon" type="button" aria-label="Notifications"><FiBell /><i className="notification-dot" /></button><span className="topbar-divider" /><div className="topbar-user"><Avatar initials={user.initials || 'CA'} tone={learner ? 'mint' : ''} /><div className="topbar-user-meta"><strong>{user.name}</strong><span>{workspaceLabel}</span></div></div></div></header>
         {children}
       </main>
     </div>
@@ -510,7 +511,9 @@ function RemarkModal({ students, onClose, onCreate }) {
 export default function Dashboard() {
   const { user, logout, token } = useAuth()
   const navigate = useNavigate()
-  const [activeView, setActiveView] = useState('overview')
+  const location = useLocation()
+  const locationView = location.pathname.startsWith('/app/') ? location.pathname.slice('/app/'.length).split('/')[0] || 'overview' : 'overview'
+  const [activeView, setActiveView] = useState(locationView)
   const [students, setStudents] = useState(() => cloneDemoStudents())
   const [messages, setMessages] = useState(() => demoMessages.map((item) => ({ ...item })))
   const [announcements, setAnnouncements] = useState(() => demoAnnouncements.map((item) => ({ ...item })))
@@ -522,6 +525,10 @@ export default function Dashboard() {
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [toast, setToast] = useState('')
   const isLearner = user.role === 'student' || user.role === 'parent'
+
+  useEffect(() => {
+    setActiveView(locationView)
+  }, [locationView])
 
   useEffect(() => {
     if (DEMO_MODE || !user) return undefined
@@ -585,7 +592,11 @@ export default function Dashboard() {
     }
     setStudents((current) => [saved, ...current]); setStudentModalOpen(false); showToast('Student saved to the roster')
   }
-  const navigateView = (view) => setActiveView(view)
+  const navigateView = (view) => {
+    setActiveView(view)
+    const target = view === 'overview' ? '/app' : `/app/${view}`
+    if (location.pathname !== target) navigate(target)
+  }
   const signOut = async () => { await logout(); navigate('/', { replace: true }) }
 
   const renderContent = () => {

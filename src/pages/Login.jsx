@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
-import { FiArrowLeft, FiArrowRight, FiCheck, FiEye, FiEyeOff, FiKey, FiLock, FiUser, FiUsers } from 'react-icons/fi'
+import { FiArrowRight, FiCheck, FiEye, FiEyeOff, FiKey, FiLock, FiUser, FiUsers } from 'react-icons/fi'
 import { Brand } from './Landing'
+import BackButton from '../components/BackButton'
 import { departmentCards } from '../data/departments'
 import { useAuth } from '../context/AuthContext'
 
@@ -57,7 +58,7 @@ export default function Login() {
   }
 
   return <main className="erp-login-page">
-    <header className="erp-login-header"><Brand /><button className="erp-back-button" type="button" onClick={() => navigate('/')}><FiArrowLeft /> Change department</button></header>
+    <header className="erp-login-header"><Brand /><BackButton fallbackPath="/" label="Back" minHistoryIndex={1} className="erp-back-button" /></header>
     <section className="erp-login-shell" aria-labelledby="login-heading">
       <div className="erp-login-step"><span className="erp-step-label">Step 2</span><p>{departmentDetails.label} <span aria-hidden="true">→</span> Choose role and sign in</p></div>
       <div className="erp-login-card">
