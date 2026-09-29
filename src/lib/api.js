@@ -30,7 +30,10 @@ client.interceptors.request.use((config) => {
   try {
     const session = JSON.parse(localStorage.getItem('camps_session'))
     const token = authToken || session?.token
-    if (token && token !== LOCAL_SESSION_TOKEN) config.headers.Authorization = `Bearer ${token}`
+    if (token && token !== LOCAL_SESSION_TOKEN) {
+      config.headers.Authorization = `Bearer ${token}`
+      config.headers['X-Access-Token'] = token
+    }
   } catch { /* ignore malformed local storage */ }
   return config
 })
@@ -50,7 +53,7 @@ const api = {
   saveSubjectAttendance: (id, payload) => unwrap(client.put(`/subjects/${id}/attendance`, payload)),
   saveSubjectMarks: (id, payload) => unwrap(client.put(`/subjects/${id}/marks`, payload)),
   getStudents: (params) => unwrap(client.get('/students', { params })),
-  createStudent: (payload, token = '') => unwrap(client.post('/students', payload, token && token !== LOCAL_SESSION_TOKEN ? { headers: { Authorization: `Bearer ${token}` } } : undefined)),
+  createStudent: (payload, token = '') => unwrap(client.post('/students', payload, token && token !== LOCAL_SESSION_TOKEN ? { headers: { Authorization: `Bearer ${token}`, 'X-Access-Token': token } } : undefined)),
   updateStudent: (id, payload) => unwrap(client.put(`/students/${id}`, payload)),
   deleteStudent: (id) => unwrap(client.delete(`/students/${id}`)),
   uploadStudents: (file, commit = false, scope = {}) => {

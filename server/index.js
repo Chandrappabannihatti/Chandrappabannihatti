@@ -37,7 +37,10 @@ function sign(user) {
 }
 
 function authRequired(req, res, next) {
-  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '')
+  // Keep the standard Bearer header while accepting the explicit fallback
+  // header used by the browser preview proxy when it strips Authorization.
+  const authorization = req.headers.authorization || req.headers['x-access-token']
+  const token = String(authorization || '').replace(/^Bearer\s+/i, '').trim()
   if (!token) return res.status(401).json({ message: 'Authentication required.' })
   try { req.user = jwt.verify(token, jwtSecret); next() } catch { return res.status(401).json({ message: 'Session expired. Please sign in again.' }) }
 }
