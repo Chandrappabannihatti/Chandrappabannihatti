@@ -298,7 +298,7 @@ export default function ChatView({
   const emitTyping = (isTyping) => {
     const contact = selectedContact
     if (!contact || socketRef.current?.readyState !== window.WebSocket.OPEN) return
-    socketRef.current.send(JSON.stringify({ type: 'typing', recipientId: contact.id, recipientRole: contact.role, studentId: contact.studentId }))
+    socketRef.current.send(JSON.stringify({ type: 'typing', recipientId: contact.id, recipientRole: contact.role, studentId: contact.studentId, semester: contact.semester || semester || user.semester, section: contact.section || section || undefined, isTyping }))
     if (isTyping) {
       window.clearTimeout(typingTimer.current)
       typingTimer.current = window.setTimeout(() => emitTyping(false), 1100)
