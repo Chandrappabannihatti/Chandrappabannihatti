@@ -706,6 +706,7 @@ export default function TeacherSemester() {
   const [achievements, setAchievements] = useState(() => valid ? scopedAchievements(demoAchievements, user.department, semester, section) : [])
   const [subjects, setSubjects] = useState(() => valid ? scopedSubjects(getDemoSubjects(), user.department, semester) : [])
   const [toast, setToast] = useState('')
+  const [chatUnreadCount, setChatUnreadCount] = useState(null)
 
   useEffect(() => {
     if (!valid || !apiSession) return undefined
@@ -758,6 +759,10 @@ export default function TeacherSemester() {
     window.addEventListener('camps-messages-updated', refreshMessages)
     return () => { mounted = false; window.clearInterval(interval); window.removeEventListener('camps-messages-updated', refreshMessages) }
   }, [valid, user.department, semester, section, apiSession])
+
+  useEffect(() => {
+    setChatUnreadCount(null)
+  }, [semester, section])
 
   useEffect(() => {
     if (!valid || apiSession) return undefined
@@ -928,6 +933,7 @@ export default function TeacherSemester() {
   const sectionAnnouncements = announcements.filter((item) => item.section === section)
   const sectionMessages = messages.filter((item) => item.section === section)
   const unreadCount = messages.filter((item) => !item.read && item.receiverRole === user.role && Number(item.receiverId) === Number(user.id)).length
+  const sidebarUnreadCount = sectionModule === 'messages' && chatUnreadCount !== null ? chatUnreadCount : unreadCount
   const sidebarModule = sectionModule === 'student' ? 'students' : sectionModule
   let content
   if (sectionModule === 'students' && sectionSubroute === 'new') content = <AddSemesterStudentPage user={user} semester={semester} section={section} students={sectionStudents} onCancel={() => navigateModule('students')} onSave={saveNewStudent} />
@@ -939,9 +945,9 @@ export default function TeacherSemester() {
   else if (sectionModule === 'achievements') content = <SemesterAchievements user={user} semester={semester} section={section} students={sectionStudents} achievements={achievements} onCreateAchievement={createAchievement} onNavigate={navigateModule} />
   else if (sectionModule === 'remarks') content = <SemesterRemarks user={user} semester={semester} section={section} students={sectionStudents} remarks={remarks} onNavigate={navigateModule} />
   else if (sectionModule === 'announcements') content = <SemesterAnnouncements user={user} semester={semester} section={section} announcements={sectionAnnouncements} setAnnouncements={setAnnouncements} notify={notify} />
-  else if (sectionModule === 'messages') content = <ChatView user={user} semester={semester} section={section} department={user.department} students={sectionStudents} initialMessages={sectionMessages} notify={notify} apiSession={apiSession} />
+  else if (sectionModule === 'messages') content = <ChatView user={user} semester={semester} section={section} department={user.department} students={sectionStudents} initialMessages={sectionMessages} notify={notify} onUnreadCountChange={setChatUnreadCount} apiSession={apiSession} />
   else if (sectionModule === 'analytics') content = <SemesterAnalytics user={user} semester={semester} section={section} students={sectionStudents} />
   else if (sectionModule === 'predictions') content = <SemesterPredictions user={user} semester={semester} section={section} students={sectionStudents} notify={notify} />
   else content = <SemesterDashboard user={user} semester={semester} section={section} students={sectionStudents} announcements={sectionAnnouncements} onNavigate={navigateModule} />
-  return <TeacherShell user={user} semester={semester} section={section} activeModule={sidebarModule} onLogout={signOut} unreadCount={unreadCount}>{content}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</TeacherShell>
+  return <TeacherShell user={user} semester={semester} section={section} activeModule={sidebarModule} onLogout={signOut} unreadCount={sidebarUnreadCount}>{content}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</TeacherShell>
 }
