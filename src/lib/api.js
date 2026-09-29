@@ -1,0 +1,127 @@
+import axios from 'axios'
+
+// API-first by default. Set VITE_DEMO_MODE=true when reviewing the UI without the Node service.
+export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
+export const LOCAL_SESSION_TOKEN = 'demo-session-token'
+
+function readStoredToken() {
+  try {
+    return JSON.parse(localStorage.getItem('camps_session'))?.token || ''
+  } catch {
+    return ''
+  }
+}
+
+// Hydrate the request interceptor immediately so a refresh cannot render a
+// protected page before AuthProvider's effect has copied the session token.
+let authToken = readStoredToken()
+
+export function setAuthToken(token) {
+  authToken = typeof token === 'string' ? token.trim() : ''
+}
+
+export function isApiToken(token) {
+  const normalized = typeof token === 'string' ? token.trim() : ''
+  return Boolean(normalized && normalized !== LOCAL_SESSION_TOKEN)
+}
+
+// localStorage is the source of truth after a login in another tab or after a
+// restored session. The in-memory value remains useful before storage exists.
+export function getAuthToken() {
+  const storedToken = readStoredToken()
+  if (storedToken) {
+    authToken = storedToken
+    return storedToken
+  }
+  return authToken
+}
+
+function resolveToken(candidate = '') {
+  if (isApiToken(candidate)) return candidate.trim()
+  const storedToken = getAuthToken()
+  return isApiToken(storedToken) ? storedToken : ''
+}
+
+function authHeaders(candidate = '') {
+  const token = resolveToken(candidate)
+  return token ? { Authorization: `Bearer ${token}`, 'X-Access-Token': token } : {}
+}
+
+const client = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: 5000,
+  headers: { 'Content-Type': 'application/json' },
+})
+
+client.interceptors.request.use((config) => {
+  const headers = authHeaders()
+  if (Object.keys(headers).length) {
+    config.headers = config.headers || {}
+    config.headers.Authorization = headers.Authorization
+    config.headers['X-Access-Token'] = headers['X-Access-Token']
+  }
+  return config
+})
+
+client.interceptors.response.use(undefined, (error) => {
+  const status = error.response?.status
+  if ([401, 403, 404, 500].includes(status)) {
+    const level = status === 401 || status === 403 ? 'warn' : 'error'
+    console[level]('[camps-api] Protected request failed.', {
+      method: error.config?.method?.toUpperCase(),
+      url: error.config?.url,
+      status,
+      message: error.response?.data?.message || error.message,
+      hasApiToken: Boolean(resolveToken()),
+    })
+  }
+  return Promise.reject(error)
+})
+
+const unwrap = (request) => request.then((response) => response.data)
+
+const api = {
+  login: (payload) => unwrap(client.post('/auth/login', payload)),
+  validateSession: () => unwrap(client.get('/auth/session')),
+  logout: () => unwrap(client.post('/auth/logout')),
+  getSections: (params) => unwrap(client.get('/sections', { params })),
+  getTeachers: (params) => unwrap(client.get('/teachers', { params })),
+  createTeacher: (payload) => unwrap(client.post('/teachers', payload)),
+  createSection: (payload) => unwrap(client.post('/sections', payload)),
+  getSubjects: (params) => unwrap(client.get('/subjects', { params })),
+  createSubject: (payload) => unwrap(client.post('/subjects', payload)),
+  updateSubject: (id, payload) => unwrap(client.put(`/subjects/${id}`, payload)),
+  deleteSubject: (id) => unwrap(client.delete(`/subjects/${id}`)),
+  getSubjectRecords: (id, params) => unwrap(client.get(`/subjects/${id}/records`, { params })),
+  saveSubjectAttendance: (id, payload) => unwrap(client.put(`/subjects/${id}/attendance`, payload)),
+  saveSubjectMarks: (id, payload) => unwrap(client.put(`/subjects/${id}/marks`, payload)),
+  getStudents: (params) => unwrap(client.get('/students', { params })),
+  createStudent: (payload, token = '') => unwrap(client.post('/students', payload, { headers: authHeaders(token) })),
+  updateStudent: (id, payload) => unwrap(client.put(`/students/${id}`, payload)),
+  deleteStudent: (id) => unwrap(client.delete(`/students/${id}`)),
+  uploadStudents: (file, commit = false, scope = {}) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('commit', String(commit))
+    if (scope.department) form.append('department', scope.department)
+    if (scope.semester) form.append('semester', String(scope.semester))
+    if (scope.section) form.append('section', scope.section)
+    return unwrap(client.post('/students/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
+  exportStudents: (params) => client.get('/students/export', { params, responseType: 'blob' }),
+  sendMessage: (payload) => unwrap(client.post('/messages/send', payload)),
+  getMessageContacts: (params) => unwrap(client.get('/messages/contacts', { params })),
+  getMessages: (params) => unwrap(client.get('/messages', { params })),
+  markMessageRead: (id) => unwrap(client.put(`/messages/${id}/read`)),
+  getAnnouncements: (params) => unwrap(client.get('/announcements', { params })),
+  createAnnouncement: (payload) => unwrap(client.post('/announcements', payload)),
+  updateAnnouncement: (id, payload) => unwrap(client.put(`/announcements/${id}`, payload)),
+  deleteAnnouncement: (id) => unwrap(client.delete(`/announcements/${id}`)),
+  createRemark: (payload) => unwrap(client.post('/remarks', payload)),
+  getRemarks: (params) => unwrap(client.get('/remarks', { params })),
+  getAchievements: (params) => unwrap(client.get('/achievements', { params })),
+  createAchievement: (payload) => unwrap(client.post('/achievements', payload)),
+  predict: (payload) => unwrap(client.post('/ml/predict', payload)),
+}
+
+export default api
