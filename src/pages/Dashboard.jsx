@@ -78,6 +78,7 @@ import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
 import api, { DEMO_MODE, getAuthToken, isApiToken, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
+import { importStatusLabel, importSummary, normalizeImportRows } from '../lib/studentImport'
 
 const navItems = [
   { key: 'overview', label: 'Overview', icon: FiGrid },
@@ -427,69 +428,69 @@ function StudentDetailModal({ student, onClose }) {
   return <div className="modal-backdrop"><div className="modal-card wide"><div className="modal-head"><div><h2>Average Academic Performance</h2><p>{student.name} · {student.department} · Semester {student.semester}</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body"><div className="student-detail-hero"><Avatar initials={student.initials} tone="mint" /><div><h2>{student.name}</h2><p>{student.usn} · Section {student.section} · {student.email}</p></div><span style={{ marginLeft: 'auto' }}><RiskBadge risk={risk} /></span></div><div className="profile-stat-grid academic-performance-grid" style={{ marginTop: 18 }}>{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix }) => <div key={key}><span>{label}</span><strong>{Number(academic[key]).toFixed(1)}</strong><small>{suffix}</small></div>)}</div><div className="detail-list" style={{ marginTop: 18 }}><div className="detail-item"><span>Prediction</span><strong>{outcome}</strong></div><div className="detail-item"><span>Risk level</span><strong>{risk}</strong></div><div className="detail-item"><span>Parent / guardian</span><strong>{student.parentName || 'Not recorded'}</strong></div><div className="detail-item"><span>Parent phone</span><strong>{student.parentPhone || 'Not recorded'}</strong></div></div></div><div className="modal-foot"><button className="button-primary" type="button" onClick={onClose}>Done</button></div></div></div>
 }
 
-function UploadModal({ departmentScope = '', onClose, onImport }) {
+function UploadModal({ departmentScope = '', existingStudents = [], onClose, onImport, onPreview }) {
   const [file, setFile] = useState(null)
   const [rows, setRows] = useState([])
-  const [errors, setErrors] = useState([])
-  const readCell = (row, labels) => {
-    for (const label of labels) if (row[label] !== undefined && row[label] !== '') return row[label]
-    return ''
+  const [fileError, setFileError] = useState('')
+  const [previewNotice, setPreviewNotice] = useState('')
+  const [validating, setValidating] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [serverSummary, setServerSummary] = useState(null)
+
+  const mergeServerPreview = (localRows, result) => {
+    if (!result?.preview?.length) return
+    const serverRows = new Map(result.preview.map((row, index) => [Number(row.rowNumber || index + 2), row]))
+    setRows(localRows.map((row) => {
+      const serverRow = serverRows.get(row.rowNumber)
+      return serverRow ? { ...row, ...serverRow, id: row.id, rowNumber: row.rowNumber } : row
+    }))
+    if (result.summary) setServerSummary(result.summary)
   }
+
   const readFile = (selectedFile) => {
     setFile(selectedFile)
-    setErrors([])
+    setRows([])
+    setFileError('')
+    setPreviewNotice('')
+    setServerSummary(null)
     const reader = new FileReader()
     reader.onload = (event) => {
       try {
         const workbook = XLSX.read(event.target.result, { type: 'array' })
         const sheet = workbook.Sheets[workbook.SheetNames[0]]
-        const parsed = XLSX.utils.sheet_to_json(sheet, { defval: '' })
-        const normalized = parsed.map((row, index) => ({
-          id: Date.now() + index,
-          usn: row.USN || row.usn || '',
-          name: row.Name || row.name || '',
-          department: String(row.Department || row.department || departmentScope || 'CSE').trim().toUpperCase(),
-          semester: Number(row.Semester || row.semester || 1),
-          section: row.Section || row.section || 'A',
-          email: row.Email || row.email || '',
-          phone: row.Phone || row.phone || '',
-          parentName: row['Parent Name'] || row.parentName || '',
-          parentPhone: row['Parent Phone'] || row.parentPhone || '',
-          attendancePercentage: Number(readCell(row, ['Attendance Percentage', 'AttendancePercentage', 'attendancePercentage'])),
-          averageInternalMarks: Number(readCell(row, ['Average Internal Marks', 'AverageInternalMarks', 'averageInternalMarks'])),
-          averageAssignmentScore: Number(readCell(row, ['Average Assignment Score', 'AverageAssignmentScore', 'averageAssignmentScore'])),
-          previousGpa: Number(readCell(row, ['Previous GPA', 'PreviousGPA', 'previousGpa'])),
-          currentGpa: Number(readCell(row, ['Current GPA', 'CurrentGPA', 'currentGpa'])),
-          participationScore: Number(readCell(row, ['Participation Score', 'ParticipationScore', 'participationScore'])),
-        }))
-        const validation = []
-        normalized.forEach((row, index) => {
-          if (!row.usn || !row.name || !row.email) validation.push(`Row ${index + 2}: USN, name and email are required.`)
-          if (departmentScope && row.department !== departmentScope) validation.push(`Row ${index + 2}: department must be ${departmentScope} for this account.`)
-          if (row.semester < 1 || row.semester > 8) validation.push(`Row ${index + 2}: semester must be between 1 and 8.`)
-          if (row.email && !/^\S+@\S+\.\S+$/.test(row.email)) validation.push(`Row ${index + 2}: invalid email.`)
-          const academicColumns = [
-            ['Attendance Percentage', ['Attendance Percentage', 'AttendancePercentage', 'attendancePercentage']],
-            ['Average Internal Marks', ['Average Internal Marks', 'AverageInternalMarks', 'averageInternalMarks']],
-            ['Average Assignment Score', ['Average Assignment Score', 'AverageAssignmentScore', 'averageAssignmentScore']],
-            ['Previous GPA', ['Previous GPA', 'PreviousGPA', 'previousGpa']],
-            ['Current GPA', ['Current GPA', 'CurrentGPA', 'currentGpa']],
-            ['Participation Score', ['Participation Score', 'ParticipationScore', 'participationScore']],
-          ]
-          academicColumns.forEach(([label, labels]) => { const raw = readCell(parsed[index], labels); if (raw === '' || !Number.isFinite(Number(raw))) validation.push(`Row ${index + 2}: ${label} is required and must be numeric.`) })
-          for (const { key, label, min, max } of ACADEMIC_ATTRIBUTES) if (row[key] < min || row[key] > max) validation.push(`Row ${index + 2}: ${label} must be between ${min} and ${max}.`)
-        })
-        setRows(normalized)
-        setErrors(validation)
+        const rawRows = sheet ? XLSX.utils.sheet_to_json(sheet, { defval: '' }) : []
+        const localRows = normalizeImportRows(rawRows, { department: departmentScope }, existingStudents)
+        setRows(localRows)
+        if (onPreview) {
+          setValidating(true)
+          Promise.resolve(onPreview(selectedFile))
+            .then((result) => {
+              if (result) mergeServerPreview(localRows, result)
+              else setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.')
+            })
+            .catch(() => setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.'))
+            .finally(() => setValidating(false))
+        }
       } catch {
         setRows([])
-        setErrors(['This file could not be read. Please upload a valid .xlsx or .csv file.'])
+        setFileError('This file could not be read. Please upload a valid .xlsx, .xls or .csv file.')
       }
     }
+    reader.onerror = () => setFileError('The spreadsheet could not be opened. Please try again.')
     reader.readAsArrayBuffer(selectedFile)
   }
-  const importRows = () => { if (!rows.length || errors.length) return; onImport(rows); onClose() }
-  return <div className="modal-backdrop"><div className="modal-card wide"><div className="modal-head"><div><h2>Upload students</h2><p>Preview, validate and then import the roster and six academic attributes.</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body">{!file ? <div className="dropzone"><FiUploadCloud /><div><strong>Drop your roster here</strong><span>Accepted formats: .xlsx, .csv · Required columns include the six academic attributes</span><label htmlFor="roster-file">Choose spreadsheet<input id="roster-file" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && readFile(event.target.files[0])} /></label></div></div> : <><div className="upload-summary"><span><FiFileText style={{ verticalAlign: 'middle', marginRight: 6 }} /> {file.name}</span><strong>{rows.length} rows found</strong></div>{errors.length > 0 && <div className="validation-error">{errors.slice(0, 3).map((error) => <div key={error}>{error}</div>)}{errors.length > 3 && <div>+ {errors.length - 3} more validation errors</div>}</div>}{rows.length > 0 && <div className="table-scroll" style={{ marginTop: 14, border: '1px solid #e9e8e2', borderRadius: 9 }}><table className="student-table" style={{ minWidth: 760 }}><thead><tr><th>USN</th><th>Name</th><th>Department</th><th>Semester</th><th>Attendance %</th><th>Current GPA</th><th>Participation</th></tr></thead><tbody>{rows.slice(0, 5).map((row) => <tr key={row.id}><td>{row.usn || '—'}</td><td>{row.name || '—'}</td><td>{row.department}</td><td>{row.semester}</td><td>{row.attendancePercentage}%</td><td>{row.currentGpa}</td><td>{row.participationScore}%</td></tr>)}</tbody></table></div>}</>}</div><div className="modal-foot"><button className="button-ghost" type="button" onClick={onClose}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setErrors([]) }}>Choose another</button>}<button className="button-primary" type="button" disabled={!rows.length || errors.length > 0} onClick={importRows}><FiCheck /> Validate &amp; import</button></div></div></div>
+
+  const importRows = async () => {
+    if (!rows.some((row) => row.ready) || validating || importing) return
+    setImporting(true)
+    const saved = await onImport(rows, file)
+    setImporting(false)
+    if (saved !== false) onClose()
+  }
+
+  const summary = serverSummary || importSummary(rows)
+  const issueRows = rows.filter((row) => row.issues?.length)
+  return <div className="modal-backdrop"><div className="modal-card wide"><div className="modal-head"><div><h2>Upload students</h2><p>Preview every row, keep the department scope locked and import only valid, non-duplicate records.</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body">{!file ? <div className="dropzone"><FiUploadCloud /><div><strong>Drop your roster here</strong><span>Accepted formats: .xlsx, .xls and .csv · Required columns include USN, Name, Email and six academic attributes</span><label htmlFor="roster-file">Choose Excel or CSV file<input id="roster-file" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && readFile(event.target.files[0])} /></label></div></div> : <><div className="upload-summary"><span><FiFileText style={{ verticalAlign: 'middle', marginRight: 6 }} /> {file.name}</span><strong>{validating ? 'Checking with server…' : `${rows.length} records found`}</strong></div>{fileError && <div className="validation-error">{fileError}</div>}{previewNotice && <div className="upload-preview-notice"><FiAlertCircle /> {previewNotice}</div>}{rows.length > 0 && <><div className="import-summary-grid"><div className="import-summary-card"><span>Total records</span><strong>{summary.total}</strong></div><div className="import-summary-card scope-match"><span>Match department</span><strong>{summary.matching}</strong></div><div className="import-summary-card ready"><span>Ready to import</span><strong>{summary.ready}</strong></div><div className="import-summary-card warning"><span>Skipped</span><strong>{summary.skipped}</strong></div><div className="import-summary-card error"><span>Validation issues</span><strong>{summary.invalid}</strong></div></div><div className={`import-summary-message ${summary.skipped ? 'warning' : 'success'}`}><FiAlertCircle /> {summary.ready ? `${summary.matching} records match this department. ${summary.ready} are ready to import; ${summary.skipped} will be skipped.` : 'No rows are ready to import. Review the highlighted rows before choosing another file.'}</div>{issueRows.length > 0 && <div className="validation-error import-validation-list"><strong>Review highlighted rows before import:</strong>{issueRows.slice(0, 6).map((row) => <div key={row.id}>Row {row.rowNumber}: {row.issues.join(' ')}</div>)}{issueRows.length > 6 && <div>+ {issueRows.length - 6} more rows with issues</div>}</div>}<div className="table-scroll" style={{ marginTop: 14, border: '1px solid #e9e8e2', borderRadius: 9 }}><table className="student-table" style={{ minWidth: 1020 }}><thead><tr><th>Row</th><th>USN</th><th>Name</th><th>Department</th><th>Semester</th><th>Section</th><th>Status</th><th>Details</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={`import-preview-row ${row.status}`}><td>{row.rowNumber}</td><td>{row.usn || '—'}</td><td>{row.name || '—'}</td><td>{row.department || '—'}</td><td>{row.semester || '—'}</td><td>{row.section || '—'}</td><td><span className={`import-status ${row.status}`}><i /> {importStatusLabel(row.status)}</span></td><td className="import-row-details">{row.issues?.length ? row.issues.join(' ') : 'Ready for import'}</td></tr>)}</tbody></table></div></>}</>}</div><div className="modal-foot"><button className="button-ghost" type="button" onClick={onClose}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setFileError(''); setPreviewNotice(''); setServerSummary(null) }}>Choose another</button>}<button className="button-primary" type="button" disabled={!rows.some((row) => row.ready) || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div></div></div>
 }
 
 function MessageModal({ onClose, onSend }) {
@@ -564,22 +565,61 @@ export default function Dashboard() {
 
   const showToast = (message) => { setToast(message); window.setTimeout(() => setToast(''), 3000) }
   const exportStudents = () => { const departmentScope = user.department === 'ALL' ? '' : user.department; const visibleStudents = departmentScope ? students.filter((student) => student.department === departmentScope) : students; const rows = visibleStudents.map((student) => ({ USN: student.usn, Name: student.name, Department: student.department, Semester: student.semester, Section: student.section, Gender: student.gender || '', Email: student.email, Phone: student.phone || '', 'Parent Name': student.parentName || '', 'Parent Phone': student.parentPhone || '', 'Attendance Percentage': student.attendancePercentage, 'Average Internal Marks': student.averageInternalMarks, 'Average Assignment Score': student.averageAssignmentScore, 'Previous GPA': student.previousGpa, 'Current GPA': student.currentGpa, 'Participation Score': student.participationScore, Result: student.result || predictAcademic(student).result, Risk: student.risk || predictAcademic(student).risk })); const worksheet = XLSX.utils.json_to_sheet(rows); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, 'Students'); XLSX.writeFile(workbook, 'camps-student-roster.xlsx'); showToast('Roster exported as camps-student-roster.xlsx') }
-  const importStudents = async (rows) => {
-    const departmentScope = user.department === 'ALL' ? '' : user.department
-    const outOfScope = departmentScope && rows.some((row) => String(row.department).toUpperCase() !== departmentScope)
-    if (outOfScope) { showToast(`Import blocked · use ${departmentScope} student records only`); return }
-    const mapped = rows.map((row) => { const academic = academicFields(row); return { ...row, department: String(row.department).toUpperCase(), ...academic, ...predictAcademic(academic), id: Date.now() + Math.random(), semester: Number(row.semester), initials: row.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() } })
-    let savedRows = mapped
-    let failed = 0
-    if (!DEMO_MODE) {
-      setAuthToken(getAuthToken() || token)
-      const responses = await Promise.all(mapped.map(async (row) => {
-        try { const response = await api.createStudent(row, getAuthToken() || token); return response.data || row } catch { failed += 1; return null }
-      }))
-      savedRows = responses.filter(Boolean)
+  const previewImportedStudents = async (file) => {
+    if (DEMO_MODE) return null
+    const activeToken = getAuthToken() || token
+    if (!isApiToken(activeToken)) {
+      showToast('Your secure session is unavailable. Please sign in again before importing students.')
+      return null
     }
-    if (savedRows.length) setStudents((current) => [...savedRows, ...current])
-    showToast(`${savedRows.length} student${savedRows.length === 1 ? '' : 's'} imported${failed ? ` · ${failed} rejected by the API` : ''}`)
+    const departmentScope = user.department === 'ALL' ? '' : user.department
+    try {
+      setAuthToken(activeToken)
+      return await api.uploadStudents(file, false, departmentScope ? { department: departmentScope } : {})
+    } catch (error) {
+      console.warn('[students-import] Dashboard server preview failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message })
+      return null
+    }
+  }
+  const importStudents = async (rows, file) => {
+    const departmentScope = user.department === 'ALL' ? '' : user.department
+    const activeToken = getAuthToken() || token
+    if (!DEMO_MODE && !isApiToken(activeToken)) {
+      console.error('[students-import] Refusing to import without an API authentication token.', { role: user.role, department: user.department })
+      showToast('Your secure session is unavailable. Please sign in again before importing students.')
+      return false
+    }
+    const readyRows = rows.filter((row) => row.ready)
+    const localRecords = readyRows.map((row, index) => { const academic = academicFields(row); return { ...row, department: String(row.department).toUpperCase(), ...academic, ...predictAcademic(academic), id: Date.now() + index, semester: Number(row.semester), initials: row.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() } })
+    let savedRows = localRecords
+    let summary = importSummary(rows)
+    let refreshed = false
+    if (!DEMO_MODE) {
+      try {
+        setAuthToken(activeToken)
+        const response = await api.uploadStudents(file, true, departmentScope ? { department: departmentScope } : {})
+        savedRows = response.data || []
+        summary = response.summary || { ...summary, imported: savedRows.length }
+        try {
+          const refreshedResponse = await api.getStudents({ ...(departmentScope ? { department: departmentScope } : {}), limit: 100 })
+          if (refreshedResponse.data) { setStudents(refreshedResponse.data); refreshed = true }
+        } catch (refreshError) {
+          console.warn('[students-import] Dashboard roster refresh failed after import.', { status: refreshError.response?.status, message: refreshError.message })
+        }
+      } catch (error) {
+        console.error('[students-import] Dashboard import failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message })
+        if (error.response?.status === 401) {
+          await logout()
+          navigate(`/login?department=${encodeURIComponent(user.department)}&role=${user.role}&reason=session`, { replace: true })
+        } else showToast(error.response?.data?.errors?.slice(0, 3).join(' ') || error.response?.data?.message || 'The student import could not be completed.')
+        return false
+      }
+    }
+    if (!refreshed) setStudents((current) => [...savedRows, ...current])
+    const imported = Number(summary.imported ?? savedRows.length)
+    const skipped = Number(summary.skipped ?? Math.max(0, rows.length - imported))
+    showToast(`${imported} student${imported === 1 ? '' : 's'} imported successfully${skipped ? `. ${skipped} skipped${summary.outOfScope ? ` because they belong to a different department` : ''}.` : '.'}`)
+    return true
   }
   const saveNewStudent = async (student) => {
     const departmentScope = user.department === 'ALL' ? '' : user.department
@@ -648,5 +688,5 @@ export default function Dashboard() {
     return <Overview user={user} students={students} onNavigate={navigateView} onAddStudent={() => setStudentModalOpen(true)} onUpload={() => setUploadOpen(true)} onExport={exportStudents} />
   }
 
-  return <Layout user={user} activeView={activeView} onNavigate={navigateView} onLogout={signOut} showBack={location.pathname !== '/app'}>{renderContent()}{!isLearner && studentModalOpen && <StudentFormModal departmentScope={user.department === 'ALL' ? '' : user.department} existingStudents={students} onClose={() => setStudentModalOpen(false)} onSave={saveNewStudent} />}{!isLearner && uploadOpen && <UploadModal departmentScope={user.department === 'ALL' ? '' : user.department} onClose={() => setUploadOpen(false)} onImport={importStudents} />}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</Layout>
+  return <Layout user={user} activeView={activeView} onNavigate={navigateView} onLogout={signOut} showBack={location.pathname !== '/app'}>{renderContent()}{!isLearner && studentModalOpen && <StudentFormModal departmentScope={user.department === 'ALL' ? '' : user.department} existingStudents={students} onClose={() => setStudentModalOpen(false)} onSave={saveNewStudent} />}{!isLearner && uploadOpen && <UploadModal departmentScope={user.department === 'ALL' ? '' : user.department} existingStudents={students} onClose={() => setUploadOpen(false)} onImport={importStudents} onPreview={previewImportedStudents} />}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</Layout>
 }

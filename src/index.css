@@ -481,6 +481,38 @@ textarea.field-control { resize: vertical; min-height: 80px; }
 .upload-summary { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; border-radius: 10px; padding: 11px 13px; color: #547467; background: #e7f4ed; font-size: 10px; }
 .upload-summary strong { color: var(--ink); }
 .validation-error { margin-top: 10px; border-radius: 8px; padding: 9px 11px; color: #ad573f; background: #ffede7; font-size: 10px; }
+.upload-preview-notice { display: flex; align-items: flex-start; gap: 7px; margin-top: 10px; border: 1px solid #f3dfb0; border-radius: 8px; padding: 9px 11px; color: #8a6a2b; background: #fff8e7; font-size: 10px; line-height: 1.45; }
+.import-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.import-summary-card { min-width: 0; border: 1px solid #e7ece9; border-radius: 10px; padding: 10px 11px; background: #f8fbf9; }
+.import-summary-card span { display: block; overflow: hidden; color: #71817c; font-size: 9px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.import-summary-card strong { display: block; margin-top: 4px; color: var(--ink); font-size: 20px; line-height: 1; }
+.import-summary-card.scope-match { border-color: #d5e9df; background: #f0faf4; }
+.import-summary-card.scope-match strong, .import-summary-card.ready strong { color: #4f9276; }
+.import-summary-card.ready { border-color: #d9e7f2; background: #f1f8fc; }
+.import-summary-card.warning { border-color: #f1e2b7; background: #fffaf0; }
+.import-summary-card.warning strong { color: #9d762c; }
+.import-summary-card.error { border-color: #f1d9d1; background: #fff5f1; }
+.import-summary-card.error strong { color: #bd6147; }
+.import-summary-message { display: flex; align-items: center; gap: 7px; margin-top: 10px; border-radius: 9px; padding: 9px 11px; font-size: 10px; font-weight: 700; line-height: 1.4; }
+.import-summary-message.success { color: #3e7c61; background: #eef9f2; }
+.import-summary-message.warning { color: #8b6829; background: #fff8e7; }
+.import-validation-list { line-height: 1.45; }
+.import-validation-list > div { margin-top: 3px; }
+.import-preview-table .student-table { min-width: 1050px; }
+.import-preview-row td { vertical-align: top; transition: background .15s ease; }
+.import-preview-row.out-of-scope td { color: #896f33; background: #fffaf0; }
+.import-preview-row.duplicate td { color: #9b5945; background: #fff5f1; }
+.import-preview-row.invalid td { color: #9b5945; background: #fff8f5; }
+.import-preview-row.ready td { background: #f5fbf7; }
+.import-status { display: inline-flex; align-items: center; gap: 5px; min-width: 136px; font-size: 9px; font-weight: 800; white-space: nowrap; }
+.import-status i { width: 6px; height: 6px; border-radius: 50%; background: #9ca9a4; }
+.import-status.ready { color: #4f9276; }
+.import-status.ready i { background: #63a981; }
+.import-status.out-of-scope { color: #927333; }
+.import-status.out-of-scope i { background: #d6a83e; }
+.import-status.duplicate, .import-status.invalid { color: #b85e46; }
+.import-status.duplicate i, .import-status.invalid i { background: #db8065; }
+.import-row-details { max-width: 340px; color: #7c8884 !important; font-size: 9px; line-height: 1.45; white-space: normal; }
 .empty-state { display: grid; place-items: center; min-height: 180px; color: #9ca6a4; font-size: 11px; text-align: center; }
 .empty-state svg { margin-bottom: 10px; color: #c4cdca; font-size: 27px; }
 .toast { position: fixed; z-index: 200; right: 23px; bottom: 23px; display: flex; align-items: center; gap: 9px; border: 1px solid #cde7da; border-radius: 11px; padding: 12px 14px; color: #3f785f; background: #effbf4; box-shadow: 0 12px 30px rgba(8,23,40,.12); font-size: 11px; font-weight: 700; animation: rise-in .22s ease both; }
@@ -949,6 +981,8 @@ textarea.field-control { resize: vertical; min-height: 80px; }
   .upload-workflow { padding: 15px; }
   .upload-steps { justify-content: space-between; gap: 5px; font-size: 9px; }
   .upload-steps span { gap: 4px; }
+  .import-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .import-summary-card:last-child { grid-column: span 2; }
   .upload-page-actions { align-items: stretch; flex-direction: column-reverse; }
   .upload-page-actions button { width: 100%; }
 }

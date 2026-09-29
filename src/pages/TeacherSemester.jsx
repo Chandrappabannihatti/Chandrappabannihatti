@@ -56,6 +56,7 @@ import { useAuth } from '../context/AuthContext'
 import { achievementTypes, cloneDemoStudents, demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, getDemoSubjects } from '../data/demo'
 import api, { DEMO_MODE, getAuthToken, isApiToken, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
+import { importStatusLabel, importSummary, normalizeImportRows } from '../lib/studentImport'
 import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
 import SectionSelection from './SectionSelection'
@@ -382,20 +383,33 @@ function FiMailIcon() {
   return <FiMessageCircle />
 }
 
-function UploadSemesterStudentsPage({ user, semester, section = '', students, onCancel, onImport }) {
+function UploadSemesterStudentsPage({ user, semester, section = '', students, onCancel, onImport, onPreview }) {
   const [file, setFile] = useState(null)
   const [rows, setRows] = useState([])
-  const [errors, setErrors] = useState([])
+  const [fileError, setFileError] = useState('')
+  const [previewNotice, setPreviewNotice] = useState('')
   const [reading, setReading] = useState(false)
+  const [validating, setValidating] = useState(false)
   const [importing, setImporting] = useState(false)
-  const readCell = (row, labels) => {
-    for (const label of labels) if (row[label] !== undefined && row[label] !== '') return row[label]
-    return ''
+  const [serverSummary, setServerSummary] = useState(null)
+  const scope = { department: user.department, semester, section }
+
+  const mergeServerPreview = (localRows, result) => {
+    if (!result?.preview?.length) return
+    const serverRows = new Map(result.preview.map((row, index) => [Number(row.rowNumber || index + 2), row]))
+    setRows(localRows.map((row) => {
+      const serverRow = serverRows.get(row.rowNumber)
+      return serverRow ? { ...row, ...serverRow, id: row.id, rowNumber: row.rowNumber } : row
+    }))
+    if (result.summary) setServerSummary(result.summary)
   }
+
   const readSpreadsheet = (selectedFile) => {
     setFile(selectedFile)
     setRows([])
-    setErrors([])
+    setFileError('')
+    setPreviewNotice('')
+    setServerSummary(null)
     setReading(true)
     const reader = new FileReader()
     reader.onload = (event) => {
@@ -403,76 +417,29 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
         const workbook = XLSX.read(event.target.result, { type: 'array' })
         const sheet = workbook.Sheets[workbook.SheetNames[0]]
         const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
-        const parsedRows = rawRows.map((row, index) => {
-          const departmentValue = String(row.Department || row.department || user.department).trim().toUpperCase()
-          const semesterValue = Number(row.Semester || row.semester || semester)
-          return {
-            id: `${Date.now()}-${index}`,
-            usn: String(row.USN || row.usn || '').trim().toUpperCase(),
-            name: String(row.Name || row.name || '').trim(),
-            department: departmentValue,
-            semester: semesterValue,
-            section: String(row.Section || row.section || section || 'A').trim().toUpperCase(),
-            gender: String(row.Gender || row.gender || '').trim(),
-            email: String(row.Email || row.email || '').trim().toLowerCase(),
-            phone: String(row.Phone || row.phone || '').trim(),
-            parentName: String(row['Parent Name'] || row.parentName || '').trim(),
-            parentPhone: String(row['Parent Phone'] || row.parentPhone || '').trim(),
-            fatherName: String(row['Father Name'] || row.fatherName || '').trim(),
-            motherName: String(row['Mother Name'] || row.motherName || '').trim(),
-            parentEmail: String(row['Parent Email'] || row.parentEmail || '').trim().toLowerCase(),
-            dateOfBirth: normalizeSpreadsheetDate(row['Date of Birth'] || row.dateOfBirth),
-            bloodGroup: String(row['Blood Group'] || row.bloodGroup || '').trim(),
-            address: String(row.Address || row.address || '').trim(),
-            certifications: String(row.Certifications || row.certifications || '').trim(),
-            skills: String(row.Skills || row.skills || '').trim(),
-            attendancePercentage: Number(readCell(row, ['Attendance Percentage', 'AttendancePercentage', 'attendancePercentage'])),
-            averageInternalMarks: Number(readCell(row, ['Average Internal Marks', 'AverageInternalMarks', 'averageInternalMarks'])),
-            averageAssignmentScore: Number(readCell(row, ['Average Assignment Score', 'AverageAssignmentScore', 'averageAssignmentScore'])),
-            previousGpa: Number(readCell(row, ['Previous GPA', 'PreviousGPA', 'previousGpa'])),
-            currentGpa: Number(readCell(row, ['Current GPA', 'CurrentGPA', 'currentGpa'])),
-            participationScore: Number(readCell(row, ['Participation Score', 'ParticipationScore', 'participationScore'])),
-          }
-        })
-        const validation = []
-        const seen = new Set()
-        parsedRows.forEach((row, index) => {
-          if (!row.usn) validation.push(`Row ${index + 2}: USN is required.`)
-          if (!row.name) validation.push(`Row ${index + 2}: Name is required.`)
-          if (!row.email || !/^\S+@\S+\.\S+$/.test(row.email)) validation.push(`Row ${index + 2}: a valid email is required.`)
-          if (row.department !== user.department) validation.push(`Row ${index + 2}: department must be ${user.department}.`)
-          if (row.semester !== Number(semester)) validation.push(`Row ${index + 2}: semester must be ${semester}.`)
-          if (section && row.section !== section) validation.push(`Row ${index + 2}: section must be ${section}.`)
-          const academicColumns = [
-            ['Attendance Percentage', ['Attendance Percentage', 'AttendancePercentage', 'attendancePercentage']],
-            ['Average Internal Marks', ['Average Internal Marks', 'AverageInternalMarks', 'averageInternalMarks']],
-            ['Average Assignment Score', ['Average Assignment Score', 'AverageAssignmentScore', 'averageAssignmentScore']],
-            ['Previous GPA', ['Previous GPA', 'PreviousGPA', 'previousGpa']],
-            ['Current GPA', ['Current GPA', 'CurrentGPA', 'currentGpa']],
-            ['Participation Score', ['Participation Score', 'ParticipationScore', 'participationScore']],
-          ]
-          academicColumns.forEach(([label, labels]) => { const raw = readCell(rawRows[index], labels); if (raw === '' || !Number.isFinite(Number(raw))) validation.push(`Row ${index + 2}: ${label} is required and must be numeric.`) })
-          if (row.attendancePercentage < 0 || row.attendancePercentage > 100) validation.push(`Row ${index + 2}: Attendance Percentage must be between 0 and 100.`)
-          if (row.averageInternalMarks < 0 || row.averageInternalMarks > 100) validation.push(`Row ${index + 2}: Average Internal Marks must be between 0 and 100.`)
-          if (row.averageAssignmentScore < 0 || row.averageAssignmentScore > 100) validation.push(`Row ${index + 2}: Average Assignment Score must be between 0 and 100.`)
-          if (row.previousGpa < 0 || row.previousGpa > 10) validation.push(`Row ${index + 2}: Previous GPA must be between 0 and 10.`)
-          if (row.currentGpa < 0 || row.currentGpa > 10) validation.push(`Row ${index + 2}: Current GPA must be between 0 and 10.`)
-          if (row.participationScore < 0 || row.participationScore > 100) validation.push(`Row ${index + 2}: Participation Score must be between 0 and 100.`)
-          if (row.phone && !/^\+?[0-9 ()-]{10,18}$/.test(row.phone)) validation.push(`Row ${index + 2}: phone number is invalid.`)
-          if (seen.has(row.usn)) validation.push(`Row ${index + 2}: duplicate USN in this file.`)
-          if (students.some((student) => student.usn.toUpperCase() === row.usn)) validation.push(`Row ${index + 2}: USN already exists in Semester ${semester}.`)
-          seen.add(row.usn)
-        })
+        const parsedRows = normalizeImportRows(rawRows, scope, students)
         setRows(parsedRows)
-        setErrors(validation)
+        setReading(false)
+        if (onPreview) {
+          setValidating(true)
+          Promise.resolve(onPreview(selectedFile))
+            .then((result) => {
+              if (result) mergeServerPreview(parsedRows, result)
+              else setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.')
+            })
+            .catch(() => setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.'))
+            .finally(() => setValidating(false))
+        }
       } catch {
         setRows([])
-        setErrors(['This file could not be read. Upload a valid .xlsx, .xls or .csv file.'])
-      } finally { setReading(false) }
+        setFileError('This file could not be read. Upload a valid .xlsx, .xls or .csv file.')
+        setReading(false)
+      }
     }
-    reader.onerror = () => { setReading(false); setErrors(['The spreadsheet could not be opened. Please try again.']) }
+    reader.onerror = () => { setReading(false); setFileError('The spreadsheet could not be opened. Please try again.') }
     reader.readAsArrayBuffer(selectedFile)
   }
+
   const downloadTemplate = () => {
     const template = [{ USN: '4PM25CS101', Name: 'Sample Student', Department: user.department, Semester: semester, Section: section || 'A', Gender: 'Female', Email: 'sample@pestrust.edu.in', Phone: '+91 98450 00000', 'Parent Name': 'Parent Name', 'Parent Phone': '+91 98450 00001', 'Father Name': 'Parent Name', 'Mother Name': 'Mother Name', 'Parent Email': 'parent@example.com', 'Date of Birth': '2004-06-15', 'Blood Group': 'O+', Address: 'Residential address', Certifications: 'NPTEL, AWS', Skills: 'Python, React', 'Attendance Percentage': 80, 'Average Internal Marks': 75, 'Average Assignment Score': 80, 'Previous GPA': 7.4, 'Current GPA': 7.5, 'Participation Score': 78 }]
     const worksheet = XLSX.utils.json_to_sheet(template)
@@ -480,13 +447,47 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
     XLSX.utils.book_append_sheet(workbook, worksheet, `Semester ${semester}`)
     XLSX.writeFile(workbook, `${user.department}-semester-${semester}-student-template.xlsx`)
   }
+
   const importRows = async () => {
-    if (!rows.length || errors.length || importing) return
+    const readyRows = rows.filter((row) => row.ready)
+    if (!readyRows.length || reading || validating || importing) return
     setImporting(true)
     await onImport(rows, file)
     setImporting(false)
   }
-  return <div className="dashboard-content upload-student-page"><ScopeIntro eyebrow={`${user.department} · Semester ${semester}`} title="Upload student roster" description={`Add multiple students to ${section ? `Section ${section} · ` : ''}Semester ${semester}. The current department, semester and section are locked.`} actions={<button className="button-ghost" type="button" onClick={downloadTemplate}><FiDownload /> Download template</button>} /><div className="semester-context-banner"><FiShield /><span>Every imported row must belong to <strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong>. Other departments, semesters and sections are rejected.</span></div><section className="content-card upload-workflow"><div className="upload-steps"><span className="active"><b>1</b> Upload</span><span><b>2</b> Preview &amp; validate</span><span><b>3</b> Import</span></div>{!file && <div className="dropzone"><FiUploadCloud /><div><strong>Upload the {section ? `Section ${section}` : 'semester'} roster</strong><span>Accepted formats: .xlsx, .xls and .csv · Required columns: USN, Name, Email and six academic attributes</span><label htmlFor="semester-roster-file">Choose Excel file<input id="semester-roster-file" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && readSpreadsheet(event.target.files[0])} /></label></div></div>}{file && <><div className="upload-summary"><span><FiFileText style={{ verticalAlign: 'middle', marginRight: 6 }} /> {file.name}</span>{reading ? <strong>Reading…</strong> : <strong>{rows.length} row{rows.length === 1 ? '' : 's'} found</strong>}</div>{!reading && errors.length > 0 && <div className="validation-error"><strong>Fix these validation errors before importing:</strong>{errors.slice(0, 5).map((error) => <div key={error}>{error}</div>)}{errors.length > 5 && <div>+ {errors.length - 5} more validation errors</div>}</div>}{!reading && rows.length > 0 && <div className="table-scroll upload-preview-table"><table className="student-table"><thead><tr><th>USN</th><th>Name</th><th>Department</th><th>Semester</th><th>Attendance %</th><th>Current GPA</th><th>Participation</th></tr></thead><tbody>{rows.slice(0, 8).map((row) => <tr key={row.id}><td>{row.usn || '—'}</td><td>{row.name || '—'}</td><td>{row.department}</td><td>{row.semester}</td><td>{row.attendancePercentage}%</td><td>{row.currentGpa}</td><td>{row.participationScore}%</td></tr>)}</tbody></table></div>}{!reading && rows.length > 8 && <p className="upload-more">Showing first 8 rows of {rows.length}. All valid rows will be imported.</p>}</>}</section><div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setErrors([]) }}>Choose another file</button>}<button className="button-primary" type="button" disabled={!rows.length || errors.length > 0 || reading || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Validate & import ${rows.length || ''}`}</button></div></div>
+
+  const summary = serverSummary || importSummary(rows)
+  const issueRows = rows.filter((row) => row.issues?.length)
+  const statusMessage = summary.ready
+    ? `${summary.matching} records match this scope. ${summary.ready} are ready to import; ${summary.skipped} will be skipped.`
+    : 'No rows are ready to import. Review the highlighted rows before choosing another file.'
+
+  return <div className="dashboard-content upload-student-page">
+    <ScopeIntro eyebrow={`${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`} title="Upload student roster" description={`Review every row before importing into ${section ? `Section ${section} · ` : ''}Semester ${semester}. Rows from another department, semester or section are skipped automatically.`} actions={<button className="button-ghost" type="button" onClick={downloadTemplate}><FiDownload /> Download template</button>} />
+    <div className="semester-context-banner"><FiShield /><span>Import scope locked to <strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong>. Only matching, valid and non-duplicate USNs can be added.</span></div>
+    <section className="content-card upload-workflow">
+      <div className="upload-steps"><span className="active"><b>1</b> Upload</span><span className="active"><b>2</b> Preview &amp; validate</span><span><b>3</b> Import</span></div>
+      {!file && <div className="dropzone"><FiUploadCloud /><div><strong>Upload the {section ? `Section ${section}` : 'semester'} roster</strong><span>Accepted formats: .xlsx, .xls and .csv · Required columns: USN, Name, Email and six academic attributes</span><label htmlFor="semester-roster-file">Choose Excel or CSV file<input id="semester-roster-file" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && readSpreadsheet(event.target.files[0])} /></label></div></div>}
+      {file && <>
+        <div className="upload-summary"><span><FiFileText style={{ verticalAlign: 'middle', marginRight: 6 }} /> {file.name}</span><strong>{reading ? 'Reading…' : validating ? 'Checking with server…' : `${rows.length} record${rows.length === 1 ? '' : 's'} found`}</strong></div>
+        {fileError && <div className="validation-error"><strong>{fileError}</strong></div>}
+        {previewNotice && <div className="upload-preview-notice"><FiAlertCircle /> {previewNotice}</div>}
+        {!reading && rows.length > 0 && <>
+          <div className="import-summary-grid">
+            <div className="import-summary-card"><span>Total records</span><strong>{summary.total}</strong></div>
+            <div className="import-summary-card scope-match"><span>Match current scope</span><strong>{summary.matching}</strong></div>
+            <div className="import-summary-card ready"><span>Ready to import</span><strong>{summary.ready}</strong></div>
+            <div className="import-summary-card warning"><span>Skipped</span><strong>{summary.skipped}</strong></div>
+            <div className="import-summary-card error"><span>Validation issues</span><strong>{summary.invalid}</strong></div>
+          </div>
+          <div className={`import-summary-message ${summary.skipped ? 'warning' : 'success'}`}><FiAlertCircle /> {statusMessage}</div>
+          {issueRows.length > 0 && <div className="validation-error import-validation-list"><strong>Review highlighted rows before import:</strong>{issueRows.slice(0, 8).map((row) => <div key={row.id}>Row {row.rowNumber}: {row.issues.join(' ')}</div>)}{issueRows.length > 8 && <div>+ {issueRows.length - 8} more row{issueRows.length - 8 === 1 ? '' : 's'} with issues</div>}</div>}
+          <div className="table-scroll upload-preview-table"><table className="student-table"><thead><tr><th>Row</th><th>USN</th><th>Name</th><th>Department</th><th>Semester</th><th>Section</th><th>Status</th><th>Details</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={`import-preview-row ${row.status}`}><td>{row.rowNumber}</td><td>{row.usn || '—'}</td><td>{row.name || '—'}</td><td>{row.department || '—'}</td><td>{row.semester || '—'}</td><td>{row.section || '—'}</td><td><span className={`import-status ${row.status}`}><i /> {importStatusLabel(row.status)}</span></td><td className="import-row-details">{row.issues?.length ? row.issues.join(' ') : 'Ready for import'}</td></tr>)}</tbody></table></div>
+        </>}
+      </>}
+    </section>
+    <div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setFileError(''); setPreviewNotice(''); setServerSummary(null) }}>Choose another file</button>}<button className="button-primary" type="button" disabled={!rows.some((row) => row.ready) || reading || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div>
+  </div>
 }
 
 function AddSemesterStudentPage({ user, semester, section = '', students, onCancel, onSave }) {
@@ -741,15 +742,71 @@ export default function TeacherSemester() {
     navigateModule('students')
     return true
   }
+  const previewImportedStudents = async (file) => {
+    if (DEMO_MODE) return null
+    if (!apiSession) {
+      notify('Your secure session is unavailable. Please sign in again before importing students.')
+      return null
+    }
+    try {
+      setAuthToken(apiToken)
+      return await api.uploadStudents(file, false, { department: user.department, semester, section })
+    } catch (error) {
+      console.warn('[students-import] Server preview failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: user.department, semester, section })
+      if (error.response?.status === 401) {
+        await logout()
+        navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
+      }
+      return null
+    }
+  }
   const saveImportedStudents = async (rows, file) => {
-    const scopedRows = rows.map((row) => ({ ...row, department: user.department, semester: Number(semester), section: section || row.section }))
+    if (!DEMO_MODE && !apiSession) {
+      console.error('[students-import] Refusing to import without an API authentication token.', { department: user.department, semester, section })
+      notify('Your secure session is unavailable. Please sign in again before importing students.')
+      return false
+    }
+    const readyRows = rows.filter((row) => row.ready)
+    const scopedRows = readyRows.map((row) => ({ ...row, department: user.department, semester: Number(semester), section: section || row.section }))
     const localRecords = scopedRows.map((row, index) => { const academic = academicFields(row); return { ...row, ...academic, ...predictAcademic(academic), id: Date.now() + index, initials: row.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() } })
     let savedRecords = localRecords
+    let summary = importSummary(rows)
+    let refreshed = false
     if (apiSession) {
-      try { const response = await api.uploadStudents(file, true, { department: user.department, semester, section }); savedRecords = (response.data || localRecords).filter((row) => row.department === user.department && Number(row.semester) === semester && (!section || row.section === section)) } catch (error) { if (error.response) { notify(error.response.data?.message || 'Upload validation failed on the server'); return false } notify('API unavailable · roster imported for this session') }
+      try {
+        setAuthToken(apiToken)
+        const response = await api.uploadStudents(file, true, { department: user.department, semester, section })
+        savedRecords = (response.data || []).filter((row) => row.department === user.department && Number(row.semester) === semester && (!section || String(row.section).toUpperCase() === section))
+        summary = response.summary || { ...summary, imported: savedRecords.length }
+        try {
+          const refreshedResponse = await api.getStudents({ department: user.department, semester, section, limit: 100 })
+          if (refreshedResponse.data) { setStudents(refreshedResponse.data); refreshed = true }
+        } catch (refreshError) {
+          console.warn('[students-import] Import succeeded, but the section roster refresh failed.', { status: refreshError.response?.status, message: refreshError.message })
+        }
+      } catch (error) {
+        console.error('[students-import] Import request failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: user.department, semester, section })
+        if (error.response?.status === 401) {
+          await logout()
+          navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
+          return false
+        }
+        notify(error.response?.data?.errors?.slice(0, 3).join(' ') || error.response?.data?.message || 'The student import could not be completed.')
+        return false
+      }
     }
-    setStudents((current) => [...savedRecords, ...current])
-    notify(`${savedRecords.length} student${savedRecords.length === 1 ? '' : 's'} imported to Semester ${semester}${section ? ` · Section ${section}` : ''}`)
+    if (!refreshed) setStudents((current) => [...savedRecords, ...current])
+    const imported = Number(summary.imported ?? savedRecords.length)
+    const skipped = Number(summary.skipped ?? Math.max(0, rows.length - imported))
+    const scopeSkipped = Number(summary.outOfScope || 0)
+    const duplicateSkipped = Number(summary.duplicates || 0)
+    const invalidSkipped = Number(summary.invalid || 0)
+    const detail = [
+      scopeSkipped ? `${scopeSkipped} from a different department, semester or section` : '',
+      duplicateSkipped ? `${duplicateSkipped} duplicate USN${duplicateSkipped === 1 ? '' : 's'}` : '',
+      invalidSkipped ? `${invalidSkipped} invalid row${invalidSkipped === 1 ? '' : 's'}` : '',
+    ].filter(Boolean).join('; ')
+    notify(`${imported} student${imported === 1 ? '' : 's'} imported successfully${skipped ? `. ${skipped} skipped${detail ? `: ${detail}` : '.'}` : '.'}`)
     navigateModule('students')
     return true
   }
@@ -785,7 +842,7 @@ export default function TeacherSemester() {
   const sidebarModule = sectionModule === 'student' ? 'students' : sectionModule
   let content
   if (sectionModule === 'students' && sectionSubroute === 'new') content = <AddSemesterStudentPage user={user} semester={semester} section={section} students={sectionStudents} onCancel={() => navigateModule('students')} onSave={saveNewStudent} />
-  else if (sectionModule === 'students' && sectionSubroute === 'upload') content = <UploadSemesterStudentsPage user={user} semester={semester} section={section} students={sectionStudents} onCancel={() => navigateModule('students')} onImport={saveImportedStudents} />
+  else if (sectionModule === 'students' && sectionSubroute === 'upload') content = <UploadSemesterStudentsPage user={user} semester={semester} section={section} students={sectionStudents} onCancel={() => navigateModule('students')} onImport={saveImportedStudents} onPreview={previewImportedStudents} />
   else if (sectionModule === 'students') content = <SemesterStudents user={user} semester={semester} section={section} students={sectionStudents} onNavigate={navigateModule} />
   else if (sectionModule === 'attendance') content = <SemesterAttendance user={user} semester={semester} section={section} students={sectionStudents} subjects={subjects} onNavigate={navigateModule} notify={notify} />
   else if (sectionModule === 'marks') content = <SemesterMarks user={user} semester={semester} section={section} students={sectionStudents} subjects={subjects} onNavigate={navigateModule} notify={notify} />

@@ -666,18 +666,25 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
   try {
     if (!req.file) return res.status(400).json({ message: 'Please attach an .xlsx or .csv file.' })
     const adminDepartment = selectedAdminDepartment(req)
-    const uploadDepartment = cleanString(req.body.department || adminDepartment || req.user.department).toUpperCase()
-    if (adminDepartment && req.body.department && uploadDepartment !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
+    const uploadDepartment = cleanString(req.body.department || adminDepartment || (req.user.department === 'ALL' ? '' : req.user.department)).toUpperCase()
+    const requestedSemester = req.body.semester ? Number(req.body.semester) : 0
+    const requestedSection = cleanString(req.body.section).toUpperCase()
+    if (req.user.role === 'teacher' && uploadDepartment !== req.user.department) return res.status(403).json({ message: 'Teachers may only import students into their department.' })
+    if (adminDepartment && uploadDepartment && uploadDepartment !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
+    if (uploadDepartment && !validDepartments.includes(uploadDepartment)) return res.status(422).json({ message: 'Choose a valid department for this upload.' })
+    if (requestedSemester && !validSemesters.includes(requestedSemester)) return res.status(422).json({ message: 'Semester must be between 1 and 8.' })
+    if (req.user.role === 'teacher' && (!requestedSemester || !requestedSection)) return res.status(422).json({ message: 'Open a semester section before importing students. Department, semester and section are required.' })
+
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+    const rawRows = sheet ? XLSX.utils.sheet_to_json(sheet, { defval: '' }) : []
     const cell = (row, labels, fallback = '') => { for (const label of labels) if (row[label] !== '' && row[label] !== undefined && row[label] !== null) return row[label]; return fallback }
     const rows = rawRows.map((row, index) => normalizeStudent({
       usn: cell(row, ['USN', 'usn']),
       name: cell(row, ['Name', 'name']),
       department: cell(row, ['Department', 'department'], uploadDepartment),
-      semester: cell(row, ['Semester', 'semester'], req.body.semester),
-      section: cell(row, ['Section', 'section'], req.body.section || 'A'),
+      semester: cell(row, ['Semester', 'semester'], requestedSemester),
+      section: cell(row, ['Section', 'section'], requestedSection || 'A'),
       email: cell(row, ['Email', 'email']),
       phone: cell(row, ['Phone', 'phone']),
       parentName: cell(row, ['Parent Name', 'parentName']),
@@ -698,34 +705,86 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
       participationScore: cell(row, ['Participation Score', 'ParticipationScore', 'participationScore']),
     }, Date.now() + index))
     const existing = useDemoData ? demoStore.students : (await query('SELECT id, usn FROM students WHERE is_active=1')).map((row) => ({ id: row.id, usn: row.usn }))
-    const errors = []
+    const existingUsns = new Set(existing.map((student) => cleanString(student.usn).toUpperCase()).filter(Boolean))
     const seen = new Set()
+    const sectionCache = new Map()
     const requiredAcademic = ['attendancePercentage', 'averageInternalMarks', 'averageAssignmentScore', 'previousGpa', 'currentGpa', 'participationScore']
-    for (const [index, row] of rows.entries()) {
-      const source = rawRows[index]
-      const rowErrors = validateStudent(row, [...existing, ...rows.slice(0, index)])
-      for (const key of requiredAcademic) {
-        const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, (character) => character.toUpperCase())
-        const raw = cell(source, [label, key.replace(/[A-Z]/g, (character) => character.toUpperCase()), key])
-        if (raw === '' || raw === undefined || raw === null || !Number.isFinite(Number(raw))) rowErrors.push(`${label} must be numeric and is required.`)
-      }
-      if (req.user.role === 'teacher' && row.department !== req.user.department) rowErrors.push(`Department must be ${req.user.department} for this teacher.`)
-      if (adminDepartment && row.department !== adminDepartment) rowErrors.push(`Department must be ${adminDepartment} for this admin session.`)
-      if (req.body.department && row.department !== String(req.body.department).toUpperCase()) rowErrors.push(`Department must be ${String(req.body.department).toUpperCase()} for this upload.`)
-      if (req.body.semester && Number(row.semester) !== Number(req.body.semester)) rowErrors.push(`Semester must be ${Number(req.body.semester)} for this upload.`)
-      if (req.body.section && row.section !== String(req.body.section).toUpperCase()) rowErrors.push(`Section must be ${String(req.body.section).toUpperCase()} for this upload.`)
-      if (useDemoData) { if (!demoSection(row.department, row.semester, row.section)) rowErrors.push(`Section ${row.section} does not exist for ${row.department} Semester ${row.semester}.`) } else { const sectionRow = await findSection(row.department, row.semester, row.section); if (!sectionRow) rowErrors.push(`Section ${row.section} does not exist for ${row.department} Semester ${row.semester}.`) }
-      if (seen.has(row.usn)) rowErrors.push('Duplicate USN in upload.')
-      seen.add(row.usn)
-      rowErrors.forEach((message) => errors.push(`Row ${index + 2}: ${message}`))
+    const academicLabels = { attendancePercentage: 'Attendance Percentage', averageInternalMarks: 'Average Internal Marks', averageAssignmentScore: 'Average Assignment Score', previousGpa: 'Previous GPA', currentGpa: 'Current GPA', participationScore: 'Participation Score' }
+    const getSection = async (row) => {
+      const key = `${row.department}-${row.semester}-${row.section}`
+      if (!sectionCache.has(key)) sectionCache.set(key, useDemoData ? Boolean(demoSection(row.department, row.semester, row.section)) : Boolean(await findSection(row.department, row.semester, row.section)))
+      return sectionCache.get(key)
     }
-    const preview = rows.map(({ id, initials, ...row }) => row)
-    if (String(req.body.commit) !== 'true') return res.json({ preview, errors, valid: errors.length === 0, rowCount: rows.length })
-    if (errors.length) return res.status(422).json({ message: 'Upload has validation errors. Fix them before importing.', errors, preview })
-    if (useDemoData) demoStore.students.unshift(...rows)
-    else for (const row of rows) { const sectionRow = await findSection(row.department, row.semester, row.section); await query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, date_of_birth, blood_group, address, email, phone, parent_name, father_name, mother_name, parent_phone, parent_email, certifications, skills, attendance_percentage, average_internal_marks, average_assignment_score, previous_gpa, current_gpa, participation_score, result, risk) VALUES (:usn, :name, :department, :semester, :section, :sectionId, :gender, :dateOfBirth, :bloodGroup, :address, :email, :phone, :parentName, :fatherName, :motherName, :parentPhone, :parentEmail, :certifications, :skills, :attendancePercentage, :averageInternalMarks, :averageAssignmentScore, :previousGpa, :currentGpa, :participationScore, :result, :risk)', { ...row, sectionId: sectionRow.sectionId, dateOfBirth: row.dateOfBirth || null, bloodGroup: row.bloodGroup || null, address: row.address || null, fatherName: row.fatherName || null, motherName: row.motherName || null, parentEmail: row.parentEmail || null, parentPhone: row.parentPhone || null, certifications: JSON.stringify(row.certifications || []), skills: JSON.stringify(row.skills || []) }) }
-    res.status(201).json({ imported: rows.length, data: rows.map((row) => useDemoData ? row : mapStudentRow(row)) })
-  } catch (error) { next(error) }
+    const evaluated = []
+    for (const [index, row] of rows.entries()) {
+      const scopeIssues = []
+      const validationIssues = validateStudent(row, [])
+      const duplicateIssues = []
+      const source = rawRows[index]
+      if (req.user.role === 'teacher' && row.department !== req.user.department) scopeIssues.push(`Department must be ${req.user.department} for this teacher.`)
+      if (uploadDepartment && row.department !== uploadDepartment) scopeIssues.push(`Department must be ${uploadDepartment} for this upload.`)
+      if (requestedSemester && Number(row.semester) !== requestedSemester) scopeIssues.push(`Semester must be ${requestedSemester} for this upload.`)
+      if (requestedSection && row.section !== requestedSection) scopeIssues.push(`Section must be ${requestedSection} for this upload.`)
+      for (const key of requiredAcademic) {
+        const label = academicLabels[key]
+        const raw = cell(source, [label, key.replace(/[A-Z]/g, (character) => character.toUpperCase()), key])
+        if (raw === '' || raw === undefined || raw === null || !Number.isFinite(Number(raw))) validationIssues.push(`${label} must be numeric and is required.`)
+      }
+      if (!scopeIssues.length && (!validDepartments.includes(row.department) || !validSemesters.includes(Number(row.semester)) || !(await getSection(row)))) validationIssues.push(`Section ${row.section} does not exist for ${row.department} Semester ${row.semester}.`)
+      if (row.usn && seen.has(row.usn)) duplicateIssues.push('Duplicate USN in upload.')
+      if (row.usn && existingUsns.has(row.usn)) duplicateIssues.push('USN already exists.')
+      if (row.usn) seen.add(row.usn)
+      const issues = [...new Set([...scopeIssues, ...duplicateIssues, ...validationIssues])]
+      const status = scopeIssues.length ? 'out-of-scope' : duplicateIssues.length ? 'duplicate' : validationIssues.length ? 'invalid' : 'ready'
+      evaluated.push({ row, rowNumber: index + 2, status, scopeMatch: scopeIssues.length === 0, ready: status === 'ready', issues, scopeIssues, duplicateIssues, validationIssues })
+    }
+    const makeSummary = (imported = 0) => ({
+      total: evaluated.length,
+      matching: evaluated.filter((entry) => entry.scopeMatch).length,
+      ready: evaluated.filter((entry) => entry.ready).length,
+      skipped: evaluated.filter((entry) => !entry.ready).length,
+      outOfScope: evaluated.filter((entry) => entry.status === 'out-of-scope').length,
+      duplicates: evaluated.filter((entry) => entry.status === 'duplicate').length,
+      invalid: evaluated.filter((entry) => entry.status === 'invalid').length,
+      imported,
+    })
+    const toPreview = () => evaluated.map(({ row, ...meta }) => ({ ...row, ...meta }))
+    const errors = () => evaluated.flatMap((entry) => entry.issues.map((message) => `Row ${entry.rowNumber}: ${message}`))
+    let summary = makeSummary()
+    console.info('[students-import] Scope preview', { userId: req.user?.sub, role: req.user?.role, department: uploadDepartment, semester: requestedSemester, section: requestedSection, ...summary })
+    if (String(req.body.commit) !== 'true') return res.json({ preview: toPreview(), errors: errors(), valid: summary.ready === summary.total, rowCount: rows.length, summary })
+
+    const readyEntries = evaluated.filter((entry) => entry.ready)
+    if (!readyEntries.length) return res.status(422).json({ message: 'No valid students match the selected department, semester and section.', errors: errors(), preview: toPreview(), summary })
+    const importedRows = []
+    if (useDemoData) {
+      demoStore.students.unshift(...readyEntries.map((entry) => entry.row))
+      importedRows.push(...readyEntries.map((entry) => entry.row))
+    } else {
+      for (const entry of readyEntries) {
+        const row = entry.row
+        try {
+          const sectionRow = await findSection(row.department, row.semester, row.section)
+          const insertResult = await query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, date_of_birth, blood_group, address, email, phone, parent_name, father_name, mother_name, parent_phone, parent_email, certifications, skills, attendance_percentage, average_internal_marks, average_assignment_score, previous_gpa, current_gpa, participation_score, result, risk) VALUES (:usn, :name, :department, :semester, :section, :sectionId, :gender, :dateOfBirth, :bloodGroup, :address, :email, :phone, :parentName, :fatherName, :motherName, :parentPhone, :parentEmail, :certifications, :skills, :attendancePercentage, :averageInternalMarks, :averageAssignmentScore, :previousGpa, :currentGpa, :participationScore, :result, :risk)', { ...row, sectionId: sectionRow.sectionId, dateOfBirth: row.dateOfBirth || null, bloodGroup: row.bloodGroup || null, address: row.address || null, fatherName: row.fatherName || null, motherName: row.motherName || null, parentEmail: row.parentEmail || null, parentPhone: row.parentPhone || null, certifications: JSON.stringify(row.certifications || []), skills: JSON.stringify(row.skills || []) })
+          importedRows.push({ ...row, id: insertResult.insertId })
+        } catch (error) {
+          if (error.code !== 'ER_DUP_ENTRY') throw error
+          entry.status = 'duplicate'
+          entry.ready = false
+          entry.duplicateIssues.push('USN already exists.')
+          entry.issues = [...new Set([...entry.issues, 'USN already exists.'])]
+          console.warn('[students-import] Duplicate skipped during insert', { userId: req.user?.sub, usn: row.usn, department: row.department, semester: row.semester, section: row.section })
+        }
+      }
+    }
+    summary = makeSummary(importedRows.length)
+    if (!importedRows.length) return res.status(422).json({ message: 'No students were imported. All rows were skipped or invalid.', errors: errors(), preview: toPreview(), summary })
+    console.info('[students-import] Import complete', { userId: req.user?.sub, role: req.user?.role, department: uploadDepartment, semester: requestedSemester, section: requestedSection, ...summary })
+    res.status(201).json({ imported: importedRows.length, data: importedRows.map((row) => useDemoData ? row : mapStudentRow(row)), preview: toPreview(), summary, errors: errors() })
+  } catch (error) {
+    console.error('[students-import] Upload failed', { userId: req.user?.sub, role: req.user?.role, department: req.body?.department, semester: req.body?.semester, section: req.body?.section, code: error.code, message: error.message })
+    next(error)
+  }
 })
 
 app.get('/api/students/export', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
