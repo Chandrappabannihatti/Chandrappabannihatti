@@ -43,6 +43,7 @@ export const modelEvaluationFallback = {
     { name: 'XGBoost', accuracy: null },
     { name: 'Majority baseline', accuracy: 100 },
   ],
+  fitAssessment: 'Overfitting and underfitting cannot be assessed until an observed two-class target and a trained model are available.',
   checks: {
     accuracyIs100: false,
     duplicateRows: 0,

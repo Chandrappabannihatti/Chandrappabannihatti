@@ -2342,6 +2342,9 @@ body,
 .model-evaluation-gap { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 13px; border: 1px solid #cce8da; border-radius: 9px; padding: 9px 10px; color: #3d806f; background: #effaf4; font-size: 9px; }
 .model-evaluation-gap.warning { border-color: #efd3c8; color: #a25f54; background: #fff3ef; }
 .model-evaluation-gap span { color: #89a29a; font-size: 8px; }
+.model-evaluation-fit-assessment { margin-top: 12px; border-top: 1px solid #e5eee9; padding-top: 11px; }
+.model-evaluation-fit-assessment strong { color: #386765; font-size: 10px; }
+.model-evaluation-fit-assessment p { margin: 4px 0 0; color: #829a94; font-size: 9px; line-height: 1.5; }
 .model-evaluation-explanations { display: grid; gap: 11px; margin-top: 14px; }
 .model-evaluation-explanations > div { border-left: 3px solid #b7dfd0; padding-left: 10px; }
 .model-evaluation-explanations strong { color: #2c6063; font-size: 10px; }

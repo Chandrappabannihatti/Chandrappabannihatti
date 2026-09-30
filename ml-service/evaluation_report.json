@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-30T06:23:06.621743+00:00",
+  "generatedAt": "2026-09-30T06:24:15.703237+00:00",
   "status": "audit_only",
   "modelLoaded": false,
   "modelPath": "ml-service/model/camps_xgboost.joblib",
@@ -58,6 +58,7 @@
       "accuracy": 100.0
     }
   ],
+  "fitAssessment": "Overfitting and underfitting cannot be assessed until an observed two-class target and a trained model are available.",
   "checks": {
     "accuracyIs100": false,
     "duplicateRows": 0,
