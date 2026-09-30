@@ -1,0 +1,71 @@
+// Dataset audit fallback shown when the optional Python evaluator has not yet
+// produced ml-service/evaluation_report.json. These values describe the
+// bundled roster workbook, not a claimed production model score.
+export const modelEvaluationFallback = {
+  schemaVersion: 1,
+  status: 'audit_only',
+  modelLoaded: false,
+  modelName: 'XGBoost classifier (not available)',
+  positiveClass: 'Pass',
+  modelPath: 'ml-service/model/camps_xgboost.joblib',
+  split: { trainRatio: 0.8, testSize: 0.2, trainRows: 800, testRows: 200, randomState: 42 },
+  dataset: {
+    path: 'public/cse-semester-1-section-a-1000-students.xlsx',
+    rowsBeforeCleaning: 1000,
+    rowsAfterCleaning: 1000,
+    rowsDroppedForInvalidValues: 0,
+    duplicateFeatureTargetRows: 0,
+    duplicateIdRows: 0,
+    targetColumn: null,
+    targetSource: 'missing_proxy_only',
+    targetIsProxy: true,
+    classDistribution: { Fail: 0, Pass: 1000 },
+    featureColumns: {
+      attendancePercentage: 'Attendance Percentage',
+      averageInternalMarks: 'Average Internal Marks',
+      averageAssignmentScore: 'Average Assignment Score',
+      previousGpa: 'Previous GPA',
+      participationScore: 'Participation Score',
+    },
+  },
+  features: [
+    'attendancePercentage',
+    'averageInternalMarks',
+    'averageAssignmentScore',
+    'previousGpa',
+    'participationScore',
+  ],
+  metrics: null,
+  trainMetrics: null,
+  confusionMatrix: null,
+  distributions: { actualTest: { Fail: 0, Pass: 200 }, predictedTest: null },
+  accuracyComparison: [
+    { name: 'XGBoost', accuracy: null },
+    { name: 'Majority baseline', accuracy: 100 },
+  ],
+  checks: {
+    accuracyIs100: false,
+    duplicateRows: 0,
+    trainTestOverlap: null,
+    targetLeakageConcern: true,
+    classImbalance: true,
+  },
+  warnings: [
+    'No observed Pass/Fail target exists in the workbook; labels are only the CAMPS fallback proxy and cannot support a real-world performance claim.',
+    'The available dataset contains only one target class: Pass. Precision, recall, F1, and a two-class confusion matrix are not meaningful.',
+    'No trained model artifact exists at ml-service/model/camps_xgboost.joblib.',
+  ],
+  analysis: [
+    'A valid supervised model evaluation is not available yet.',
+    'The bundled workbook is a student roster containing academic inputs, not measured outcome labels.',
+    'The majority baseline is shown only to make the single-class dataset problem visible.',
+  ],
+  recommendations: [
+    'Add an observed Result or Outcome column with both Pass and Fail records.',
+    'Do not use the same formula to create labels and evaluate the model.',
+    'Collect enough Fail examples and use a stratified 80:20 split or repeated cross-validation.',
+    'Keep identifiers out of the model and deduplicate records before splitting.',
+    'Report class-wise precision, recall, F1, balanced accuracy, and confidence intervals.',
+  ],
+  summary: 'Evaluation is blocked because the repository currently contains a roster workbook without observed labels and no trained model artifact.',
+}

@@ -1,0 +1,957 @@
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import {
+  FiActivity,
+  FiAlertCircle,
+  FiAward,
+  FiBarChart2,
+  FiArrowDown,
+  FiArrowRight,
+  FiArrowUp,
+  FiBell,
+  FiBookOpen,
+  FiCheck,
+  FiCheckCircle,
+  FiChevronRight,
+  FiClock,
+  FiDownload,
+  FiEdit3,
+  FiEye,
+  FiFileText,
+  FiFilter,
+  FiGrid,
+  FiHeart,
+  FiLogOut,
+  FiMenu,
+  FiMessageCircle,
+  FiMoreHorizontal,
+  FiPlus,
+  FiSearch,
+  FiSend,
+  FiSettings,
+  FiShield,
+  FiTrash2,
+  FiTrendingUp,
+  FiUser,
+  FiUploadCloud,
+  FiUsers,
+  FiX,
+  FiZap,
+} from 'react-icons/fi'
+import * as XLSX from 'xlsx'
+import { useAuth } from '../context/AuthContext'
+import { achievementTypes, cloneDemoStudents, demoAchievements, demoAnnouncements, demoRemarks, demoSections, getDemoMessages, getDemoSubjects, markDemoMessageRead, upsertDemoMessage } from '../data/demo'
+import api, { DEMO_MODE, getAuthToken, isApiToken, setAuthToken } from '../lib/api'
+import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
+import { importStatusLabel, importSummary, normalizeImportRows } from '../lib/studentImport'
+import { Brand } from './Landing'
+import BackButton from '../components/BackButton'
+import ChatView from '../components/ChatView'
+import ModelEvaluation from './ModelEvaluation'
+import SectionSelection from './SectionSelection'
+
+const semesterOrdinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
+const pieColors = ['#70B99B', '#E0B155', '#E27D63']
+
+function riskKey(risk) { return String(risk || 'Low Risk').toLowerCase().replace(/\s+risk$/, '') }
+function riskLabel(risk) { const value = String(risk || 'Low Risk'); return /\srisk$/i.test(value) ? value : `${value} Risk` }
+
+function normalizeSpreadsheetDate(value) {
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const serial = Number(text)
+    if (serial > 0) {
+      const parsed = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000)
+      if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10)
+    }
+  }
+  const date = new Date(text)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
+}
+
+const teacherNav = [
+  { key: 'dashboard', label: 'Section dashboard', icon: FiGrid },
+  { key: 'students', label: 'Students', icon: FiUsers },
+  { key: 'attendance', label: 'Attendance', icon: FiClock },
+  { key: 'marks', label: 'Average Internal Marks', icon: FiBookOpen },
+  { key: 'assignments', label: 'Assignments', icon: FiFileText },
+  { key: 'achievements', label: 'Achievements', icon: FiAward },
+  { key: 'remarks', label: 'Remarks', icon: FiHeart },
+  { key: 'messages', label: 'Messages', icon: FiMessageCircle },
+  { key: 'announcements', label: 'Announcements', icon: FiBell },
+  { key: 'analytics', label: 'Analytics', icon: FiTrendingUp },
+  { key: 'predictions', label: 'XGBoost predictions', icon: FiZap },
+  { key: 'evaluation', label: 'Model evaluation', icon: FiBarChart2 },
+]
+
+function Avatar({ initials, tone = '' }) {
+  return <span className={`avatar ${tone}`}>{initials}</span>
+}
+
+function RiskBadge({ risk }) {
+  const label = riskLabel(risk)
+  return <span className={`risk-badge risk-${riskKey(label)}`}>{label}</span>
+}
+
+function ScopeIntro({ eyebrow, title, description, actions }) {
+  return <div className="page-intro"><div><p className="page-eyebrow">{eyebrow}</p><h1 className="page-title">{title}</h1>{description && <p className="page-subtitle">{description}</p>}</div>{actions && <div className="page-actions">{actions}</div>}</div>
+}
+
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  return <div className="custom-tooltip"><p>{label}</p><strong>{payload[0].value}%</strong></div>
+}
+
+function scopedStudents(students, department, semester) {
+  return students.filter((student) => student.department === department && Number(student.semester) === Number(semester))
+}
+
+function scopedSubjects(subjects, department, semester) {
+  return subjects.filter((subject) => subject.department === department && Number(subject.semester) === Number(semester) && subject.isActive !== false)
+}
+
+function scopedAnnouncements(items, department, semester) {
+  return items.filter((item) => item.department === department && Number(item.semester) === Number(semester))
+}
+
+function scopedMessages(items, department, semester) {
+  return items.filter((item) => item.department === department && Number(item.semester) === Number(semester))
+}
+
+function scopedAchievements(items, department, semester, section = '') {
+  return items.filter((item) => item.department === department && Number(item.semester) === Number(semester) && (!section || String(item.section || '').toUpperCase() === String(section).toUpperCase()))
+}
+
+function scopedSectionAnnouncements(items, department, semester, section) {
+  const exact = items.filter((item) => item.department === department && Number(item.semester) === Number(semester) && item.section === section)
+  return exact.length ? exact : [{ id: `section-announcement-${department}-${semester}-${section}`, title: `Section ${section} academic update`, body: `This is the dedicated announcement feed for ${department} Semester ${semester}, Section ${section}.`, type: 'Section', department, semester: Number(semester), section, author: 'CSE Department', date: 'Today', priority: 'Normal' }]
+}
+
+function scopedSectionMessages(items, department, semester, section) {
+  const exact = items.filter((item) => item.department === department && Number(item.semester) === Number(semester) && item.section === section)
+  return exact.length ? exact : [{ id: `section-message-${department}-${semester}-${section}`, department, semester: Number(semester), section, sender: 'CSE Department', recipient: `${department} · Semester ${semester} · Section ${section}`, audience: 'Students', subject: `Welcome to Section ${section}`, body: `This inbox is reserved for ${department} Semester ${semester}, Section ${section}. Your teacher messages will appear here.`, time: 'Today', read: true, initials: 'CD' }]
+}
+
+function trendFor(students, semester) {
+  const average = students.length ? students.reduce((sum, student) => sum + Number(student.attendancePercentage || 0), 0) / students.length : 0
+  const adjustments = [-4, -2, -1, 1, 0, 2, 1]
+  return ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'].map((month, index) => ({ month, attendance: Math.max(0, Math.min(100, Math.round(average + adjustments[index]))), target: 75, semester }))
+}
+
+function riskSummary(students) {
+  return [
+    { name: 'Low Risk', value: students.filter((student) => student.risk === 'Low Risk').length },
+    { name: 'Medium Risk', value: students.filter((student) => student.risk === 'Medium Risk').length },
+    { name: 'High Risk', value: students.filter((student) => student.risk === 'High Risk').length },
+  ]
+}
+
+function TeacherShell({ user, semester, section = '', activeModule, children, onLogout, unreadCount = 0 }) {
+  const navigate = useNavigate()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const base = section ? `/teacher/semester/${semester}/section/${encodeURIComponent(section)}` : `/teacher/semester/${semester}`
+  const goTo = (key) => {
+    setSidebarOpen(false)
+    if (key === 'selection') return navigate(section ? `/teacher/semester/${semester}` : '/teacher/semesters')
+    if (key === 'profile') return navigate('/teacher/profile')
+    if (key === 'settings') return navigate('/teacher/settings')
+    navigate(key === 'dashboard' ? base : `${base}/${key}`)
+  }
+  const backFallback = activeModule === 'dashboard' ? (section ? `/teacher/semester/${semester}` : '/teacher/semesters') : base
+  return <div className="dashboard-layout">
+    <aside className={`dashboard-sidebar ${sidebarOpen ? 'open' : ''}`}>
+      <Brand light />
+      <button className="sidebar-close" type="button" onClick={() => setSidebarOpen(false)} aria-label="Close navigation"><FiX /></button>
+      <button className="teacher-scope-link" type="button" onClick={() => goTo('selection')}><FiArrowDown /><span>{section ? 'Change section' : 'Change semester'}</span></button>
+      <p className="sidebar-section-label">{section ? `Section ${section}` : `Semester ${semester}`}</p>
+      <div className="sidebar-nav">{teacherNav.map(({ key, label, icon: Icon }) => <button key={key} type="button" className={activeModule === key ? 'active' : ''} onClick={() => goTo(key)}><Icon /><span>{label}</span>{key === 'messages' && unreadCount > 0 && <span className="sidebar-badge">{unreadCount}</span>}</button>)}</div>
+      <p className="sidebar-section-label teacher-account-label">Account</p>
+      <div className="sidebar-nav teacher-account-nav"><button type="button" onClick={() => goTo('profile')}><FiUser /><span>Profile</span></button><button type="button" onClick={() => goTo('settings')}><FiSettings /><span>Settings</span></button></div>
+      <div className="sidebar-bottom"><div className="sidebar-help"><strong><FiHeart style={{ verticalAlign: 'middle', marginRight: 5 }} /> Human-first insight</strong><p>Use every signal as a starting point for a better conversation.</p></div><div className="sidebar-profile"><Avatar initials={user.initials || 'AR'} /><div className="profile-meta"><strong>{user.name}</strong><span>{user.department} · Sem {semester}{section ? ` · Sec ${section}` : ''}</span></div><button className="logout-btn" type="button" onClick={onLogout} aria-label="Sign out"><FiLogOut /></button></div></div>
+    </aside>
+    <main className="dashboard-main"><header className="dashboard-topbar"><div className="dashboard-topbar-leading"><div className="breadcrumb"><button className="mobile-sidebar-trigger" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><FiMenu /></button><span>CAMPS</span><FiChevronRight /><strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong></div></div><div className="topbar-actions"><button className="topbar-icon" type="button" aria-label="Secure workspace"><FiShield /></button><button className="topbar-icon" type="button" aria-label="Notifications"><FiBell />{unreadCount > 0 && <i className="notification-dot" />}</button><span className="topbar-divider" /><div className="topbar-user"><Avatar initials={user.initials || 'AR'} /><div className="topbar-user-meta"><strong>{user.name}</strong><span>{user.department} · Semester {semester}</span></div></div></div></header><div className="dashboard-page-back"><BackButton fallbackPath={backFallback} minHistoryIndex={2} /></div>{children}</main>
+  </div>
+}
+
+function SemesterDashboard({ user, semester, section = '', students, announcements, onNavigate }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const total = students.length
+  const averageAttendance = total ? (students.reduce((sum, student) => sum + Number(student.attendancePercentage || 0), 0) / total).toFixed(1) : '0.0'
+  const averageGpa = total ? (students.reduce((sum, student) => sum + Number(student.currentGpa || 0), 0) / total).toFixed(1) : '0.0'
+  const atRisk = students.filter((student) => student.risk !== 'Low Risk').length
+  const riskData = riskSummary(students)
+  const trend = trendFor(students, semester)
+  const notices = announcements.slice(0, 2)
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title={section ? `Section ${section} dashboard` : `Semester ${semester} dashboard`} description={`One complete view of the ${user.department} ${semesterOrdinals[semester - 1]} semester cohort${section ? ` in Section ${section}` : ''}.`} actions={<><button type="button" className="button-ghost" onClick={() => onNavigate('students')}><FiUsers /> View students</button><button type="button" className="button-primary" onClick={() => onNavigate('predictions')}><FiZap /> Prediction desk</button></>} /><div className="semester-context-banner"><FiShield /><span>This dashboard is scoped to <strong>{scope}</strong>. No other semester data is loaded here.</span><span className="live-tag" style={{ color: '#4f9276', background: '#eaf6f0', borderColor: '#d7ecdf' }}><i style={{ background: '#70B99B' }} /> Live scope</span></div><div className="kpi-grid"><div className="kpi-card primary"><div className="kpi-top"><span className="kpi-label">Semester students</span><span className="kpi-icon"><FiUsers /></span></div><div className="kpi-value">{total}</div><span className="kpi-change"><FiCheckCircle /> {user.department} only</span></div><div className="kpi-card mint"><div className="kpi-top"><span className="kpi-label">Average attendance</span><span className="kpi-icon"><FiClock /></span></div><div className="kpi-value">{averageAttendance}%</div><span className="kpi-change"><FiArrowUp /> Cohort average</span></div><div className="kpi-card sky"><div className="kpi-top"><span className="kpi-label">Average GPA</span><span className="kpi-icon"><FiTrendingUp /></span></div><div className="kpi-value">{averageGpa}</div><span className="kpi-change"><FiArrowUp /> Semester performance</span></div><div className="kpi-card peach"><div className="kpi-top"><span className="kpi-label">Need attention</span><span className="kpi-icon"><FiAlertCircle /></span></div><div className="kpi-value">{atRisk}</div><span className="kpi-change alert"><FiArrowDown /> Early follow-up list</span></div></div><div className="chart-grid"><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Semester attendance rhythm</h2><p className="card-description">Only {user.department} · Semester {semester} records</p></div><span className="scope-pill">Sem {semester}</span></div><div className="chart-container"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend} margin={{ top: 8, right: 10, left: -22, bottom: 0 }}><defs><linearGradient id={`semesterAttendance${semester}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#F07E5E" stopOpacity=".26" /><stop offset="100%" stopColor="#F07E5E" stopOpacity=".01" /></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="3 4" /><XAxis dataKey="month" axisLine={false} tickLine={false} /><YAxis domain={[55, 100]} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} /><Tooltip content={<ChartTooltip />} /><Area type="monotone" dataKey="target" stroke="#B3C8C0" strokeDasharray="5 5" strokeWidth={1.5} fill="none" /><Area type="monotone" dataKey="attendance" stroke="#F07E5E" strokeWidth={2.5} fill={`url(#semesterAttendance${semester})`} /></AreaChart></ResponsiveContainer></div></section><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Semester risk mix</h2><p className="card-description">Prediction snapshot for this cohort</p></div></div><div className="risk-card-content"><div className="risk-donut"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={riskData} dataKey="value" innerRadius={55} outerRadius={75} paddingAngle={3} stroke="none">{riskData.map((entry, index) => <Cell key={entry.name} fill={pieColors[index]} />)}</Pie></PieChart></ResponsiveContainer><div className="risk-center"><strong>{total}</strong><span>students</span></div></div><div className="risk-legend">{riskData.map((item, index) => <div className="legend-item" key={item.name}><i className="legend-dot" style={{ background: pieColors[index] }} /><span>{item.name}</span><strong>{item.value}</strong></div>)}</div></div></section></div><div className="section-grid"><section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">{user.department} · Semester {semester} roster</h2><p className="card-description">The first few records from this semester scope</p></div><button className="button-ghost" type="button" onClick={() => onNavigate('students')}>Open full list <FiArrowRight /></button></div><SemesterTable students={students.slice(0, 5)} compact onStudentClick={(student) => onNavigate('student', student.id)} /></section><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Semester notices</h2><p className="card-description">Only announcements for this semester</p></div><button className="row-action" type="button" onClick={() => onNavigate('announcements')}><FiArrowRight /></button></div><div className="alert-list">{notices.length ? notices.map((notice) => <div className="alert-row" key={notice.id}><span className="info-icon" style={{ width: 29, height: 29 }}><FiBell /></span><div className="alert-info"><strong>{notice.title}</strong><span>{notice.date}</span></div></div>) : <div className="empty-state">No announcements for Semester {semester}.</div>}</div></section></div></div>
+}
+
+function SemesterTable({ students, compact = false, onStudentClick }) {
+  if (!students.length) return <div className="empty-state"><FiUsers /><span>No students in {compact ? 'this semester' : 'the selected filters'}.</span></div>
+  return <div className="table-scroll"><table className="student-table"><thead><tr><th>Student</th><th>Section</th><th>Attendance Percentage</th><th>Current GPA</th><th>Risk level</th>{!compact && <th>Actions</th>}</tr></thead><tbody>{students.map((student) => <tr key={student.id}><td>{onStudentClick ? <button className="student-profile-link" type="button" onClick={() => onStudentClick(student)}><div className="student-cell"><Avatar initials={student.initials} tone={student.risk === 'Low Risk' ? 'mint' : ''} /><div><span className="student-name">{student.name}</span><span className="student-usn">{student.usn}</span></div></div></button> : <div className="student-cell"><Avatar initials={student.initials} tone={student.risk === 'Low Risk' ? 'mint' : ''} /><div><span className="student-name">{student.name}</span><span className="student-usn">{student.usn}</span></div></div>}</td><td>{student.section}</td><td><div className="progress-inline"><span className="progress-track"><i className={`progress-fill ${student.attendancePercentage < 75 ? 'danger' : student.attendancePercentage < 80 ? 'warn' : ''}`} style={{ width: `${Math.min(100, student.attendancePercentage)}%` }} /></span><span>{student.attendancePercentage}%</span></div></td><td><strong style={{ color: '#15263a' }}>{Number(student.currentGpa).toFixed(1)}</strong></td><td><RiskBadge risk={student.risk} /></td>{!compact && <td><button className="row-action" type="button" aria-label={`View ${student.name}`}><FiEye /></button></td>}</tr>)}</tbody></table></div>
+}
+
+function SemesterStudents({ user, semester, section = '', students, onNavigate }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const [query, setQuery] = useState('')
+  const [risk, setRisk] = useState('all')
+  const filtered = students.filter((student) => (risk === 'all' || student.risk === risk) && `${student.name} ${student.usn}`.toLowerCase().includes(query.toLowerCase()))
+  const exportScope = () => { const header = 'USN,Name,Department,Semester,Section,Attendance Percentage,Current GPA,Prediction,Risk\n'; const body = students.map((student) => [student.usn, student.name, student.department, student.semester, student.section, student.attendancePercentage, student.currentGpa, student.result, student.risk].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n'); const blob = new Blob([header + body], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${user.department}-semester-${semester}-students.csv`; link.click(); URL.revokeObjectURL(url) }
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Students" description={`Only student records belonging to ${scope} are shown.`} actions={<><button className="button-ghost" type="button" onClick={exportScope}><FiDownload /> Export semester</button><button className="button-ghost" type="button" onClick={() => onNavigate('newStudent')}><FiPlus /> Add student</button><button className="button-ghost" type="button" onClick={() => onNavigate('uploadStudents')}><FiUploadCloud /> Upload Excel</button><button className="button-primary" type="button" onClick={() => onNavigate('predictions')}><FiZap /> Predict risk</button></>} /><div className="semester-context-banner"><FiShield /><span>Scope locked to <strong>{scope}</strong></span></div><div className="toolbar-card"><div className="search-field"><FiSearch /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${section ? `Section ${section}` : 'this semester'}`} aria-label="Search selected scope" /></div><div className="toolbar-filters"><select value={risk} onChange={(event) => setRisk(event.target.value)} aria-label="Filter risk"><option value="all">All risk levels</option><option value="Low Risk">Low Risk</option><option value="Medium Risk">Medium Risk</option><option value="High Risk">High Risk</option></select><span className="scope-pill">{filtered.length} records</span></div></div><section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">{section ? `Section ${section}` : `Semester ${semester}`} roster</h2><p className="card-description">{filtered.length} students · {user.department} only</p></div><span className="department-note"><FiShield /> No cross-semester records</span></div><SemesterTable students={filtered} onStudentClick={(student) => onNavigate('student', student.id)} /></section></div>
+}
+
+function readLocalSubjectRecords() {
+  if (typeof window === 'undefined') return []
+  try { const records = JSON.parse(window.localStorage.getItem('camps_subject_records') || '[]'); return Array.isArray(records) ? records : [] } catch { return [] }
+}
+
+function writeLocalSubjectRecord(subjectId, studentId, patch) {
+  if (typeof window === 'undefined') return
+  const records = readLocalSubjectRecords()
+  const index = records.findIndex((item) => Number(item.subjectId) === Number(subjectId) && Number(item.studentId) === Number(studentId))
+  if (index >= 0) records[index] = { ...records[index], ...patch, subjectId, studentId }
+  else records.push({ subjectId, studentId, ...patch })
+  window.localStorage.setItem('camps_subject_records', JSON.stringify(records))
+}
+
+
+function SubjectEntryPanel({ mode, user, semester, section = '', students, subjects, notify }) {
+  const { token } = useAuth()
+  const apiToken = getAuthToken() || token
+  const apiSession = !DEMO_MODE && isApiToken(apiToken)
+  const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.subjectId || subjects[0]?.id || '')
+  const [records, setRecords] = useState({})
+  const [savingStudent, setSavingStudent] = useState('')
+  const selectedSubject = subjects.find((subject) => String(subject.subjectId || subject.id) === String(selectedSubjectId))
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const valueKey = mode === 'attendance' ? 'attendancePercentage' : 'averageInternalMarks'
+
+  useEffect(() => {
+    const next = Object.fromEntries(students.map((student) => [student.id, Number(mode === 'attendance' ? student.attendancePercentage : student.averageInternalMarks) || 0]))
+    setRecords(next)
+    if (!subjects.some((subject) => String(subject.subjectId || subject.id) === String(selectedSubjectId))) setSelectedSubjectId(subjects[0]?.subjectId || subjects[0]?.id || '')
+  }, [subjects, students, mode])
+
+  useEffect(() => {
+    if (!selectedSubject || !selectedSubjectId) return undefined
+    let mounted = true
+    if (!apiSession) {
+      const stored = readLocalSubjectRecords().filter((item) => Number(item.subjectId) === Number(selectedSubjectId))
+      if (mounted && stored.length) setRecords((current) => {
+        const next = { ...current }
+        stored.forEach((record) => { next[record.studentId] = Number(record[valueKey] ?? 0) })
+        return next
+      })
+      return undefined
+    }
+    api.getSubjectRecords(selectedSubjectId, { department: user.department, semester, section }).then((response) => {
+      if (!mounted) return
+      setRecords((current) => {
+        const next = { ...current }
+        ;(response.data || []).forEach((record) => { next[record.studentId] = Number(record[valueKey] ?? 0) })
+        return next
+      })
+    }).catch(() => { /* aggregate roster values remain available */ })
+    return () => { mounted = false }
+  }, [selectedSubjectId, selectedSubject, user.department, semester, section, valueKey, apiSession])
+
+  const updateRecord = (studentId, value) => setRecords((current) => ({ ...current, [studentId]: Number(value) }))
+  const save = async (student) => {
+    if (!selectedSubject) return
+    setSavingStudent(student.id)
+    const subjectId = selectedSubject.subjectId || selectedSubject.id
+    const value = Number(records[student.id] || 0)
+    try {
+      if (apiSession) {
+        if (mode === 'attendance') await api.saveSubjectAttendance(subjectId, { studentId: student.id, attendancePercentage: value, department: user.department, semester, section })
+        else await api.saveSubjectMarks(subjectId, { studentId: student.id, averageInternalMarks: value, department: user.department, semester, section })
+      }
+      writeLocalSubjectRecord(subjectId, student.id, { [valueKey]: value })
+      notify(`${selectedSubject.subjectCode} ${mode} saved for ${student.name}`)
+    } catch (error) {
+      notify(error.response?.data?.message || `Could not save ${mode} for ${student.name}`)
+    } finally { setSavingStudent('') }
+  }
+  return <section className="content-card subject-entry-card"><div className="subject-entry-heading"><div><p className="page-eyebrow">Live subject catalog</p><h2>{mode === 'attendance' ? 'Enter attendance by subject' : 'Enter average internal marks by subject'}</h2><p>New subjects from Subject Management are available here automatically for {scope}.</p></div><span className="subject-entry-badge"><FiCheckCircle /> {subjects.length} synced</span></div>{subjects.length ? <><div className="subject-entry-toolbar"><label htmlFor={`${mode}-subject-select`}>Subject<select id={`${mode}-subject-select`} value={selectedSubjectId} onChange={(event) => setSelectedSubjectId(event.target.value)}>{subjects.map((subject) => <option value={subject.subjectId || subject.id} key={subject.subjectId || subject.id}>{subject.subjectCode} · {subject.subjectName}</option>)}</select></label><span>{selectedSubject?.credits || 0} credits · {students.length} students</span></div><div className="table-scroll subject-entry-table"><table className="student-table"><thead><tr><th>Student</th><th>{mode === 'attendance' ? 'Attendance Percentage' : 'Average Internal Marks'}</th><th>Action</th></tr></thead><tbody>{students.map((student) => <tr key={student.id}><td><div className="student-cell"><Avatar initials={student.initials} tone="mint" /><div><span className="student-name">{student.name}</span><span className="student-usn">{student.usn}</span></div></div></td><td><input className="subject-entry-input" type="number" min="0" max="100" step="0.1" value={records[student.id] ?? 0} onChange={(event) => updateRecord(student.id, event.target.value)} /></td><td><button className="subject-save-button" type="button" onClick={() => save(student)} disabled={savingStudent === student.id}><FiCheck /> {savingStudent === student.id ? 'Saving' : 'Save'}</button></td></tr>)}</tbody></table></div>{!students.length && <div className="empty-state"><FiUsers /><span>No students in {scope}.</span></div>}</> : <div className="empty-state subject-entry-empty"><FiBookOpen /><span>No subjects have been added for {scope}. An administrator can add one and it will appear here without any extra setup.</span></div>}</section>
+}
+
+
+function SemesterAttendance({ user, semester, section = '', students, subjects, onNavigate, notify }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const trend = trendFor(students, semester)
+  const average = students.length ? (students.reduce((sum, student) => sum + Number(student.attendancePercentage || 0), 0) / students.length).toFixed(1) : '0.0'
+  const belowTarget = students.filter((student) => student.attendancePercentage < 75).length
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Attendance" description={`Monitor attendance rhythm and focus follow-ups within ${scope}.`} actions={<span className="scope-pill"><FiShield /> Scope: {section ? `Section ${section}` : `Sem ${semester}`}</span>} /><div className="info-stat-grid"><div className="info-stat"><span>Semester average</span><strong>{average}%</strong><span className="kpi-change"><FiTrendingUp /> Current cohort</span></div><div className="info-stat"><span>Below 75% threshold</span><strong>{belowTarget}</strong><span className="kpi-change alert"><FiAlertCircle /> Follow up</span></div><div className="info-stat"><span>Students tracked</span><strong>{students.length}</strong><span className="kpi-change"><FiCheckCircle /> {scope}</span></div></div><section className="content-card" style={{ marginTop: 13 }}><div className="card-heading"><div><h2 className="card-title">Attendance trend · Semester {semester}</h2><p className="card-description">The semester target is 75%</p></div></div><div className="chart-container" style={{ height: 250 }}><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend} margin={{ top: 8, right: 10, left: -22, bottom: 0 }}><defs><linearGradient id={`attendancePage${semester}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#70B99B" stopOpacity=".3" /><stop offset="100%" stopColor="#70B99B" stopOpacity=".02" /></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="3 4" /><XAxis dataKey="month" axisLine={false} tickLine={false} /><YAxis domain={[55, 100]} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} /><Tooltip content={<ChartTooltip />} /><Area type="monotone" dataKey="target" stroke="#B3C8C0" strokeDasharray="5 5" fill="none" /><Area type="monotone" dataKey="attendance" stroke="#70B99B" strokeWidth={2.5} fill={`url(#attendancePage${semester})`} /></AreaChart></ResponsiveContainer></div></section><SubjectEntryPanel mode="attendance" user={user} semester={semester} section={section} students={students} subjects={subjects} notify={notify} /><section className="content-card table-card" style={{ marginTop: 13 }}><div className="table-card-head"><div><h2 className="card-title">Attendance register</h2><p className="card-description">Students are sorted within Semester {semester}</p></div></div><SemesterTable students={[...students].sort((a, b) => a.attendancePercentage - b.attendancePercentage)} compact onStudentClick={(student) => onNavigate('student', student.id)} /></section></div>
+}
+
+function SemesterMarks({ user, semester, section = '', students, subjects, onNavigate, notify }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const averages = [
+    ['Average Internal Marks', 'averageInternalMarks'],
+    ['Average Assignment Score', 'averageAssignmentScore'],
+    ['Participation Score', 'participationScore'],
+  ].map(([label, key]) => {
+    const score = students.length ? students.reduce((sum, student) => sum + Number(student[key] || 0), 0) / students.length : 0
+    return { label, score: Number(score.toFixed(1)), percentage: Math.round(score) }
+  })
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Average Academic Performance" description={`Review the teacher-entered academic attributes for ${scope}.`} actions={<span className="scope-pill"><FiShield /> Scope: Sem {semester}</span>} /><div className="section-grid"><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Average Academic Performance</h2><p className="card-description">Cohort averages from the six stored academic attributes</p></div></div><div className="chart-container" style={{ height: 250 }}><ResponsiveContainer width="100%" height="100%"><BarChart data={averages} margin={{ top: 5, right: 8, left: -24, bottom: 0 }}><CartesianGrid vertical={false} strokeDasharray="3 4" /><XAxis dataKey="label" axisLine={false} tickLine={false} angle={-15} textAnchor="end" height={55} /><YAxis domain={[0, 100]} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} /><Tooltip content={<ChartTooltip />} /><Bar dataKey="percentage" fill="#F07E5E" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div></section><section className="content-card"><h2 className="card-title">Cohort averages</h2><div className="mark-bars">{averages.map((item) => <div className="mark-row" key={item.label}><span>{item.label}</span><i className="mark-bar"><i style={{ width: `${item.percentage}%` }} /></i><strong>{item.score}%</strong></div>)}</div><div className="detail-list"><div className="detail-item"><span>Average Previous GPA</span><strong>{students.length ? (students.reduce((sum, student) => sum + Number(student.previousGpa || 0), 0) / students.length).toFixed(1) : '0.0'}</strong></div><div className="detail-item"><span>Average Current GPA</span><strong>{students.length ? (students.reduce((sum, student) => sum + Number(student.currentGpa || 0), 0) / students.length).toFixed(1) : '0.0'}</strong></div></div></section></div><SubjectEntryPanel mode="marks" user={user} semester={semester} section={section} students={students} subjects={subjects} notify={notify} /><section className="content-card table-card" style={{ marginTop: 13 }}><div className="table-card-head"><div><h2 className="card-title">{section ? `Section ${section}` : `Semester ${semester}`} academic register</h2><p className="card-description">Every record is scoped to {scope}</p></div></div><div className="table-scroll"><table className="student-table"><thead><tr><th>Student</th><th>Average Internal Marks</th><th>Average Assignment Score</th><th>Previous GPA</th><th>Current GPA</th><th>Participation Score</th></tr></thead><tbody>{students.map((student) => <tr key={student.id}><td><button className="student-profile-link" type="button" onClick={() => onNavigate('student', student.id)}><div className="student-cell"><Avatar initials={student.initials} tone="mint" /><div><span className="student-name">{student.name}</span><span className="student-usn">{student.usn}</span></div></div></button></td><td>{student.averageInternalMarks}%</td><td>{student.averageAssignmentScore}%</td><td>{student.previousGpa}</td><td><strong style={{ color: '#15263a' }}>{student.currentGpa}</strong></td><td>{student.participationScore}%</td></tr>)}</tbody></table></div></section></div>
+}
+
+function achievementLabels(student) {
+  const achievements = []
+  if (Number(student.currentGpa) >= 8.5) achievements.push('Consistent academic performer')
+  if (Number(student.attendancePercentage) >= 85) achievements.push('Strong attendance rhythm')
+  if (Number(student.participationScore) >= 80) achievements.push('Active classroom participant')
+  return achievements.length ? achievements : ['Building momentum this semester']
+}
+
+function SemesterAssignments({ user, semester, section = '', students, onNavigate }) {
+  const average = students.length ? (students.reduce((sum, student) => sum + Number(student.averageAssignmentScore || 0), 0) / students.length).toFixed(1) : '0.0'
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Assignments" description="Review assignment performance for this selected section only." actions={<span className="scope-pill"><FiShield /> Scope locked</span>} /><div className="semester-context-banner"><FiShield /><span>Every assignment record below belongs to <strong>{scope}</strong>.</span></div><div className="info-stat-grid"><div className="info-stat"><span>Average assignment mark</span><strong>{average}<small> / 20</small></strong><span className="kpi-change"><FiTrendingUp /> Selected section</span></div><div className="info-stat"><span>Completed submissions</span><strong>{students.filter((student) => Number(student.averageAssignmentScore || 0) > 0).length}</strong><span className="kpi-change"><FiCheckCircle /> {students.length} tracked</span></div><div className="info-stat"><span>Needs follow-up</span><strong>{students.filter((student) => Number(student.averageAssignmentScore || 0) < 10).length}</strong><span className="kpi-change alert"><FiAlertCircle /> Below 50%</span></div></div><section className="content-card table-card" style={{ marginTop: 13 }}><div className="table-card-head"><div><h2 className="card-title">{section ? `Section ${section}` : `Semester ${semester}`} assignment register</h2><p className="card-description">Marks are calculated only from {scope} students.</p></div></div><div className="table-scroll"><table className="student-table"><thead><tr><th>Student</th><th>Assignment mark</th><th>Completion</th><th>Risk</th></tr></thead><tbody>{students.map((student) => <tr key={student.id}><td><button className="student-profile-link" type="button" onClick={() => onNavigate('student', student)}><div className="student-cell"><Avatar initials={student.initials} /><div><span className="student-name">{student.name}</span><span className="student-usn">{student.usn}</span></div></div></button></td><td><strong>{student.averageAssignmentScore}</strong> / 20</td><td><div className="progress-inline"><span className="progress-track"><i className={`progress-fill ${student.averageAssignmentScore < 10 ? 'danger' : ''}`} style={{ width: `${Math.min(100, Number(student.averageAssignmentScore || 0) / 20 * 100)}%` }} /></span><span>{Math.round(Number(student.averageAssignmentScore || 0) / 20 * 100)}%</span></div></td><td><RiskBadge risk={student.risk} /></td></tr>)}</tbody></table></div>{!students.length && <div className="empty-state"><FiFileText /><span>No assignment records for {scope}.</span></div>}</section></div>
+}
+
+function formatAchievementDate(value) {
+  if (!value) return 'Date not recorded'
+  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00`)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function SemesterAchievements({ user, semester, section = '', students, achievements, onCreateAchievement, onNavigate }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({ studentId: students[0]?.id || '', achievementType: achievementTypes[0], date: new Date().toISOString().slice(0, 10), title: '', description: '' })
+  const visibleAchievements = achievements.filter((achievement) => students.some((student) => Number(student.id) === Number(achievement.studentId)))
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }))
+  const submit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setSaving(true)
+    const saved = await onCreateAchievement(form)
+    setSaving(false)
+    if (saved) {
+      setForm({ studentId: students[0]?.id || '', achievementType: achievementTypes[0], date: new Date().toISOString().slice(0, 10), title: '', description: '' })
+      setOpen(false)
+    } else setError('We could not save this achievement. Check the fields and try again.')
+  }
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Achievements" description="Record a meaningful academic, co-curricular or community milestone for a student in this section." actions={<button className="button-primary" type="button" onClick={() => { setOpen((value) => !value); setError('') }}>{open ? <FiX /> : <FiPlus />} {open ? 'Close form' : 'Add achievement'}</button>} /><div className="semester-context-banner"><FiShield /><span>Achievements are saved to <strong>{scope}</strong> and are read-only in student and parent portals.</span></div>{open && <form className="content-card achievement-form-card" onSubmit={submit}><div className="achievement-form-heading"><span className="achievement-form-icon"><FiAward /></span><div><p className="page-eyebrow">New academic record</p><h2>Add achievement</h2><p>Select a student from Section {section}, add the achievement details, and publish it to their academic record.</p></div></div><div className="achievement-scope-strip"><FiShield /><span>Current scope</span><strong>{user.department} · Semester {semester} · Section {section}</strong></div><div className="form-grid achievement-form-grid"><div className="form-field"><label className="plain-label" htmlFor="achievement-student">Student</label><select id="achievement-student" className="field-control" value={form.studentId} onChange={(event) => update('studentId', event.target.value)} required><option value="">Choose a student</option>{students.map((student) => <option key={student.id} value={student.id}>{student.name} · {student.usn}</option>)}</select></div><div className="form-field"><label className="plain-label" htmlFor="achievement-type">Achievement type</label><select id="achievement-type" className="field-control" value={form.achievementType} onChange={(event) => update('achievementType', event.target.value)} required>{achievementTypes.map((type) => <option key={type}>{type}</option>)}</select></div><div className="form-field"><label className="plain-label" htmlFor="achievement-date">Date</label><input id="achievement-date" className="field-control" type="date" value={form.date} onChange={(event) => update('date', event.target.value)} required /></div><div className="form-field full"><label className="plain-label" htmlFor="achievement-title">Achievement title</label><input id="achievement-title" className="field-control" value={form.title} onChange={(event) => update('title', event.target.value)} placeholder="e.g. Won first place at the inter-college hackathon" maxLength="180" required /></div><div className="form-field full"><label className="plain-label" htmlFor="achievement-description">Description</label><textarea id="achievement-description" className="field-control achievement-description-field" value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Add a short description of the achievement and its impact…" maxLength="4000" rows="5" required /></div></div>{error && <div className="validation-error">{error}</div>}<div className="composer-actions"><button className="button-ghost" type="button" onClick={() => setOpen(false)}>Cancel</button><button className="button-primary" type="submit" disabled={saving || !students.length}><FiCheck /> {saving ? 'Saving achievement…' : 'Add achievement'}</button></div></form>}<section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">Section achievements</h2><p className="card-description">{visibleAchievements.length} record{visibleAchievements.length === 1 ? '' : 's'} · only students in Section {section}</p></div><span className="scope-pill"><FiShield /> Read-only portal sync</span></div><div className="achievement-record-list">{visibleAchievements.map((achievement) => { const student = students.find((item) => Number(item.id) === Number(achievement.studentId)); return <article className="achievement-record" key={achievement.id}><div className="achievement-record-icon"><FiAward /></div><div className="achievement-record-body"><div className="achievement-record-meta"><span className="achievement-type-pill">{achievement.achievementType}</span><time>{formatAchievementDate(achievement.date)}</time></div><h3>{achievement.title}</h3><p>{achievement.description}</p><button className="student-profile-link achievement-student-link" type="button" onClick={() => student && onNavigate('student', student)}><Avatar initials={student?.initials || 'ST'} tone="mint" /><span><strong>{student?.name || achievement.studentName}</strong><small>{student?.usn || achievement.usn} · Section {section}</small></span><FiArrowRight /></button></div></article> })}{!visibleAchievements.length && <div className="empty-state"><FiAward /><span>No achievements have been recorded for {scope} yet. Use Add achievement to create the first one.</span></div>}</div></section></div>
+}
+
+function SemesterRemarks({ user, semester, section = '', students, remarks, onNavigate }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const studentIds = new Set(students.map((student) => Number(student.id)))
+  const visibleRemarks = remarks.filter((remark) => studentIds.has(Number(remark.studentId)))
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Remarks" description="Keep teacher context and follow-up notes inside this selected section." actions={<span className="scope-pill"><FiShield /> Scope locked</span>} /><div className="semester-context-banner"><FiShield /><span>Remarks below are linked only to students in <strong>{scope}</strong>.</span></div><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Teacher context</h2><p className="card-description">Private academic follow-up notes associated with this section.</p></div></div><div className="profile-remark-list section-remarks-list">{visibleRemarks.map((remark) => { const student = students.find((item) => Number(item.id) === Number(remark.studentId)); return <button type="button" className="section-remark-row" key={remark.id} onClick={() => student && onNavigate('student', student)}><span className="remark-label">{remark.label}</span><span><strong>{student?.name || remark.studentName || 'Student'}</strong><p>{remark.note}</p><small>{remark.date}</small></span><FiArrowRight /></button> })}{!visibleRemarks.length && <div className="empty-state"><FiHeart /><span>No remarks have been added for {scope} yet.</span></div>}</div></section></div>
+}
+
+function SemesterAnnouncements({ user, semester, section = '', announcements, setAnnouncements, notify }) {
+  const [open, setOpen] = useState(false)
+  const [filter, setFilter] = useState('All')
+  const [form, setForm] = useState({ title: '', body: '', priority: 'Normal' })
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const visible = announcements.filter((item) => filter === 'All' || item.type === filter)
+  const publish = async (event) => { event.preventDefault(); if (!form.title || !form.body) return; let item = { ...form, id: Date.now(), type: 'Semester', department: user.department, semester, section: section || undefined, author: user.name, date: 'Just now' }; if (!DEMO_MODE) { try { const response = await api.createAnnouncement({ ...form, type: 'Semester', department: user.department, semester, section }); item = response.data || item } catch { notify('API unavailable · announcement kept in this session') } } setAnnouncements((current) => [item, ...current]); setForm({ title: '', body: '', priority: 'Normal' }); setOpen(false); notify(`${scope} announcement published`) }
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Announcements" description={`Publish updates only to ${section ? `Section ${section} · ` : ''}this semester’s students.`} actions={<button className="button-primary" type="button" onClick={() => setOpen((value) => !value)}><FiPlus /> New announcement</button>} /><div className="semester-context-banner"><FiShield /><span>Every announcement on this page is addressed to <strong>{scope}</strong>.</span></div>{open && <form className="content-card inline-composer" onSubmit={publish}><div className="form-grid"><div className="form-field full"><label className="plain-label">Title</label><input className="field-control" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="e.g. Project review tomorrow" required /></div><div className="form-field"><label className="plain-label">Priority</label><select className="field-control" value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>Normal</option><option>Medium</option><option>High</option></select></div><div className="form-field full"><label className="plain-label">Message</label><textarea className="field-control" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} placeholder="Write a clear next step…" required /></div></div><div className="composer-actions"><button className="button-ghost" type="button" onClick={() => setOpen(false)}>Cancel</button><button className="button-primary" type="submit"><FiBell /> Publish to {section ? `Section ${section}` : `Semester ${semester}`}</button></div></form>}<div className="toolbar-card"><div><strong style={{ color: '#15263a', fontSize: 12 }}>{section ? `Section ${section}` : `Semester ${semester}`} updates</strong><span style={{ display: 'block', marginTop: 4, color: '#99a2a1', fontSize: 10 }}>{visible.length} scoped announcements</span></div><div className="toolbar-filters">{['All', section ? 'Section' : 'Semester'].map((item) => <button key={item} className={`filter-btn ${filter === item ? 'selected-filter' : ''}`} type="button" onClick={() => setFilter(item)}>{item}</button>)}</div></div><div className="announcement-grid">{visible.map((item) => <article className="announcement-card" key={item.id}><span className="announcement-type semester">{section ? `Section ${section}` : `Semester ${semester}`}</span><h3>{item.title}</h3><p>{item.body}</p><div className="announcement-footer"><span>{item.date} · <strong>{item.author}</strong></span><div className="announcement-actions"><button type="button" onClick={() => notify('This scoped announcement is ready to edit')} aria-label="Edit announcement"><FiEdit3 /></button><button type="button" onClick={() => { setAnnouncements((current) => current.filter((notice) => notice.id !== item.id)); notify('Announcement deleted') }} aria-label="Delete announcement"><FiTrash2 /></button></div></div></article>)}{!visible.length && <div className="empty-state"><FiBell /><span>No announcements for {scope} yet.</span></div>}</div></div>
+}
+
+function SemesterMessages({ user, semester, section = '', students, messages, setMessages, notify, apiSession = false }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const [selectedId, setSelectedId] = useState(messages[0]?.id)
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [reply, setReply] = useState('')
+  const [replySending, setReplySending] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({ recipientRole: 'parent', studentId: students[0]?.id || '', subject: '', body: '' })
+  const visible = messages.filter((message) => `${message.sender} ${message.recipient} ${message.subject} ${message.body}`.toLowerCase().includes(search.toLowerCase()))
+  const selected = visible.find((message) => message.id === selectedId) || visible[0]
+  const selectedStudent = students.find((student) => Number(student.id) === Number(form.studentId))
+  const parentIdFor = (student) => Number(student?.id) === 4 ? 2 : 10000 + Number(student?.id || 0)
+  const updateForm = (key, value) => { setError(''); setForm((current) => ({ ...current, [key]: value })) }
+  const markRead = async (message) => {
+    setSelectedId(message.id)
+    const incoming = message.receiverRole === user.role && Number(message.receiverId) === Number(user.id)
+    setMessages((current) => current.map((item) => item.id === message.id ? { ...item, read: true, readStatus: true } : item))
+    if (DEMO_MODE) markDemoMessageRead(message.id)
+    if (apiSession && !message.read && incoming) {
+      try { await api.markMessageRead(message.id) } catch (readError) { notify(readError.response?.data?.message || 'The message could not be marked as read.') }
+    }
+  }
+  const send = async (event) => {
+    event.preventDefault()
+    const student = students.find((item) => Number(item.id) === Number(form.studentId))
+    if (!student) { setError('Select a student or parent recipient.'); return }
+    if (!form.subject.trim() || !form.body.trim()) { setError('Subject and message content are required.'); return }
+    setSending(true)
+    const recipientRole = form.recipientRole
+    const recipientId = recipientRole === 'parent' ? parentIdFor(student) : Number(student.id)
+    const fallback = { id: Date.now(), senderId: 1, senderRole: 'teacher', sender: user.name, receiverId: recipientId, receiverRole: recipientRole, recipientId, recipientRole, recipient: recipientRole === 'parent' ? (student.parentName || `${student.name} Parent`) : student.name, audience: recipientRole === 'parent' ? 'Parent' : 'Student', subject: form.subject.trim(), body: form.body.trim(), department: user.department, semester, section: section || student.section, studentId: Number(student.id), studentName: student.name, time: 'Just now', createdAt: new Date().toISOString(), read: true, readStatus: true, initials: user.initials }
+    try {
+      let saved = fallback
+      if (!DEMO_MODE) {
+        const request = { recipientRole, studentId: Number(student.id), subject: form.subject.trim(), body: form.body.trim(), department: user.department, semester, section }
+        if (recipientRole !== 'parent' || student.parentId || student.parent_id) request.recipientId = recipientRole === 'parent' ? Number(student.parentId || student.parent_id) : recipientId
+        const response = await api.sendMessage(request)
+        saved = response.data || fallback
+      }
+      setMessages((current) => [saved, ...current])
+      if (DEMO_MODE) upsertDemoMessage(saved)
+      window.dispatchEvent(new window.Event('camps-messages-updated'))
+      setOpen(false)
+      setForm({ recipientRole: 'parent', studentId: students[0]?.id || '', subject: '', body: '' })
+      setError('')
+      notify(`Message delivered to ${saved.recipient || fallback.recipient}`)
+    } catch (sendError) {
+      console.error('[messages] Teacher delivery failed.', { status: sendError.response?.status || 'network', message: sendError.response?.data?.message || sendError.message, studentId: student.id, recipientRole })
+      setError(sendError.response?.data?.message || 'Message delivery failed. Nothing was saved.')
+    } finally { setSending(false) }
+  }
+  const sendReply = async (event) => {
+    event.preventDefault()
+    if (!selected || !reply.trim()) { notify('Write a reply before sending.'); return }
+    const recipientRole = selected.senderRole === 'teacher' ? selected.receiverRole : selected.senderRole
+    const recipientId = selected.senderRole === 'teacher' ? selected.receiverId : selected.senderId
+    if (!recipientRole || !recipientId) { notify('This conversation cannot be replied to because its recipient mapping is unavailable.'); return }
+    setReplySending(true)
+    try {
+      const payload = { recipientRole, recipientId: Number(recipientId), studentId: selected.studentId, subject: `Re: ${selected.subject}`.replace(/^Re: Re:/, 'Re:'), body: reply.trim(), department: user.department, semester, section }
+      const fallback = { id: Date.now(), senderId: 1, senderRole: 'teacher', sender: user.name, receiverId: Number(recipientId), receiverRole: recipientRole, recipientId: Number(recipientId), recipientRole, recipient: selected.recipient, audience: recipientRole === 'parent' ? 'Parent' : 'Student', subject: payload.subject, body: payload.body, department: user.department, semester, section, studentId: selected.studentId, time: 'Just now', createdAt: new Date().toISOString(), read: true, readStatus: true, initials: user.initials }
+      const response = DEMO_MODE ? null : await api.sendMessage(payload)
+      const savedReply = response?.data || fallback
+      setMessages((current) => [savedReply, ...current])
+      if (DEMO_MODE) upsertDemoMessage(savedReply)
+      window.dispatchEvent(new window.Event('camps-messages-updated'))
+      setReply('')
+      notify(`Reply delivered to ${response?.data?.recipient || fallback.recipient}`)
+    } catch (sendError) {
+      console.error('[messages] Teacher reply failed.', { status: sendError.response?.status || 'network', message: sendError.response?.data?.message || sendError.message })
+      notify(sendError.response?.data?.message || 'Reply delivery failed. Nothing was saved.')
+    } finally { setReplySending(false) }
+  }
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Messages" description={`Send a direct message to one student or the selected student’s parent. Replies stay in the same conversation.`} actions={<button className="button-primary" type="button" onClick={() => { setOpen((value) => !value); setError('') }}><FiPlus /> {open ? 'Close composer' : 'New direct message'}</button>} /><div className="semester-context-banner"><FiShield /><span>This inbox is locked to <strong>{scope}</strong>. Delivery is limited to the selected recipient.</span></div>{open && <form className="content-card inline-composer" onSubmit={send}><div className="form-grid"><div className="form-field"><label className="plain-label">Recipient type</label><select className="field-control" value={form.recipientRole} onChange={(event) => updateForm('recipientRole', event.target.value)}><option value="parent">Parent of selected student</option><option value="student">Selected student</option></select></div><div className="form-field"><label className="plain-label">Recipient</label><select className="field-control" value={form.studentId} onChange={(event) => updateForm('studentId', event.target.value)} required><option value="">Choose a student</option>{students.map((student) => <option value={student.id} key={student.id}>{form.recipientRole === 'parent' ? `${student.parentName || `${student.name} Parent`} · ${student.name}` : `${student.name} · ${student.usn}`}</option>)}</select></div><div className="form-field full"><label className="plain-label">Subject</label><input className="field-control" value={form.subject} onChange={(event) => updateForm('subject', event.target.value)} placeholder="Subject" maxLength="180" required /></div><div className="form-field full"><label className="plain-label">Message</label><textarea className="field-control" value={form.body} onChange={(event) => updateForm('body', event.target.value)} placeholder="Write a direct message…" maxLength="10000" required /></div></div>{error && <div className="validation-error">{error}</div>}<div className="composer-actions"><button className="button-ghost" type="button" onClick={() => setOpen(false)} disabled={sending}>Cancel</button><button className="button-primary" type="submit" disabled={sending || !selectedStudent}><FiSend /> {sending ? 'Delivering…' : 'Send direct message'}</button></div></form>}<div className="messages-layout"><div className="message-list"><div className="message-list-head"><h3>{section ? `Section ${section}` : `Semester ${semester}`} inbox <span style={{ color: '#F07E5E' }}>· {messages.filter((message) => !message.read && message.receiverRole === user.role && Number(message.receiverId) === Number(user.id)).length} unread</span></h3><button type="button" onClick={() => setOpen(true)} aria-label="Compose message"><FiPlus /></button></div><div className="message-search search-field"><FiSearch /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search scoped messages" /></div>{visible.map((message) => <button className={`message-item ${selected?.id === message.id ? 'active' : ''}`} type="button" key={message.id} onClick={() => markRead(message)}><Avatar initials={message.initials || 'AR'} tone={message.receiverRole === 'parent' || message.senderRole === 'parent' ? 'sky' : 'mint'} /><span className="message-item-content"><span className="message-item-line"><strong>{message.sender}{!message.read && <i className="unread-dot" />}</strong><time>{String(message.time || message.created_at || '').replace('Today, ', '')}</time></span><p>{message.subject}</p><small>{message.recipient}</small></span></button>)}{!visible.length && <div className="empty-state"><FiMailIcon /><span>No messages for {scope} yet.</span></div>}</div><div className="message-detail">{selected ? <><div className="message-detail-head"><div><h2>{selected.subject}</h2><p>From {selected.sender} · To {selected.recipient} · {selected.time || selected.createdAt}</p></div><button className="row-action" type="button" aria-label="More message actions"><FiMoreHorizontal /></button></div><div className="message-body"><div className="message-bubble">{selected.body}</div></div><form className="message-detail-footer" onSubmit={sendReply}><input value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Reply to this conversation…" aria-label="Reply to this conversation" /><button type="submit" disabled={replySending || !selected.senderRole} aria-label="Send reply"><FiSend /></button></form></> : <div className="empty-state"><FiMessageCircle /><span>Select a scoped message to read it.</span></div>}</div></div></div>
+}
+
+function FiMailIcon() {
+  return <FiMessageCircle />
+}
+
+function UploadSemesterStudentsPage({ user, semester, section = '', students, onCancel, onImport, onPreview }) {
+  const [file, setFile] = useState(null)
+  const [rows, setRows] = useState([])
+  const [fileError, setFileError] = useState('')
+  const [previewNotice, setPreviewNotice] = useState('')
+  const [reading, setReading] = useState(false)
+  const [validating, setValidating] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [serverSummary, setServerSummary] = useState(null)
+  const scope = { department: user.department, semester, section }
+
+  const mergeServerPreview = (localRows, result) => {
+    if (!result?.preview?.length) return
+    const serverRows = new Map(result.preview.map((row, index) => [Number(row.rowNumber || index + 2), row]))
+    setRows(localRows.map((row) => {
+      const serverRow = serverRows.get(row.rowNumber)
+      return serverRow ? { ...row, ...serverRow, id: row.id, rowNumber: row.rowNumber } : row
+    }))
+    if (result.summary) setServerSummary(result.summary)
+  }
+
+  const readSpreadsheet = (selectedFile) => {
+    setFile(selectedFile)
+    setRows([])
+    setFileError('')
+    setPreviewNotice('')
+    setServerSummary(null)
+    setReading(true)
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const workbook = XLSX.read(event.target.result, { type: 'array' })
+        const sheet = workbook.Sheets[workbook.SheetNames[0]]
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+        const parsedRows = normalizeImportRows(rawRows, scope, students)
+        setRows(parsedRows)
+        setReading(false)
+        if (onPreview) {
+          setValidating(true)
+          Promise.resolve(onPreview(selectedFile))
+            .then((result) => {
+              if (result) mergeServerPreview(parsedRows, result)
+              else setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.')
+            })
+            .catch(() => setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.'))
+            .finally(() => setValidating(false))
+        }
+      } catch {
+        setRows([])
+        setFileError('This file could not be read. Upload a valid .xlsx, .xls or .csv file.')
+        setReading(false)
+      }
+    }
+    reader.onerror = () => { setReading(false); setFileError('The spreadsheet could not be opened. Please try again.') }
+    reader.readAsArrayBuffer(selectedFile)
+  }
+
+  const downloadTemplate = () => {
+    const template = [{ USN: '4PM25CS101', Name: 'Sample Student', Department: user.department, Semester: semester, Section: section || 'A', Gender: 'Female', Email: 'sample@pestrust.edu.in', Phone: '+91 98450 00000', 'Parent Name': 'Parent Name', 'Parent Phone': '+91 98450 00001', 'Father Name': 'Parent Name', 'Mother Name': 'Mother Name', 'Parent Email': 'parent@example.com', 'Date of Birth': '2004-06-15', 'Blood Group': 'O+', Address: 'Residential address', Certifications: 'NPTEL, AWS', Skills: 'Python, React', 'Attendance Percentage': 80, 'Average Internal Marks': 75, 'Average Assignment Score': 80, 'Previous GPA': 7.4, 'Current GPA': 7.5, 'Participation Score': 78 }]
+    const worksheet = XLSX.utils.json_to_sheet(template)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, `Semester ${semester}`)
+    XLSX.writeFile(workbook, `${user.department}-semester-${semester}-student-template.xlsx`)
+  }
+
+  const importRows = async () => {
+    const readyRows = rows.filter((row) => row.ready)
+    if (!readyRows.length || reading || validating || importing) return
+    setImporting(true)
+    await onImport(rows, file)
+    setImporting(false)
+  }
+
+  const summary = serverSummary || importSummary(rows)
+  const issueRows = rows.filter((row) => row.issues?.length)
+  const statusMessage = summary.ready
+    ? `${summary.matching} records match this scope. ${summary.ready} are ready to import; ${summary.skipped} will be skipped.`
+    : 'No rows are ready to import. Review the highlighted rows before choosing another file.'
+
+  return <div className="dashboard-content upload-student-page">
+    <ScopeIntro eyebrow={`${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`} title="Upload student roster" description={`Review every row before importing into ${section ? `Section ${section} · ` : ''}Semester ${semester}. Rows from another department, semester or section are skipped automatically.`} actions={<button className="button-ghost" type="button" onClick={downloadTemplate}><FiDownload /> Download template</button>} />
+    <div className="semester-context-banner"><FiShield /><span>Import scope locked to <strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong>. Only matching, valid and non-duplicate USNs can be added.</span></div>
+    <section className="content-card upload-workflow">
+      <div className="upload-steps"><span className="active"><b>1</b> Upload</span><span className="active"><b>2</b> Preview &amp; validate</span><span><b>3</b> Import</span></div>
+      {!file && <div className="dropzone"><FiUploadCloud /><div><strong>Upload the {section ? `Section ${section}` : 'semester'} roster</strong><span>Accepted formats: .xlsx, .xls and .csv · Required columns: USN, Name, Email and six academic attributes</span><label htmlFor="semester-roster-file">Choose Excel or CSV file<input id="semester-roster-file" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && readSpreadsheet(event.target.files[0])} /></label></div></div>}
+      {file && <>
+        <div className="upload-summary"><span><FiFileText style={{ verticalAlign: 'middle', marginRight: 6 }} /> {file.name}</span><strong>{reading ? 'Reading…' : validating ? 'Checking with server…' : `${rows.length} record${rows.length === 1 ? '' : 's'} found`}</strong></div>
+        {fileError && <div className="validation-error"><strong>{fileError}</strong></div>}
+        {previewNotice && <div className="upload-preview-notice"><FiAlertCircle /> {previewNotice}</div>}
+        {!reading && rows.length > 0 && <>
+          <div className="import-summary-grid">
+            <div className="import-summary-card"><span>Total records</span><strong>{summary.total}</strong></div>
+            <div className="import-summary-card scope-match"><span>Match current scope</span><strong>{summary.matching}</strong></div>
+            <div className="import-summary-card ready"><span>Ready to import</span><strong>{summary.ready}</strong></div>
+            <div className="import-summary-card warning"><span>Skipped</span><strong>{summary.skipped}</strong></div>
+            <div className="import-summary-card error"><span>Validation issues</span><strong>{summary.invalid}</strong></div>
+          </div>
+          <div className={`import-summary-message ${summary.skipped ? 'warning' : 'success'}`}><FiAlertCircle /> {statusMessage}</div>
+          {issueRows.length > 0 && <div className="validation-error import-validation-list"><strong>Review highlighted rows before import:</strong>{issueRows.slice(0, 8).map((row) => <div key={row.id}>Row {row.rowNumber}: {row.issues.join(' ')}</div>)}{issueRows.length > 8 && <div>+ {issueRows.length - 8} more row{issueRows.length - 8 === 1 ? '' : 's'} with issues</div>}</div>}
+          <div className="table-scroll upload-preview-table"><table className="student-table"><thead><tr><th>Row</th><th>USN</th><th>Name</th><th>Department</th><th>Semester</th><th>Section</th><th>Status</th><th>Details</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={`import-preview-row ${row.status}`}><td>{row.rowNumber}</td><td>{row.usn || '—'}</td><td>{row.name || '—'}</td><td>{row.department || '—'}</td><td>{row.semester || '—'}</td><td>{row.section || '—'}</td><td><span className={`import-status ${row.status}`}><i /> {importStatusLabel(row.status)}</span></td><td className="import-row-details">{row.issues?.length ? row.issues.join(' ') : 'Ready for import'}</td></tr>)}</tbody></table></div>
+        </>}
+      </>}
+    </section>
+    <div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setFileError(''); setPreviewNotice(''); setServerSummary(null) }}>Choose another file</button>}<button className="button-primary" type="button" disabled={!rows.some((row) => row.ready) || reading || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div>
+  </div>
+}
+
+function AddSemesterStudentPage({ user, semester, section = '', students, onCancel, onSave }) {
+  const [form, setForm] = useState({ usn: '', name: '', section: section || 'A', gender: 'Female', email: '', phone: '', parentName: '', parentPhone: '', dateOfBirth: '', bloodGroup: '', address: '', fatherName: '', motherName: '', parentEmail: '', certifications: '', skills: '', attendancePercentage: 75, averageInternalMarks: 60, averageAssignmentScore: 75, previousGpa: 7, currentGpa: 7, participationScore: 60 })
+  const [error, setError] = useState('')
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }))
+  const submit = async (event) => {
+    event.preventDefault()
+    if (!form.usn || !form.name || !form.email) { setError('USN, name and email are required.'); return }
+    if (students.some((student) => student.usn.toUpperCase() === form.usn.toUpperCase())) { setError('This USN already exists in the selected semester.'); return }
+    if (!/^\S+@\S+\.\S+$/.test(form.email)) { setError('Enter a valid student email address.'); return }
+    if (form.phone && !/^\+?[0-9 ()-]{10,18}$/.test(form.phone)) { setError('Enter a valid phone number.'); return }
+    setError('')
+    const saved = await onSave({ ...form, usn: form.usn.toUpperCase(), department: user.department, semester: Number(semester), section: section || form.section, attendancePercentage: Number(form.attendancePercentage), averageInternalMarks: Number(form.averageInternalMarks), averageAssignmentScore: Number(form.averageAssignmentScore), previousGpa: Number(form.previousGpa), currentGpa: Number(form.currentGpa), participationScore: Number(form.participationScore) })
+    if (saved === false) setError('The student was not saved. Review the message above and try again.')
+  }
+  return <div className="dashboard-content add-student-page"><ScopeIntro eyebrow={`${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`} title="Add a student" description={`Create a student record inside ${section ? `Section ${section} · ` : ''}this semester only. Department, semester and section are locked to your workspace.`} actions={<span className="scope-pill"><FiShield /> {user.department} · Sem {semester}{section ? ` · Sec ${section}` : ''}</span>} /><div className="semester-context-banner"><FiShield /><span>New records are saved to <strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong>. They will not appear in another scope.</span></div><form className="content-card add-student-form" onSubmit={submit}><div className="profile-card-heading"><div><h2>Personal information</h2><p>Student and parent contact details</p></div><FiUser /></div><div className="form-grid add-form-grid"><div className="form-field"><label className="plain-label">USN</label><input className="field-control" value={form.usn} onChange={(event) => update('usn', event.target.value)} placeholder="4PM25CS101" required /></div><div className="form-field"><label className="plain-label">Student name</label><input className="field-control" value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Full name" required /></div><div className="form-field"><label className="plain-label">Department</label><input className="field-control locked-field" value={user.department} readOnly /></div><div className="form-field"><label className="plain-label">Semester</label><input className="field-control locked-field" value={`Semester ${semester}`} readOnly /></div><div className="form-field"><label className="plain-label">Section</label>{section ? <input className="field-control locked-field" value={section} readOnly /> : <select className="field-control" value={form.section} onChange={(event) => update('section', event.target.value)}><option>A</option><option>B</option><option>C</option></select>}</div><div className="form-field"><label className="plain-label">Gender</label><select className="field-control" value={form.gender} onChange={(event) => update('gender', event.target.value)}><option>Female</option><option>Male</option><option>Other</option></select></div><div className="form-field"><label className="plain-label">Email address</label><input className="field-control" type="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder="student@pestrust.edu.in" required /></div><div className="form-field"><label className="plain-label">Phone number</label><input className="field-control" value={form.phone} onChange={(event) => update('phone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div><div className="form-field"><label className="plain-label">Parent / guardian</label><input className="field-control" value={form.parentName} onChange={(event) => update('parentName', event.target.value)} placeholder="Parent name" /></div><div className="form-field"><label className="plain-label">Parent phone</label><input className="field-control" value={form.parentPhone} onChange={(event) => update('parentPhone', event.target.value)} placeholder="+91 98XXX XXXXX" /></div><div className="form-field"><label className="plain-label">Date of birth</label><input className="field-control" type="date" value={form.dateOfBirth} onChange={(event) => update('dateOfBirth', event.target.value)} /></div><div className="form-field"><label className="plain-label">Blood group</label><select className="field-control" value={form.bloodGroup} onChange={(event) => update('bloodGroup', event.target.value)}><option value="">Not recorded</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div><div className="form-field full"><label className="plain-label">Address</label><textarea className="field-control" value={form.address} onChange={(event) => update('address', event.target.value)} placeholder="Residential address" /></div><div className="form-field"><label className="plain-label">Father / guardian name</label><input className="field-control" value={form.fatherName} onChange={(event) => update('fatherName', event.target.value)} placeholder="Father or primary guardian" /></div><div className="form-field"><label className="plain-label">Mother name</label><input className="field-control" value={form.motherName} onChange={(event) => update('motherName', event.target.value)} placeholder="Mother name" /></div><div className="form-field"><label className="plain-label">Parent email</label><input className="field-control" type="email" value={form.parentEmail} onChange={(event) => update('parentEmail', event.target.value)} placeholder="parent@example.com" /></div><div className="form-field"><label className="plain-label">Certifications</label><input className="field-control" value={form.certifications} onChange={(event) => update('certifications', event.target.value)} placeholder="AWS, NPTEL (comma separated)" /></div><div className="form-field"><label className="plain-label">Skills</label><input className="field-control" value={form.skills} onChange={(event) => update('skills', event.target.value)} placeholder="React, Python (comma separated)" /></div></div><div className="profile-card-heading add-form-section-heading"><div><h2>Average Academic Performance</h2><p>Enter the six academic attributes directly for this student.</p></div><FiActivity /></div><div className="form-grid add-form-grid">{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix, min, max, step }) => <div className="form-field" key={key}><label className="plain-label">{label}</label><div className="academic-input-wrap"><input className="field-control" type="number" min={min} max={max} step={step} value={form[key]} onChange={(event) => update(key, event.target.value)} required /><small>{suffix}</small></div></div>)}</div>{error && <div className="validation-error">{error}</div>}<div className="composer-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button><button className="button-primary" type="submit"><FiCheck /> Save student to Semester {semester}</button></div></form></div>
+}
+
+function StudentProfilePage({ user, semester, student, remarks, achievements, onNavigate }) {
+  if (!student) return <div className="dashboard-content"><div className="content-card empty-state"><FiUsers /><span>This student does not belong to {user.department} · Semester {semester}.</span></div></div>
+  const academic = academicFields(student)
+  const outcome = student.result || predictAcademic(academic).result
+  const risk = student.risk || predictAcademic(academic).risk
+  const studentRemarks = remarks.filter((remark) => Number(remark.studentId) === Number(student.id))
+  const studentAchievements = (achievements || []).filter((achievement) => Number(achievement.studentId) === Number(student.id))
+  const achievementHighlights = studentAchievements.length ? studentAchievements.map((achievement) => achievement.title) : achievementLabels(student)
+  const trend = trendFor([student], semester)
+  return <div className="dashboard-content profile-page"><section className="profile-hero-card"><div className="profile-identity"><Avatar initials={student.initials} tone={risk === 'Low Risk' ? 'mint' : ''} /><div><p className="page-eyebrow">Full student profile · {user.department} · Semester {semester}</p><h1>{student.name}</h1><p>{student.usn} <span>·</span> Section {student.section} <span>·</span> {student.email}</p></div></div><div className="profile-hero-status"><RiskBadge risk={risk} /><span>{outcome}</span></div></section><div className="profile-layout"><div className="profile-primary"><section className="content-card profile-card"><div className="profile-card-heading"><div><h2>Personal information</h2><p>Identity and contact details from the {user.department} Semester {semester} roster.</p></div><FiUser /></div><div className="profile-detail-grid"><div><span>Full name</span><strong>{student.name}</strong></div><div><span>University seat number</span><strong>{student.usn}</strong></div><div><span>Gender</span><strong>{student.gender || 'Not recorded'}</strong></div><div><span>Date of birth</span><strong>{student.dateOfBirth || 'Not recorded'}</strong></div><div><span>Blood group</span><strong>{student.bloodGroup || 'Not recorded'}</strong></div><div><span>Email address</span><strong>{student.email}</strong></div><div><span>Phone number</span><strong>{student.phone || 'Not recorded'}</strong></div><div className="profile-detail-wide"><span>Address</span><strong>{student.address || 'Not recorded'}</strong></div><div><span>Department</span><strong>{student.department}</strong></div><div><span>Semester</span><strong>Semester {student.semester}</strong></div><div><span>Section</span><strong>{student.section}</strong></div></div></section><section className="content-card profile-card"><div className="profile-card-heading"><div><h2>Average Academic Performance</h2><p>Six academic attributes entered directly by the teacher.</p></div><FiBookOpen /></div><div className="profile-stat-grid academic-performance-grid">{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix }) => <div key={key}><span>{label}</span><strong>{key === 'previousGpa' || key === 'currentGpa' ? Number(academic[key]).toFixed(1) : Number(academic[key]).toFixed(1)}</strong><small>{suffix}</small></div>)}</div></section><section className="content-card profile-card"><div className="profile-card-heading"><div><h2>Attendance record</h2><p>Only attendance from {user.department} · Semester {semester} is represented.</p></div><strong className="profile-big-number">{academic.attendancePercentage}%</strong></div><div className="profile-attendance-meter"><div><span>Attendance Percentage</span><strong>{academic.attendancePercentage}%</strong></div><div className="profile-meter-track"><i style={{ width: `${academic.attendancePercentage}%` }} /></div><div className="profile-meter-foot"><span>0%</span><span>75% minimum</span><span>100%</span></div></div><div className="profile-chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend} margin={{ top: 8, right: 7, left: -25, bottom: 0 }}><defs><linearGradient id={`studentAttendance${student.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#70B99B" stopOpacity=".3" /><stop offset="100%" stopColor="#70B99B" stopOpacity=".02" /></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="3 4" /><XAxis dataKey="month" axisLine={false} tickLine={false} /><YAxis domain={[55, 100]} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} /><Tooltip content={<ChartTooltip />} /><Area type="monotone" dataKey="attendancePercentage" stroke="#70B99B" strokeWidth={2.5} fill={`url(#studentAttendance${student.id})`} /></AreaChart></ResponsiveContainer></div></section><section className="content-card profile-card"><div className="profile-card-heading"><div><h2>Teacher-entered academic values</h2><p>Current values used for the academic record.</p></div><FiActivity /></div><div className="profile-mark-list">{PREDICTION_INPUTS.map(({ key, label, suffix }) => <div className="profile-mark-row" key={key}><div><span>{label}</span><strong>{Number(academic[key]).toFixed(1)} {suffix}</strong></div><div className="profile-mark-track"><i style={{ width: `${key === 'previousGpa' ? academic[key] * 10 : academic[key]}%` }} /></div><small>Stored</small></div>)}</div><div className="profile-subject-note"><span>Prediction contract</span><strong>Only these five values are sent to XGBoost. Current GPA remains a stored academic attribute and is not a model input.</strong></div></section></div><aside className="profile-secondary"><section className="profile-prediction-card"><div className="profile-card-heading"><div><p className="profile-card-kicker">XGBoost prediction</p><h2>Academic outlook</h2></div><FiZap /></div><div className="profile-prediction-risk"><span>Prediction</span><strong>{outcome}</strong></div><div className="profile-prediction-risk"><span>Risk level</span><RiskBadge risk={risk} /></div><p className="profile-prediction-copy">Built only from attendance percentage, average internal marks, average assignment score, previous GPA and participation score.</p><button className="profile-prediction-link" type="button" onClick={() => onNavigate('predictions')}><FiZap /> Open prediction desk <FiArrowRight /></button></section><section className="content-card profile-card"><div className="profile-card-heading"><div><h2>Parent / guardian</h2><p>Linked contact information</p></div><FiUsers /></div><div className="profile-contact"><Avatar initials={(student.fatherName || student.parentName || 'PG').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase()} tone="sky" /><div><strong>{student.fatherName || student.parentName || 'Not recorded'}</strong><span>Father / primary guardian</span></div></div><div className="profile-contact-details"><div><span>Mother name</span><strong>{student.motherName || 'Not recorded'}</strong></div><div><span>Parent phone</span><strong>{student.parentPhone || 'Not recorded'}</strong></div><div><span>Parent email</span><strong>{student.parentEmail || 'Not recorded'}</strong></div><div><span>Preferred channel</span><strong>CAMPS message</strong></div></div><button className="button-ghost profile-message-button" type="button" onClick={() => onNavigate('messages')}><FiSend /> Message parent</button></section><section className="content-card profile-card"><div className="profile-card-heading"><div><h2>Achievements</h2><p>Highlights recorded for this learner.</p></div><FiAward /></div><div className="achievement-list">{studentAchievements.length ? studentAchievements.map((achievement) => <div className="profile-achievement-record" key={achievement.id}><span><FiCheck /></span><div><strong>{achievement.title}</strong><small>{achievement.achievementType} · {formatAchievementDate(achievement.date)}</small><p>{achievement.description}</p></div></div>) : achievementHighlights.map((achievement) => <div key={achievement}><span><FiCheck /></span><strong>{achievement}</strong></div>)}</div><button className="profile-text-link" type="button" onClick={() => onNavigate('achievements')}><FiPlus /> Open achievements workspace</button></section><section className="content-card profile-card"><div className="profile-card-heading"><div><h2>Teacher context</h2><p>Remarks visible to the student and parent.</p></div><FiHeart /></div>{studentRemarks.length ? <div className="profile-remark-list">{studentRemarks.map((remark) => <div key={remark.id}><span>{remark.label}</span><p>{remark.note}</p><small>{remark.date}</small></div>)}</div> : <div className="profile-empty-note">No remarks have been added for this student yet.</div>}</section></aside></div></div>
+}
+
+export function TeacherStudentProfile() {
+  const { user, logout, token } = useAuth()
+  const apiToken = getAuthToken() || token
+  const apiSession = !DEMO_MODE && isApiToken(apiToken)
+  const { usn: usnParam } = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const usn = decodeURIComponent(usnParam || '').toUpperCase()
+  const profileParams = new URLSearchParams(location.search)
+  const requestedSemester = Number(profileParams.get('semester')) || 0
+  const requestedSection = String(profileParams.get('section') || '').trim().toUpperCase()
+  const matchesScope = (item) => item.department === user.department && item.usn?.toUpperCase() === usn && (!requestedSemester || Number(item.semester) === requestedSemester) && (!requestedSection || String(item.section || '').toUpperCase() === requestedSection)
+  const [student, setStudent] = useState(() => cloneDemoStudents().find(matchesScope) || null)
+  const [remarks, setRemarks] = useState(() => demoRemarks)
+  const [achievements, setAchievements] = useState(() => demoAchievements.filter((item) => item.usn === usn))
+  const [loading, setLoading] = useState(Boolean(apiSession))
+
+  useEffect(() => {
+    if (!apiSession) {
+      setStudent(cloneDemoStudents().find(matchesScope) || null)
+      setAchievements(demoAchievements.filter((item) => item.usn === usn))
+      setLoading(false)
+      return undefined
+    }
+    let mounted = true
+    Promise.allSettled([
+      api.getStudents({ department: user.department, semester: requestedSemester || undefined, section: requestedSection || undefined, search: usn, limit: 100 }),
+      api.getRemarks({ department: user.department }),
+      api.getAchievements({ department: user.department, studentUsn: usn }),
+    ]).then(([studentResult, remarkResult, achievementResult]) => {
+      if (!mounted) return
+      const rows = studentResult.status === 'fulfilled' ? studentResult.value?.data || [] : []
+      setStudent(rows.find(matchesScope) || null)
+      if (remarkResult.status === 'fulfilled' && remarkResult.value?.data) setRemarks(remarkResult.value.data)
+      if (achievementResult.status === 'fulfilled' && achievementResult.value?.data) setAchievements(achievementResult.value.data.filter((item) => item.usn?.toUpperCase() === usn))
+      setLoading(false)
+    })
+    return () => { mounted = false }
+  }, [apiSession, user.department, usn, requestedSemester, requestedSection])
+
+  const semester = Number(student?.semester) || requestedSemester || 1
+  const section = student?.section || requestedSection
+  const signOut = async () => { await logout(); navigate('/', { replace: true }) }
+  const onNavigate = (module) => {
+    const target = section ? `/teacher/semester/${semester}/section/${encodeURIComponent(section)}` : `/teacher/semester/${semester}`
+    navigate(module === 'dashboard' ? target : `${target}/${module}`)
+  }
+  const content = loading ? <div className="dashboard-content"><div className="content-card empty-state"><FiUsers /><span>Loading the student profile…</span></div></div> : <StudentProfilePage user={user} semester={semester} student={student} remarks={remarks.filter((remark) => !student || Number(remark.studentId) === Number(student.id))} achievements={achievements} onNavigate={onNavigate} />
+  return <TeacherShell user={user} semester={semester} section={section} activeModule="students" onLogout={signOut}>{content}</TeacherShell>
+}
+
+function SemesterAnalytics({ user, semester, section = '', students }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const attendanceBuckets = [
+    { label: '< 75%', count: students.filter((student) => student.attendancePercentage < 75).length },
+    { label: '75–84%', count: students.filter((student) => student.attendancePercentage >= 75 && student.attendancePercentage < 85).length },
+    { label: '85%+', count: students.filter((student) => student.attendancePercentage >= 85).length },
+  ]
+  const performanceBuckets = [
+    { label: 'Below 6.5', count: students.filter((student) => student.currentGpa < 6.5).length },
+    { label: '6.5–7.9', count: students.filter((student) => student.currentGpa >= 6.5 && student.currentGpa < 8).length },
+    { label: '8.0+', count: students.filter((student) => student.currentGpa >= 8).length },
+  ]
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="Analytics" description="Understand the patterns inside this selected scope without mixing other cohorts." actions={<span className="scope-pill"><FiShield /> Scope locked</span>} /><div className="semester-context-banner"><FiShield /><span>All metrics below are calculated from <strong>{students.length} {scope} records</strong>.</span></div><div className="section-grid"><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Attendance bands</h2><p className="card-description">Semester students by attendance threshold</p></div></div><div className="chart-container" style={{ height: 250 }}><ResponsiveContainer width="100%" height="100%"><BarChart data={attendanceBuckets} margin={{ top: 5, right: 8, left: -22, bottom: 0 }}><CartesianGrid vertical={false} strokeDasharray="3 4" /><XAxis dataKey="label" axisLine={false} tickLine={false} /><YAxis allowDecimals={false} axisLine={false} tickLine={false} /><Tooltip /><Bar dataKey="count" fill="#70B99B" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div></section><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Current GPA bands</h2><p className="card-description">Current GPA distribution</p></div></div><div className="chart-container" style={{ height: 250 }}><ResponsiveContainer width="100%" height="100%"><BarChart data={performanceBuckets} margin={{ top: 5, right: 8, left: -22, bottom: 0 }}><CartesianGrid vertical={false} strokeDasharray="3 4" /><XAxis dataKey="label" axisLine={false} tickLine={false} /><YAxis allowDecimals={false} axisLine={false} tickLine={false} /><Tooltip /><Bar dataKey="count" fill="#8BBFD7" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div></section></div><section className="content-card" style={{ marginTop: 13 }}><div className="card-heading"><div><h2 className="card-title">Semester insight queue</h2><p className="card-description">Prioritised students based on this cohort’s signals</p></div></div><div className="alert-list">{students.filter((student) => student.risk !== 'Low Risk').sort((a, b) => a.attendancePercentage - b.attendancePercentage).slice(0, 5).map((student) => <div className="alert-row" key={student.id}><Avatar initials={student.initials} /><div className="alert-info"><strong>{student.name}</strong><span>{student.attendancePercentage}% attendance · {student.currentGpa} current GPA · {student.result || 'Not predicted'}</span></div><RiskBadge risk={student.risk} /></div>)}{!students.some((student) => student.risk !== 'Low Risk') && <div className="empty-state"><FiCheckCircle /><span>This semester has no students in the attention queue.</span></div>}</div></section></div>
+}
+
+function SemesterPredictions({ user, semester, section = '', students, notify }) {
+  const scope = `${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`
+  const [selectedId, setSelectedId] = useState(students[0]?.id || '')
+  const selected = students.find((student) => String(student.id) === String(selectedId)) || students[0]
+  const [features, setFeatures] = useState(() => selected ? predictionFields(selected) : { attendancePercentage: 75, averageInternalMarks: 60, averageAssignmentScore: 75, previousGpa: 7, participationScore: 60 })
+  const [result, setResult] = useState(() => selected ? { result: selected.result || predictAcademic(selected).result, risk: selected.risk || predictAcademic(selected).risk } : null)
+  const [running, setRunning] = useState(false)
+  const choose = (id) => {
+    const student = students.find((item) => String(item.id) === String(id))
+    setSelectedId(id)
+    if (student) {
+      setFeatures(predictionFields(student))
+      setResult(predictAcademic(student))
+    }
+  }
+  const update = (key, value) => setFeatures((current) => ({ ...current, [key]: Number(value) }))
+  const predict = async () => {
+    setRunning(true)
+    let next
+    if (!DEMO_MODE) {
+      try { next = await api.predict(features) } catch { /* client fallback */ }
+    }
+    if (!next?.result || !next?.risk) next = predictAcademic(features)
+    setResult({ result: next.result, risk: next.risk })
+    setRunning(false)
+    notify(`Prediction refreshed for Semester ${semester}`)
+  }
+  return <div className="dashboard-content"><ScopeIntro eyebrow={scope} title="XGBoost predictions" description="Run predictions only against students in this selected scope." actions={<span className="live-tag" style={{ color: '#4f9276', background: '#eaf6f0', borderColor: '#d7ecdf' }}><i style={{ background: '#70B99B' }} /> Model online</span>} /><div className="semester-context-banner"><FiShield /><span>Prediction scope: <strong>{scope}</strong>. The model receives five academic inputs; Current GPA is stored but not sent to the model.</span></div><div className="section-grid"><section className="content-card"><div className="card-heading"><div><h2 className="card-title">Run prediction</h2><p className="card-description">Five signals · POST /api/ml/predict</p></div></div><div className="form-field" style={{ marginTop: 21 }}><label className="plain-label" htmlFor="semester-prediction-student">Student</label><select id="semester-prediction-student" className="field-control" value={selected?.id || ''} onChange={(event) => choose(event.target.value)}>{students.map((student) => <option value={student.id} key={student.id}>{student.name} · {student.usn}</option>)}</select></div><div className="prediction-fields">{PREDICTION_INPUTS.map(({ key, label, suffix, min, max, step }) => <label className="prediction-field" key={key}><span>{label}</span><div><input type="number" min={min} max={max} step={step} value={features[key]} onChange={(event) => update(key, event.target.value)} /><small>{suffix}</small></div></label>)}</div><button className="button-primary full-button" type="button" onClick={predict} disabled={running}><FiZap /> {running ? 'Analysing…' : 'Run XGBoost prediction'}</button></section><section className="content-card prediction-result-card"><p className="page-eyebrow">Latest result · {section ? `Section ${section}` : `Semester ${semester}`}</p>{result && selected ? <><div className="result-student"><Avatar initials={selected.initials} tone={result.risk === 'Low Risk' ? 'mint' : ''} /><div><h2>{selected.name}</h2><p>{selected.usn} · {scope}</p></div></div><div className={`result-risk ${riskKey(result.risk)}`}><span>Prediction</span><strong>{result.result}</strong></div><div className={`result-risk ${riskKey(result.risk)}`}><span>Risk level</span><strong>{result.risk}</strong><RiskBadge risk={result.risk} /></div><div className="result-note"><FiShield /><span>Support signal for this semester, not an automated decision.</span></div></> : <div className="empty-state"><FiActivity /><span>No students available in {scope}.</span></div>}</section></div></div>
+}
+
+export default function TeacherSemester() {
+  const { user, logout, token } = useAuth()
+  const apiToken = getAuthToken() || token
+  const apiSession = !DEMO_MODE && isApiToken(apiToken)
+  const { semester: semesterParam } = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const semester = Number(semesterParam)
+  const valid = Number.isInteger(semester) && semester >= 1 && semester <= 8
+  const routeParts = location.pathname.split('/')
+  const activeModule = routeParts[4] || 'dashboard'
+  const studentSubroute = routeParts[5] || ''
+  const isSectionRoute = activeModule === 'section'
+  const section = isSectionRoute ? decodeURIComponent(studentSubroute).trim().toUpperCase() : ''
+  const sectionModule = isSectionRoute ? routeParts[6] || 'dashboard' : ''
+  const sectionSubroute = isSectionRoute ? routeParts[7] || '' : ''
+  const [students, setStudents] = useState(() => valid ? scopedStudents(cloneDemoStudents(), user.department, semester).filter((student) => !section || student.section === section) : [])
+  const [sections, setSections] = useState(() => valid ? demoSections.filter((item) => item.department === user.department && Number(item.semester) === semester) : [])
+  const [announcements, setAnnouncements] = useState(() => valid ? (section ? scopedSectionAnnouncements(demoAnnouncements, user.department, semester, section) : scopedAnnouncements(demoAnnouncements, user.department, semester)) : [])
+  const [messages, setMessages] = useState(() => valid ? (section ? scopedSectionMessages(getDemoMessages(), user.department, semester, section) : scopedMessages(getDemoMessages(), user.department, semester)) : [])
+  const [remarks, setRemarks] = useState(() => valid ? demoRemarks.filter((remark) => cloneDemoStudents().some((student) => student.id === remark.studentId && student.department === user.department && student.semester === semester && (!section || student.section === section))) : [])
+  const [achievements, setAchievements] = useState(() => valid ? scopedAchievements(demoAchievements, user.department, semester, section) : [])
+  const [subjects, setSubjects] = useState(() => valid ? scopedSubjects(getDemoSubjects(), user.department, semester) : [])
+  const [toast, setToast] = useState('')
+  const [chatUnreadCount, setChatUnreadCount] = useState(null)
+
+  useEffect(() => {
+    if (!valid || !apiSession) return undefined
+    let mounted = true
+    Promise.allSettled([
+      api.getSections({ department: user.department, semester }),
+      api.getStudents({ department: user.department, semester, section: section || undefined, limit: 100 }),
+      api.getAnnouncements({ department: user.department, semester, section: section || undefined }),
+      api.getMessages({ department: user.department, semester, section: section || undefined }),
+      api.getRemarks({ department: user.department, semester, section: section || undefined }),
+      api.getAchievements({ department: user.department, semester, section: section || undefined }),
+      api.getSubjects({ department: user.department, semester }),
+    ]).then(([sectionResult, studentResult, announcementResult, messageResult, remarkResult, achievementResult, subjectResult]) => {
+      if (!mounted) return
+      if (sectionResult.status === 'fulfilled' && sectionResult.value?.data) setSections(sectionResult.value.data.filter((item) => item.department === user.department && Number(item.semester) === semester))
+      if (studentResult.status === 'fulfilled' && studentResult.value?.data) setStudents(studentResult.value.data.filter((student) => student.department === user.department && Number(student.semester) === semester && (!section || student.section === section)))
+      if (announcementResult.status === 'fulfilled' && announcementResult.value?.data) { const items = announcementResult.value.data.filter((item) => item.department === user.department && Number(item.semester) === semester && (!section || item.section === section)); if (items.length) setAnnouncements(items) }
+      if (messageResult.status === 'fulfilled' && messageResult.value?.data) { const items = messageResult.value.data.filter((item) => item.department === user.department && Number(item.semester) === semester && (!section || item.section === section)); setMessages(items) }
+      if (remarkResult.status === 'fulfilled' && remarkResult.value?.data) { const scopedStudentIds = new Set((studentResult.value?.data || []).filter((student) => student.department === user.department && Number(student.semester) === semester && (!section || student.section === section)).map((student) => Number(student.id))); setRemarks(remarkResult.value.data.filter((remark) => scopedStudentIds.has(Number(remark.studentId)))) }
+      if (achievementResult.status === 'fulfilled' && achievementResult.value?.data) { const scopedStudentIds = new Set((studentResult.value?.data || []).filter((student) => student.department === user.department && Number(student.semester) === semester && (!section || student.section === section)).map((student) => Number(student.id))); setAchievements(achievementResult.value.data.filter((achievement) => scopedStudentIds.has(Number(achievement.studentId)))) }
+      if (subjectResult.status === 'fulfilled' && subjectResult.value?.data) setSubjects(scopedSubjects(subjectResult.value.data, user.department, semester))
+    })
+    return () => { mounted = false }
+  }, [valid, user.department, semester, section, apiSession])
+
+  useEffect(() => {
+    if (!valid || apiSession) return
+    setStudents(scopedStudents(cloneDemoStudents(), user.department, semester).filter((student) => !section || student.section === section))
+    setAnnouncements(section ? scopedSectionAnnouncements(demoAnnouncements, user.department, semester, section) : scopedAnnouncements(demoAnnouncements, user.department, semester))
+    setMessages(section ? scopedSectionMessages(getDemoMessages(), user.department, semester, section) : scopedMessages(getDemoMessages(), user.department, semester))
+    setRemarks(demoRemarks.filter((remark) => cloneDemoStudents().some((student) => student.id === remark.studentId && student.department === user.department && Number(student.semester) === semester && (!section || student.section === section))))
+    setAchievements(scopedAchievements(demoAchievements, user.department, semester, section))
+    setSubjects(scopedSubjects(getDemoSubjects(), user.department, semester))
+  }, [valid, user.department, semester, section, apiSession])
+
+  useEffect(() => {
+    if (!valid || !apiSession) return undefined
+    let mounted = true
+    const refreshMessages = async () => {
+      try {
+        const response = await api.getMessages({ department: user.department, semester, section: section || undefined })
+        if (!mounted) return
+        const items = (response?.data || []).filter((item) => item.department === user.department && Number(item.semester) === semester && (!section || item.section === section))
+        setMessages(items)
+      } catch (error) {
+        console.warn('[messages] Teacher inbox refresh failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message })
+      }
+    }
+    const interval = window.setInterval(refreshMessages, 10000)
+    window.addEventListener('camps-messages-updated', refreshMessages)
+    return () => { mounted = false; window.clearInterval(interval); window.removeEventListener('camps-messages-updated', refreshMessages) }
+  }, [valid, user.department, semester, section, apiSession])
+
+  useEffect(() => {
+    setChatUnreadCount(null)
+  }, [semester, section])
+
+  useEffect(() => {
+    if (!valid || apiSession) return undefined
+    const syncSubjects = () => setSubjects(scopedSubjects(getDemoSubjects(), user.department, semester))
+    const syncMessages = () => setMessages(section ? scopedSectionMessages(getDemoMessages(), user.department, semester, section) : scopedMessages(getDemoMessages(), user.department, semester))
+    window.addEventListener('storage', syncSubjects)
+    window.addEventListener('camps-subjects-updated', syncSubjects)
+    window.addEventListener('storage', syncMessages)
+    window.addEventListener('camps-messages-updated', syncMessages)
+    return () => { window.removeEventListener('storage', syncSubjects); window.removeEventListener('camps-subjects-updated', syncSubjects); window.removeEventListener('storage', syncMessages); window.removeEventListener('camps-messages-updated', syncMessages) }
+  }, [valid, user.department, semester, section, apiSession])
+
+  if (!valid) return <main className="app-shell"><div className="dashboard-content invalid-route-page"><BackButton fallbackPath="/teacher/semesters" /><div className="empty-state" style={{ minHeight: '70vh' }}><span>Choose a semester from the teacher workspace.</span></div></div></main>
+  const notify = (message) => { setToast(message); window.setTimeout(() => setToast(''), 3000) }
+  const signOut = async () => { await logout(); navigate('/', { replace: true }) }
+  const sectionBase = section ? `/teacher/semester/${semester}/section/${encodeURIComponent(section)}` : `/teacher/semester/${semester}`
+  const navigateModule = (module, id) => {
+    if (module === 'student') {
+      const record = typeof id === 'object' ? id : students.find((item) => Number(item.id) === Number(id))
+      if (record?.usn) {
+        const params = new URLSearchParams({ semester: String(semester), section })
+        return navigate(`/teacher/student/${encodeURIComponent(record.usn)}?${params.toString()}`)
+      }
+      return navigate('/teacher/semesters')
+    }
+    if (module === 'newStudent') return navigate(`${sectionBase}/students/new`)
+    if (module === 'uploadStudents') return navigate(`${sectionBase}/students/upload`)
+    navigate(module === 'dashboard' ? sectionBase : `${sectionBase}/${module}`)
+  }
+  const saveNewStudent = async (input) => {
+    const scopedInput = { ...input, department: user.department, semester: Number(semester), section: section || input.section }
+    const academic = academicFields(scopedInput)
+    const outcome = predictAcademic(academic)
+    const localRecord = { ...scopedInput, ...academic, ...outcome, id: Date.now(), initials: scopedInput.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
+    let saved = localRecord
+    let refreshed = false
+    if (!DEMO_MODE && !apiSession) {
+      console.error('[students] Refusing to save because the teacher session has no API token.', { department: user.department, semester, section })
+      notify('Your secure session is unavailable. Please sign in again before saving to the database.')
+      return false
+    }
+    if (apiSession) {
+      try {
+        // The form can be submitted immediately after a restored session is
+        // rendered. Re-seed the interceptor with the current JWT before the
+        // protected create request so it cannot be sent without auth.
+        setAuthToken(apiToken)
+        const response = await api.createStudent(scopedInput, apiToken)
+        saved = response.data || localRecord
+        try {
+          const refreshedResponse = await api.getStudents({ department: user.department, semester, section, limit: 100 })
+          if (refreshedResponse.data) { setStudents(refreshedResponse.data); refreshed = true }
+        } catch (refreshError) {
+          console.warn('[students] Student was created, but the section roster refresh failed.', { message: refreshError.message, status: refreshError.response?.status })
+        }
+      } catch (error) {
+        console.error('[students] Section student creation failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: user.department, semester, section })
+        if (error.response?.status === 401) {
+          await logout()
+          navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
+          return false
+        }
+        if (error.response) { notify(error.response.data?.errors?.join(' ') || error.response.data?.message || 'Student could not be saved in this section'); return false }
+        notify('API unavailable · student was not saved to the database')
+        return false
+      }
+    }
+    if (!refreshed) setStudents((current) => [saved, ...current])
+    notify(`${saved.name} added to Semester ${semester}${section ? ` · Section ${section}` : ''}`)
+    navigateModule('students')
+    return true
+  }
+  const previewImportedStudents = async (file) => {
+    if (DEMO_MODE) return null
+    if (!apiSession) {
+      notify('Your secure session is unavailable. Please sign in again before importing students.')
+      return null
+    }
+    try {
+      setAuthToken(apiToken)
+      return await api.uploadStudents(file, false, { department: user.department, semester, section })
+    } catch (error) {
+      console.warn('[students-import] Server preview failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: user.department, semester, section })
+      if (error.response?.status === 401) {
+        await logout()
+        navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
+      }
+      return null
+    }
+  }
+  const saveImportedStudents = async (rows, file) => {
+    if (!DEMO_MODE && !apiSession) {
+      console.error('[students-import] Refusing to import without an API authentication token.', { department: user.department, semester, section })
+      notify('Your secure session is unavailable. Please sign in again before importing students.')
+      return false
+    }
+    const readyRows = rows.filter((row) => row.ready)
+    const scopedRows = readyRows.map((row) => ({ ...row, department: user.department, semester: Number(semester), section: section || row.section }))
+    const localRecords = scopedRows.map((row, index) => { const academic = academicFields(row); return { ...row, ...academic, ...predictAcademic(academic), id: Date.now() + index, initials: row.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() } })
+    let savedRecords = localRecords
+    let summary = importSummary(rows)
+    let refreshed = false
+    if (apiSession) {
+      try {
+        setAuthToken(apiToken)
+        const response = await api.uploadStudents(file, true, { department: user.department, semester, section })
+        savedRecords = (response.data || []).filter((row) => row.department === user.department && Number(row.semester) === semester && (!section || String(row.section).toUpperCase() === section))
+        summary = response.summary || { ...summary, imported: savedRecords.length }
+        try {
+          const refreshedResponse = await api.getStudents({ department: user.department, semester, section, limit: 100 })
+          if (refreshedResponse.data) { setStudents(refreshedResponse.data); refreshed = true }
+        } catch (refreshError) {
+          console.warn('[students-import] Import succeeded, but the section roster refresh failed.', { status: refreshError.response?.status, message: refreshError.message })
+        }
+      } catch (error) {
+        console.error('[students-import] Import request failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: user.department, semester, section })
+        if (error.response?.status === 401) {
+          await logout()
+          navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
+          return false
+        }
+        notify(error.response?.data?.errors?.slice(0, 3).join(' ') || error.response?.data?.message || 'The student import could not be completed.')
+        return false
+      }
+    }
+    if (!refreshed) setStudents((current) => [...savedRecords, ...current])
+    const imported = Number(summary.imported ?? savedRecords.length)
+    const skipped = Number(summary.skipped ?? Math.max(0, rows.length - imported))
+    const scopeSkipped = Number(summary.outOfScope || 0)
+    const duplicateSkipped = Number(summary.duplicates || 0)
+    const invalidSkipped = Number(summary.invalid || 0)
+    const detail = [
+      scopeSkipped ? `${scopeSkipped} from a different department, semester or section` : '',
+      duplicateSkipped ? `${duplicateSkipped} duplicate USN${duplicateSkipped === 1 ? '' : 's'}` : '',
+      invalidSkipped ? `${invalidSkipped} invalid row${invalidSkipped === 1 ? '' : 's'}` : '',
+    ].filter(Boolean).join('; ')
+    notify(`${imported} student${imported === 1 ? '' : 's'} imported successfully${skipped ? `. ${skipped} skipped${detail ? `: ${detail}` : '.'}` : '.'}`)
+    navigateModule('students')
+    return true
+  }
+  const createAchievement = async (input) => {
+    const student = students.find((item) => Number(item.id) === Number(input.studentId))
+    if (!student || !section || student.department !== user.department || Number(student.semester) !== semester || String(student.section).toUpperCase() !== section) {
+      notify('Choose a student from the current section.')
+      return false
+    }
+    const localRecord = { id: Date.now(), studentId: Number(student.id), studentName: student.name, usn: student.usn, department: user.department, semester, section, achievementType: input.achievementType, date: input.date, title: input.title.trim(), description: input.description.trim(), author: user.name, createdAt: new Date().toISOString() }
+    let saved = localRecord
+    if (apiSession) {
+      try { const response = await api.createAchievement({ ...input, studentId: Number(student.id), department: user.department, semester, section }); saved = response.data || localRecord } catch (error) { if (error.response) { notify(error.response.data?.message || 'Achievement could not be saved in this section'); return false } notify('API unavailable · achievement saved locally for this session') }
+    }
+    setAchievements((current) => [saved, ...current])
+    notify(`${student.name}'s achievement was added to Section ${section}`)
+    return true
+  }
+  const createSection = async (sectionName) => {
+    const localSection = { sectionId: `${user.department}-${semester}-${sectionName}-${Date.now()}`, department: user.department, semester, sectionName, studentCount: 0, createdAt: new Date().toISOString() }
+    let created = localSection
+    if (apiSession) {
+      try { const response = await api.createSection({ semester, sectionName }); created = response.data || localSection } catch (error) { notify(error.response?.data?.message || 'Could not create this section'); return false }
+    }
+    setSections((current) => current.some((item) => item.sectionName === created.sectionName) ? current : [...current, created])
+    notify(`Section ${created.sectionName} created for Semester ${semester}`)
+    return true
+  }
+  if (!isSectionRoute) return <SectionSelection user={user} semester={semester} sections={sections} students={students} onCreateSection={createSection} onLogout={signOut} />
+  const sectionStudents = students.filter((student) => student.section === section)
+  const sectionAnnouncements = announcements.filter((item) => item.section === section)
+  const sectionMessages = messages.filter((item) => item.section === section)
+  const unreadCount = messages.filter((item) => !item.read && item.receiverRole === user.role && Number(item.receiverId) === Number(user.id)).length
+  const sidebarUnreadCount = sectionModule === 'messages' && chatUnreadCount !== null ? chatUnreadCount : unreadCount
+  const sidebarModule = sectionModule === 'student' ? 'students' : sectionModule
+  let content
+  if (sectionModule === 'students' && sectionSubroute === 'new') content = <AddSemesterStudentPage user={user} semester={semester} section={section} students={sectionStudents} onCancel={() => navigateModule('students')} onSave={saveNewStudent} />
+  else if (sectionModule === 'students' && sectionSubroute === 'upload') content = <UploadSemesterStudentsPage user={user} semester={semester} section={section} students={sectionStudents} onCancel={() => navigateModule('students')} onImport={saveImportedStudents} onPreview={previewImportedStudents} />
+  else if (sectionModule === 'students') content = <SemesterStudents user={user} semester={semester} section={section} students={sectionStudents} onNavigate={navigateModule} />
+  else if (sectionModule === 'attendance') content = <SemesterAttendance user={user} semester={semester} section={section} students={sectionStudents} subjects={subjects} onNavigate={navigateModule} notify={notify} />
+  else if (sectionModule === 'marks') content = <SemesterMarks user={user} semester={semester} section={section} students={sectionStudents} subjects={subjects} onNavigate={navigateModule} notify={notify} />
+  else if (sectionModule === 'assignments') content = <SemesterAssignments user={user} semester={semester} section={section} students={sectionStudents} onNavigate={navigateModule} />
+  else if (sectionModule === 'achievements') content = <SemesterAchievements user={user} semester={semester} section={section} students={sectionStudents} achievements={achievements} onCreateAchievement={createAchievement} onNavigate={navigateModule} />
+  else if (sectionModule === 'remarks') content = <SemesterRemarks user={user} semester={semester} section={section} students={sectionStudents} remarks={remarks} onNavigate={navigateModule} />
+  else if (sectionModule === 'announcements') content = <SemesterAnnouncements user={user} semester={semester} section={section} announcements={sectionAnnouncements} setAnnouncements={setAnnouncements} notify={notify} />
+  else if (sectionModule === 'messages') content = <ChatView user={user} semester={semester} section={section} department={user.department} students={sectionStudents} initialMessages={sectionMessages} notify={notify} onUnreadCountChange={setChatUnreadCount} apiSession={apiSession} />
+  else if (sectionModule === 'analytics') content = <SemesterAnalytics user={user} semester={semester} section={section} students={sectionStudents} />
+  else if (sectionModule === 'predictions') content = <SemesterPredictions user={user} semester={semester} section={section} students={sectionStudents} notify={notify} />
+  else if (sectionModule === 'evaluation') content = <ModelEvaluation user={user} semester={semester} section={section} department={user.department} apiSession={apiSession} />
+  else content = <SemesterDashboard user={user} semester={semester} section={section} students={sectionStudents} announcements={sectionAnnouncements} onNavigate={navigateModule} />
+  return <TeacherShell user={user} semester={semester} section={section} activeModule={sidebarModule} onLogout={signOut} unreadCount={sidebarUnreadCount}>{content}{toast && <div className="toast"><FiCheckCircle /> {toast}</div>}</TeacherShell>
+}

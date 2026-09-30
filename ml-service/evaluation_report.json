@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-30T06:23:06.621743+00:00",
+  "status": "audit_only",
+  "modelLoaded": false,
+  "modelPath": "ml-service/model/camps_xgboost.joblib",
+  "modelName": "XGBoost classifier (not available)",
+  "positiveClass": "Pass",
+  "split": {
+    "testSize": 0.2,
+    "randomState": 42,
+    "trainRatio": 0.8,
+    "testRows": 200,
+    "trainRows": 800
+  },
+  "dataset": {
+    "path": "public/cse-semester-1-section-a-1000-students.xlsx",
+    "rowsBeforeCleaning": 1000,
+    "columns": 24,
+    "featureColumns": {
+      "attendancePercentage": "Attendance Percentage",
+      "averageInternalMarks": "Average Internal Marks",
+      "averageAssignmentScore": "Average Assignment Score",
+      "previousGpa": "Previous GPA",
+      "participationScore": "Participation Score"
+    },
+    "targetColumn": null,
+    "targetSource": "missing_proxy_only",
+    "targetIsProxy": true,
+    "idColumn": "USN",
+    "rowsDroppedForInvalidValues": 0,
+    "duplicateFeatureTargetRows": 0,
+    "duplicateIdRows": 0,
+    "duplicateRowsRemovedBeforeSplit": 0,
+    "rowsAfterCleaning": 1000,
+    "classDistribution": {
+      "Fail": 0,
+      "Pass": 1000
+    }
+  },
+  "metrics": null,
+  "trainMetrics": null,
+  "confusionMatrix": null,
+  "distributions": {
+    "actualTest": {
+      "Fail": 0,
+      "Pass": 200
+    },
+    "predictedTest": null
+  },
+  "accuracyComparison": [
+    {
+      "name": "XGBoost",
+      "accuracy": null
+    },
+    {
+      "name": "Majority baseline",
+      "accuracy": 100.0
+    }
+  ],
+  "checks": {
+    "accuracyIs100": false,
+    "duplicateRows": 0,
+    "trainTestOverlap": null,
+    "targetLeakageConcern": true,
+    "classImbalance": true
+  },
+  "warnings": [
+    "No observed Pass/Fail target exists in the workbook; labels are only the CAMPS fallback proxy and cannot support a real-world performance claim.",
+    "The available dataset contains only one target class. Precision, recall, F1, and a two-class confusion matrix are not meaningful.",
+    "Model file not found at ml-service/model/camps_xgboost.joblib."
+  ],
+  "analysis": [
+    "A trained model was not evaluated. Supply a labelled dataset with observed Pass/Fail outcomes and a trained XGBoost joblib artifact.",
+    "The majority baseline is shown only to make the dataset imbalance visible."
+  ],
+  "recommendations": [
+    "Add an observed target column such as Result or Outcome; do not use the same formula to create both labels and model predictions.",
+    "Collect enough Fail examples and evaluate with stratification or repeated cross-validation.",
+    "Keep identifiers out of model features and deduplicate records before splitting.",
+    "Report class-wise precision, recall, F1, and balanced accuracy rather than accuracy alone."
+  ],
+  "summary": "Evaluation is blocked because the repository currently contains a roster workbook without observed labels and no trained model artifact."
+}
