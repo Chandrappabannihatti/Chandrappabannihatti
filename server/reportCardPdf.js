@@ -171,7 +171,11 @@ export function renderReportCardPdf(report) {
     let y = 0
     doc.on('data', (chunk) => chunks.push(chunk))
     doc.on('error', reject)
-    doc.on('end', () => resolve(Buffer.concat(chunks)))
+    doc.on('end', () => {
+      const pdf = Buffer.concat(chunks)
+      if (pdf.length === 0 || pdf.subarray(0, 5).toString() !== '%PDF-') return reject(new Error('Report-card PDF generation returned an invalid document.'))
+      resolve(pdf)
+    })
 
     const newPage = () => {
       drawFooter(doc, report, pageNumber)

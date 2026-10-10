@@ -14,7 +14,7 @@
     "db:seed": "node server/scripts/seed-db.js",
     "model:evaluate": "python3 ml-service/evaluate_model.py",
     "model:train": "python3 ml-service/train_model.py",
-    "test:report-cards": "node --test server/reportCardData.test.js src/lib/clientReportCard.test.js"
+    "test:report-cards": "node --test server/reportCardData.test.js src/lib/clientReportCard.test.js src/lib/reportCardDownload.test.js"
   },
   "dependencies": {
     "archiver": "^8.0.0",

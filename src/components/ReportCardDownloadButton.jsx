@@ -1,23 +1,10 @@
 import { useState } from 'react'
 import { FiAlertCircle, FiDownload } from 'react-icons/fi'
 import api, { DEMO_MODE, getAuthToken, isApiToken } from '../lib/api'
+import { saveBlob, validateDownloadBlob } from '../lib/reportCardDownload'
 
 function safeFilePart(value) {
   return String(value || 'student').replace(/[^A-Za-z0-9_-]+/g, '_')
-}
-
-function saveBlob(blob, filename) {
-  if (!blob || Number(blob.size) === 0) throw new Error('The generated report is empty.')
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.rel = 'noopener'
-  link.style.display = 'none'
-  document.body.appendChild(link)
-  link.click()
-  window.setTimeout(() => link.remove(), 100)
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 async function errorMessage(error) {
@@ -62,8 +49,10 @@ export default function ReportCardDownloadButton({
       const token = getAuthToken()
       if (isApiToken(token)) {
         const response = bulk
-          ? await api.downloadReportCardsBulk(bulkStudentIds, scope)
-          : await api.downloadReportCard(studentId, scope)
+          ? await api.downloadReportCardsBulk(bulkStudentIds, scope, token)
+          : await api.downloadReportCard(studentId, scope, token)
+        const expected = bulk ? 'zip' : 'pdf'
+        await validateDownloadBlob(response.data, expected)
         const filename = bulk ? 'CAMPS_Report_Cards.zip' : `Report_Card_${safeFilePart(usn)}.pdf`
         saveBlob(response.data, filename)
       } else {
@@ -75,8 +64,12 @@ export default function ReportCardDownloadButton({
           })
           : [reportData || { student: { id: studentId, usn } }]
         if (localReports.some((report) => !report)) throw new Error('The selected student records are not available for a local report-card download.')
+        if (!bulk && reportData && (Number(reportData.student?.id) !== Number(studentId) || (usn && reportData.student?.usn && String(reportData.student.usn).toUpperCase() !== String(usn).toUpperCase()))) {
+          throw new Error('The selected report-card data does not match this student profile.')
+        }
         const { createClientReportCardPdf, createClientReportCardsZip } = await import('../lib/clientReportCard')
         const blob = bulk ? await createClientReportCardsZip(localReports) : await createClientReportCardPdf(localReports[0])
+        await validateDownloadBlob(blob, bulk ? 'zip' : 'pdf')
         saveBlob(blob, bulk ? 'CAMPS_Report_Cards.zip' : `Report_Card_${safeFilePart(usn)}.pdf`)
       }
       const completionMessage = bulk ? 'Report card downloads started.' : 'Report card download started.'

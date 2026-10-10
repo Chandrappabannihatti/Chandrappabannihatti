@@ -54,7 +54,8 @@ const client = axios.create({
 })
 
 client.interceptors.request.use((config) => {
-  const headers = authHeaders()
+  const hasAuthorization = Boolean(config.headers?.Authorization || config.headers?.authorization)
+  const headers = hasAuthorization ? {} : authHeaders()
   if (Object.keys(headers).length) {
     config.headers = config.headers || {}
     config.headers.Authorization = headers.Authorization
@@ -123,8 +124,8 @@ const api = {
   createAchievement: (payload) => unwrap(client.post('/achievements', payload)),
   predict: (payload) => unwrap(client.post('/ml/predict', payload)),
   getModelEvaluation: () => unwrap(client.get('/ml/evaluation')),
-  downloadReportCard: (studentId, params = {}) => client.get(`/report-cards/student/${studentId}`, { params, responseType: 'blob' }),
-  downloadReportCardsBulk: (studentIds, scope = {}) => client.post('/report-cards/bulk', { studentIds, scope }, { responseType: 'blob' }),
+  downloadReportCard: (studentId, params = {}, token = '') => client.get(`/report-cards/student/${studentId}`, { params, responseType: 'blob', headers: authHeaders(token) }),
+  downloadReportCardsBulk: (studentIds, scope = {}, token = '') => client.post('/report-cards/bulk', { studentIds, scope }, { responseType: 'blob', headers: authHeaders(token) }),
 }
 
 export default api
