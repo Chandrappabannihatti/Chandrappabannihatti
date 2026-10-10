@@ -16,11 +16,7 @@ function dateOrNull(value) {
 }
 
 function academicYear() {
-  const configured = cleanString(process.env.ACADEMIC_YEAR)
-  if (configured) return configured
-  const now = new Date()
-  const startYear = now.getUTCMonth() >= 5 ? now.getUTCFullYear() : now.getUTCFullYear() - 1
-  return `${startYear}-${String(startYear + 1).slice(-2)}`
+  return cleanString(process.env.ACADEMIC_YEAR) || null
 }
 
 function mapStudent(row) {
@@ -180,9 +176,9 @@ export async function loadReportCard({ studentId, user, scope = {}, useDemoData,
     academicYear: academicYear(),
     generatedAt: new Date().toISOString(),
     college: {
-      name: process.env.COLLEGE_NAME || 'PES Institute of Technology and Management',
-      location: process.env.COLLEGE_LOCATION || 'Shivamogga, Karnataka',
-      logoPath: process.env.COLLEGE_LOGO_PATH || '',
+      name: cleanString(process.env.COLLEGE_NAME) || null,
+      location: cleanString(process.env.COLLEGE_LOCATION) || null,
+      logoPath: cleanString(process.env.COLLEGE_LOGO_PATH) || null,
     },
   }
 }

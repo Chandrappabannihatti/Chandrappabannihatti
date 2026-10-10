@@ -2363,6 +2363,7 @@ body,
 .page-actions-stack { display: flex; align-items: flex-end; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
 .report-card-download-control { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .report-card-download-control > button:disabled { cursor: wait; opacity: .66; transform: none; }
+.report-card-download-success { display: inline-flex; align-items: center; max-width: 300px; color: #3c8a70; font-size: 8px; line-height: 1.35; }
 .report-card-download-error { display: inline-flex; align-items: center; gap: 4px; max-width: 300px; color: #ad5d4e; font-size: 8px; line-height: 1.35; }
 .report-card-download-error svg { flex: 0 0 auto; }
 .profile-hero-actions { display: flex; align-items: flex-end; gap: 16px; }

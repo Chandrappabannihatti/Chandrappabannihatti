@@ -36,7 +36,8 @@ function compactNumber(value, suffix = '', decimals = 1, fallback = 'Not recorde
 }
 
 function formatDate(value, includeTime = false) {
-  const date = value ? new Date(value) : new Date()
+  if (value === null || value === undefined || String(value).trim() === '') return 'Not recorded'
+  const date = new Date(value)
   if (Number.isNaN(date.getTime())) return textValue(value)
   return new Intl.DateTimeFormat('en-IN', includeTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' }).format(date)
 }
@@ -48,15 +49,14 @@ function drawText(doc, value, x, y, width, options = {}) {
 }
 
 function drawLogo(doc, report, x, y, size) {
-  if (report.college.logoPath && existsSync(report.college.logoPath)) {
+  if (report.college?.logoPath && existsSync(report.college.logoPath)) {
     try {
       doc.image(report.college.logoPath, x, y, { fit: [size, size], align: 'center', valign: 'center' })
       return
-    } catch { /* use the safe vector mark below */ }
+    } catch { /* show the unavailable state below */ }
   }
-  doc.roundedRect(x, y, size, size, 10).fill(COLORS.teal)
-  doc.roundedRect(x + 5, y + 5, size - 10, size - 10, 7).lineWidth(1).strokeColor('#B8E3D6').stroke()
-  doc.font('Helvetica-Bold').fontSize(15).fillColor(COLORS.white).text('PES', x, y + 17, { width: size, align: 'center' })
+  doc.roundedRect(x, y, size, size, 10).fillAndStroke(COLORS.teal, COLORS.teal)
+  doc.font('Helvetica-Bold').fontSize(7).fillColor(COLORS.white).text('Logo not recorded', x + 7, y + 22, { width: size - 14, align: 'center' })
 }
 
 function drawSectionHeading(doc, title, y, subtitle = '') {

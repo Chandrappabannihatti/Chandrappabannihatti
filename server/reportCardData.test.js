@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { loadReportCard } from './reportCardData.js'
 import { renderReportCardPdf, reportCardFilename } from './reportCardPdf.js'
 
-function request(user, scope = {}, requireTeacherScope = user.role === 'teacher') {
+function request(user, scope = {}, requireTeacherScope = user.role === 'teacher', studentId = 4) {
   return loadReportCard({
-    studentId: 4,
+    studentId,
     user,
     scope,
     useDemoData: true,
@@ -39,6 +39,38 @@ test('students and parents can only load the linked record', async () => {
   assert.equal(parentReport.student.id, 4)
   await assert.rejects(() => request({ role: 'student', usn: '4PM21CS001' }, {}, false), (error) => error.status === 403)
   await assert.rejects(() => request({ role: 'parent', usn: '4PM21CS001' }, {}, false), (error) => error.status === 403)
+})
+
+test('keeps separate student identities when loading multiple records', async () => {
+  const ishita = await request({ role: 'teacher', department: 'CSE' }, { department: 'CSE', semester: 7, section: 'B' }, true, 4)
+  const rohan = await request({ role: 'teacher', department: 'CSE' }, { department: 'CSE', semester: 7, section: 'B' }, true, 5)
+  assert.equal(ishita.student.usn, '4PM21CS033')
+  assert.equal(ishita.student.name, 'Ishita Kulkarni')
+  assert.equal(rohan.student.usn, '4PM21CS041')
+  assert.equal(rohan.student.name, 'Rohan Desai')
+  assert.notEqual(ishita.student.usn, rohan.student.usn)
+})
+
+test('renders incomplete records without inferring unavailable fields', async () => {
+  const report = await request({ role: 'teacher', department: 'CSE' }, { department: 'CSE', semester: 7, section: 'B' })
+  const incomplete = {
+    ...report,
+    academicYear: null,
+    college: { name: null, location: null, logoPath: null },
+    student: { id: report.student.id, usn: report.student.usn, name: report.student.name, department: report.student.department, semester: report.student.semester, section: report.student.section, attendancePercentage: null, averageInternalMarks: null, averageAssignmentScore: null, previousGpa: null, currentGpa: null, participationScore: null, result: null, risk: null },
+    subjects: [{ subjectCode: 'CS701', subjectName: 'Machine Learning', credits: null, attendancePercentage: null, averageInternalMarks: null, assignmentScore: null }],
+    remarks: [{ label: 'Teacher remark', note: 'No date supplied.', date: null }],
+    achievements: [{ achievementType: 'Academic', title: 'Record pending', description: null, date: null }],
+    prediction: { result: null, risk: null, modelVersion: null },
+  }
+  const pdf = await renderReportCardPdf(incomplete)
+  assert.equal(pdf.subarray(0, 8).toString(), '%PDF-1.3')
+  assert.ok(pdf.length > 2000)
+})
+
+test('rejects invalid or missing backend records', async () => {
+  await assert.rejects(() => request({ role: 'teacher', department: 'CSE' }, { department: 'CSE', semester: 7, section: 'B' }, true, 0), (error) => error.status === 422)
+  await assert.rejects(() => request({ role: 'teacher', department: 'CSE' }, { department: 'CSE', semester: 7, section: 'B' }, true, 99999), (error) => error.status === 404)
 })
 
 test('renders a valid PDF filename and document header', async () => {
