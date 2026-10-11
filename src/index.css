@@ -220,7 +220,7 @@ a { color: inherit; text-decoration: none; }
 
 /* App dashboard */
 .dashboard-layout { display: flex; min-height: 100vh; }
-.dashboard-sidebar { position: fixed; z-index: 20; display: flex; flex-direction: column; width: 254px; height: 100vh; padding: 25px 16px 19px; color: #fff; background: var(--ink); }
+.dashboard-sidebar { position: fixed; z-index: 20; display: flex; flex-direction: column; width: 254px; height: 100vh; overflow-y: auto; padding: 25px 16px 19px; color: #fff; background: var(--ink); scrollbar-color: rgba(188,231,215,.35) transparent; scrollbar-width: thin; }
 .dashboard-sidebar .brand-wordmark strong { color: #fff; }
 .dashboard-sidebar .brand-wordmark small { color: #93a3ad; }
 .sidebar-close { display: none; }
@@ -237,6 +237,10 @@ a { color: inherit; text-decoration: none; }
 .sidebar-help p { margin: 0; color: #afc2c5; font-size: 10px; line-height: 1.5; }
 .sidebar-help strong { display: block; margin-bottom: 6px; color: var(--mint); font-size: 11px; }
 .sidebar-profile { display: flex; align-items: center; gap: 9px; border-top: 1px solid rgba(255,255,255,.1); padding: 17px 6px 0; }
+.teacher-sidebar-profile { flex: 0 0 auto; margin: 0; border: 1px solid rgba(188,231,215,.16); border-radius: 14px; padding: 10px; background: rgba(255,255,255,.05); transition: border-color .18s ease, background-color .18s ease; }
+.teacher-sidebar-profile:hover { border-color: rgba(188,231,215,.32); background: rgba(255,255,255,.08); }
+.teacher-sidebar-logout { flex: 0 0 auto; }
+.teacher-sidebar-logout:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
 .avatar { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 11px; color: var(--ink); background: var(--coral); font-size: 10px; font-weight: 800; }
 .avatar.mint { background: var(--mint); }
 .avatar.sky { background: var(--sky); }

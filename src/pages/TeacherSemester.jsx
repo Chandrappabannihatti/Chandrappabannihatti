@@ -184,7 +184,7 @@ function TeacherShell({ user, semester, section = '', activeModule, children, on
       <div className="sidebar-nav">{teacherNav.map(({ key, label, icon: Icon }) => <button key={key} type="button" className={activeModule === key ? 'active' : ''} onClick={() => goTo(key)}><Icon /><span>{label}</span>{key === 'messages' && unreadCount > 0 && <span className="sidebar-badge">{unreadCount}</span>}</button>)}</div>
       <p className="sidebar-section-label teacher-account-label">Account</p>
       <div className="sidebar-nav teacher-account-nav"><button type="button" onClick={() => goTo('profile')}><FiUser /><span>Profile</span></button><button type="button" onClick={() => goTo('settings')}><FiSettings /><span>Settings</span></button></div>
-      <div className="sidebar-bottom"><div className="sidebar-help"><strong><FiHeart style={{ verticalAlign: 'middle', marginRight: 5 }} /> Human-first insight</strong><p>Use every signal as a starting point for a better conversation.</p></div><div className="sidebar-profile"><Avatar initials={user.initials || 'AR'} /><div className="profile-meta"><strong>{user.name}</strong><span>{user.department} · Sem {semester}{section ? ` · Sec ${section}` : ''}</span></div><button className="logout-btn" type="button" onClick={onLogout} aria-label="Sign out"><FiLogOut /></button></div></div>
+      <div className="sidebar-bottom teacher-sidebar-bottom"><div className="sidebar-help"><strong><FiHeart style={{ verticalAlign: 'middle', marginRight: 5 }} /> Human-first insight</strong><p>Use every signal as a starting point for a better conversation.</p></div><div className="sidebar-profile teacher-sidebar-profile"><Avatar initials={user.initials || 'AR'} /><div className="profile-meta"><strong>{user.name}</strong><span>Teacher · {user.department} · Sem {semester}{section ? ` · Sec ${section}` : ''}</span></div><button className="logout-btn teacher-sidebar-logout" type="button" onClick={onLogout} aria-label="Log out of CAMPS" title="Log out"><FiLogOut /></button></div></div>
     </aside>
     <main className="dashboard-main"><header className="dashboard-topbar"><div className="dashboard-topbar-leading"><div className="breadcrumb"><button className="mobile-sidebar-trigger" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><FiMenu /></button><span>CAMPS</span><FiChevronRight /><strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong></div></div><div className="topbar-actions"><button className="topbar-icon" type="button" aria-label="Secure workspace"><FiShield /></button><button className="topbar-icon" type="button" aria-label="Notifications"><FiBell />{unreadCount > 0 && <i className="notification-dot" />}</button><span className="topbar-divider" /><div className="topbar-user"><Avatar initials={user.initials || 'AR'} /><div className="topbar-user-meta"><strong>{user.name}</strong><span>{user.department} · Semester {semester}</span></div></div></div></header><div className="dashboard-page-back"><BackButton fallbackPath={backFallback} minHistoryIndex={2} /></div>{children}</main>
   </div>
@@ -642,7 +642,10 @@ export function TeacherStudentProfile() {
 
   const semester = Number(student?.semester) || requestedSemester || 1
   const section = student?.section || requestedSection
-  const signOut = async () => { await logout(); navigate('/', { replace: true }) }
+  const signOut = async () => {
+    await logout()
+    navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher`, { replace: true })
+  }
   const onNavigate = (module) => {
     const target = section ? `/teacher/semester/${semester}/section/${encodeURIComponent(section)}` : `/teacher/semester/${semester}`
     navigate(module === 'dashboard' ? target : `${target}/${module}`)
@@ -791,7 +794,10 @@ export default function TeacherSemester() {
 
   if (!valid) return <main className="app-shell"><div className="dashboard-content invalid-route-page"><BackButton fallbackPath="/teacher/semesters" /><div className="empty-state" style={{ minHeight: '70vh' }}><span>Choose a semester from the teacher workspace.</span></div></div></main>
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(''), 3000) }
-  const signOut = async () => { await logout(); navigate('/', { replace: true }) }
+  const signOut = async () => {
+    await logout()
+    navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher`, { replace: true })
+  }
   const sectionBase = section ? `/teacher/semester/${semester}/section/${encodeURIComponent(section)}` : `/teacher/semester/${semester}`
   const navigateModule = (module, id) => {
     if (module === 'student') {
