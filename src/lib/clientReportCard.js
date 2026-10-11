@@ -181,8 +181,10 @@ function drawMetric(page, x, top, width, label, fieldValue, bold, accent) {
   textTop(page, fieldValue, x + 14, top + 27, bold, 15, COLORS.navy, width - 20, 1)
 }
 
-function drawSubjectTable(page, subjects, top, bold, regular) {
+function drawSubjectTable(page, subjects, top, bold, regular, options = {}) {
   const columns = [['CODE', 58], ['SUBJECT', 157], ['CREDITS', 57], ['ATTENDANCE', 84], ['INTERNAL', 78], ['ASSIGNMENTS', 81]]
+  const rowHeight = options.rowHeight || 28
+  const compact = rowHeight <= 20
   rectangle(page, PAGE.margin, top, CONTENT_WIDTH, 26, { color: COLORS.teal })
   let x = PAGE.margin
   columns.forEach(([label, width]) => { textTop(page, label, x + 6, top + 9, bold, 7, COLORS.white, width - 12, 1); x += width })
@@ -194,7 +196,6 @@ function drawSubjectTable(page, subjects, top, bold, regular) {
     return cursor + 35
   }
   rows.forEach((subject, index) => {
-    const rowHeight = 34
     rectangle(page, PAGE.margin, cursor, CONTENT_WIDTH, rowHeight, { color: index % 2 ? COLORS.soft : COLORS.white, borderColor: COLORS.border, borderWidth: 0.5 })
     let cellX = PAGE.margin
     const values = [
@@ -207,14 +208,18 @@ function drawSubjectTable(page, subjects, top, bold, regular) {
     ]
     columns.forEach(([, width], valueIndex) => {
       const font = valueIndex === 1 ? regular : bold
-      const size = valueIndex === 1 ? 8.2 : 8
+      const size = compact ? 7.1 : (valueIndex === 1 ? 8.2 : 8)
       const textWidth = font.widthOfTextAtSize(values[valueIndex], size)
       const textX = valueIndex === 1 ? cellX + 6 : cellX + Math.max(6, (width - textWidth) / 2)
-      textTop(page, values[valueIndex], textX, cursor + (valueIndex === 1 ? 8 : 11), font, size, COLORS.ink, width - 12, valueIndex === 1 ? 2 : 1)
+      textTop(page, values[valueIndex], textX, cursor + (compact ? (valueIndex === 1 ? 4 : 5) : (valueIndex === 1 ? 8 : 11)), font, size, COLORS.ink, width - 12, compact || valueIndex !== 1 ? 1 : 2)
       cellX += width
     })
     cursor += rowHeight
   })
+  if (options.additionalCount) {
+    textTop(page, `+ ${options.additionalCount} additional subject record(s) available in CAMPS.`, PAGE.margin, cursor + 1, regular, 7.5, COLORS.muted, CONTENT_WIDTH, 1)
+    cursor += 12
+  }
   return cursor
 }
 
@@ -223,27 +228,31 @@ function recordBody(item, kind) {
   return value(item.note)
 }
 
-function drawRecords(page, title, records, top, bold, regular, kind, empty) {
+function drawRecords(page, title, records, top, bold, regular, kind, empty, options = {}) {
+  const compact = options.compact === true
+  const cardHeight = compact ? 37 : 45
+  const cardGap = compact ? 3 : 5
+  const emptyHeight = compact ? 30 : 35
   let cursor = drawSectionTitle(page, title, '', top, bold, regular)
   const items = records || []
   if (!items.length) {
-    roundedRect(page, PAGE.margin, cursor, CONTENT_WIDTH, 38, { color: COLORS.soft, borderColor: COLORS.border })
-    textTop(page, empty || 'No records have been recorded for this student.', PAGE.margin + 12, cursor + 13, regular, 8.5, COLORS.muted, CONTENT_WIDTH - 24, 1)
-    return cursor + 50
+    roundedRect(page, PAGE.margin, cursor, CONTENT_WIDTH, emptyHeight, { color: COLORS.soft, borderColor: COLORS.border })
+    textTop(page, empty || 'No records have been recorded for this student.', PAGE.margin + 12, cursor + (compact ? 10 : 13), regular, compact ? 7.8 : 8.5, COLORS.muted, CONTENT_WIDTH - 24, 1)
+    return cursor + (compact ? 39 : 47)
   }
-  const visible = items.slice(0, 4)
+  const visible = items.slice(0, options.limit || (compact ? 1 : 2))
   visible.forEach((item) => {
     const heading = kind === 'achievement' ? `${value(item.achievementType, 'Achievement')} · ${dateLabel(item.date)}` : `${value(item.label, 'Teacher remark')} · ${dateLabel(item.date)}`
     const body = recordBody(item, kind)
-    roundedRect(page, PAGE.margin, cursor, CONTENT_WIDTH, 51, { color: COLORS.white, borderColor: COLORS.border })
-    page.drawCircle({ x: PAGE.margin + 14, y: PAGE.height - cursor - 17, size: 3.5, color: kind === 'achievement' ? COLORS.teal : COLORS.gold })
-    textTop(page, heading, PAGE.margin + 26, cursor + 10, bold, 8, COLORS.navy, CONTENT_WIDTH - 38, 1)
-    textTop(page, body, PAGE.margin + 26, cursor + 25, regular, 8.5, COLORS.ink, CONTENT_WIDTH - 38, 1)
-    cursor += 58
+    roundedRect(page, PAGE.margin, cursor, CONTENT_WIDTH, cardHeight, { color: COLORS.white, borderColor: COLORS.border })
+    page.drawCircle({ x: PAGE.margin + 14, y: PAGE.height - cursor - (compact ? 14 : 17), size: compact ? 3 : 3.5, color: kind === 'achievement' ? COLORS.teal : COLORS.gold })
+    textTop(page, heading, PAGE.margin + 26, cursor + (compact ? 7 : 10), bold, compact ? 7.5 : 8, COLORS.navy, CONTENT_WIDTH - 38, 1)
+    textTop(page, body, PAGE.margin + 26, cursor + (compact ? 21 : 25), regular, compact ? 7.5 : 8.5, COLORS.ink, CONTENT_WIDTH - 38, 1)
+    cursor += cardHeight + cardGap
   })
   if (items.length > visible.length) {
     textTop(page, `+ ${items.length - visible.length} additional record(s) available in CAMPS.`, PAGE.margin, cursor + 1, regular, 7.5, COLORS.muted, CONTENT_WIDTH, 1)
-    cursor += 16
+    cursor += compact ? 9 : 12
   }
   return cursor
 }
@@ -260,10 +269,11 @@ function drawPrediction(page, report, top, bold, regular) {
   return top + 91
 }
 
-function drawAuthentication(page, report, top, bold, regular) {
+function drawAuthentication(page, report, top, bold, regular, options = {}) {
   const signature = report?.teacherSignature || report?.teacher?.signature || report?.signature?.teacher
   const signatureDate = report?.signatureDate || report?.signature?.date
-  roundedRect(page, PAGE.margin, top, CONTENT_WIDTH, 105, { color: COLORS.blueLight, borderColor: COLORS.border })
+  const height = options.compact ? 94 : 100
+  roundedRect(page, PAGE.margin, top, CONTENT_WIDTH, height, { color: COLORS.blueLight, borderColor: COLORS.border })
   textTop(page, 'AUTHENTICATION AND SIGN-OFF', PAGE.margin + 15, top + 14, bold, 9, COLORS.navy, 300, 1)
   textTop(page, 'This report is generated from the CAMPS academic record. Missing fields are marked “Not recorded” and have not been inferred.', PAGE.margin + 15, top + 33, regular, 8, COLORS.muted, 280, 3)
   textTop(page, 'Teacher signature', PAGE.margin + 340, top + 31, bold, 8, COLORS.navy, 145, 1)
@@ -324,20 +334,40 @@ export async function createClientReportCardPdf(reportInput = {}) {
   })
   top += 4
 
-  const subjectHeight = report.subjects?.length ? 26 + report.subjects.length * 34 : 61
-  ensure(34 + subjectHeight + 108)
-  top = drawSectionTitle(page, 'Subject-wise marks', 'Actual subject records for this student and semester', top, bold, regular)
-  top = drawSubjectTable(page, report.subjects, top, bold, regular) + 19
+  const subjects = Array.isArray(report.subjects) ? report.subjects : []
+  const compactSubjectLayout = subjects.length > 8
+  if (compactSubjectLayout) {
+    // Keep dense schedules within the two-page print limit while retaining
+    // actual rows. Overflow is called out explicitly instead of fabricated.
+    top = drawSectionTitle(page, 'Subject-wise marks', 'Actual subject records for this student and semester', top, bold, regular)
+    top = drawSubjectTable(page, subjects.slice(0, 4), top, bold, regular, { rowHeight: 17 }) + 6
+    newPage()
+    top = drawSectionTitle(page, 'Subject-wise marks continued', 'Remaining actual subject records', top, bold, regular)
+    const continuationRows = subjects.slice(4, 20)
+    top = drawSubjectTable(page, continuationRows, top, bold, regular, {
+      rowHeight: 17,
+      additionalCount: Math.max(0, subjects.length - 4 - continuationRows.length),
+    }) + 6
+    top = drawPrediction(page, report, top, bold, regular) + 10
+    top = drawRecords(page, 'Teacher remarks', report.remarks, top, bold, regular, 'remark', 'No visible teacher remarks have been recorded for this student.', { compact: true, limit: 1 })
+    top = drawRecords(page, 'Achievements', report.achievements, top, bold, regular, 'achievement', 'No achievements have been recorded for this student.', { compact: true, limit: 1 })
+    drawAuthentication(page, report, top, bold, regular, { compact: true })
+  } else {
+    const subjectHeight = subjects.length ? 26 + subjects.length * 28 : 61
+    ensure(34 + subjectHeight + 108)
+    top = drawSectionTitle(page, 'Subject-wise marks', 'Actual subject records for this student and semester', top, bold, regular)
+    top = drawSubjectTable(page, subjects, top, bold, regular, { rowHeight: 28 }) + 19
 
-  ensure(108)
-  top = drawPrediction(page, report, top, bold, regular) + 20
+    ensure(108)
+    top = drawPrediction(page, report, top, bold, regular) + 20
 
-  ensure(80)
-  top = drawRecords(page, 'Teacher remarks', report.remarks, top, bold, regular, 'remark', 'No visible teacher remarks have been recorded for this student.')
-  ensure(80)
-  top = drawRecords(page, 'Achievements', report.achievements, top, bold, regular, 'achievement', 'No achievements have been recorded for this student.')
-  ensure(118)
-  drawAuthentication(page, report, top, bold, regular)
+    ensure(80)
+    top = drawRecords(page, 'Teacher remarks', report.remarks, top, bold, regular, 'remark', 'No visible teacher remarks have been recorded for this student.', { compact: true, limit: 1 })
+    ensure(80)
+    top = drawRecords(page, 'Achievements', report.achievements, top, bold, regular, 'achievement', 'No achievements have been recorded for this student.', { compact: true, limit: 1 })
+    ensure(118)
+    drawAuthentication(page, report, top, bold, regular)
+  }
   drawFooter(page, report, regular, pageNumber)
   const bytes = await pdf.save()
   return new Blob([bytes], { type: 'application/pdf' })

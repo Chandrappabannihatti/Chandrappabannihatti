@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { PDFDocument } from 'pdf-lib'
 import { loadReportCard } from './reportCardData.js'
 import { renderReportCardPdf, reportCardFilename } from './reportCardPdf.js'
 
@@ -83,4 +84,24 @@ test('renders a valid PDF filename and document header', async () => {
   assert.equal(pdf.subarray(0, 8).toString(), '%PDF-1.3')
   assert.match(pdf.subarray(-12).toString(), /\n%%EOF\n$/)
   assert.ok(pdf.length > 2000)
+})
+
+test('keeps dense report cards within the two-page maximum', async () => {
+  const report = await request({ role: 'teacher', department: 'CSE' }, { department: 'CSE', semester: 7, section: 'B' })
+  const denseReport = {
+    ...report,
+    subjects: Array.from({ length: 20 }, (_, index) => ({
+      subjectCode: `CS${701 + index}`,
+      subjectName: `Subject ${index + 1}`,
+      credits: 3,
+      attendancePercentage: 85,
+      averageInternalMarks: 75,
+      assignmentScore: 80,
+    })),
+    remarks: Array.from({ length: 6 }, () => ({ label: 'Teacher remark', note: 'Continue consistent academic work.', date: '2026-08-20' })),
+    achievements: Array.from({ length: 6 }, () => ({ achievementType: 'Academic', title: 'Achievement', description: 'Recorded achievement.', date: '2026-08-20' })),
+  }
+  const pdf = await renderReportCardPdf(denseReport)
+  const document = await PDFDocument.load(pdf)
+  assert.ok(document.getPageCount() <= 2)
 })

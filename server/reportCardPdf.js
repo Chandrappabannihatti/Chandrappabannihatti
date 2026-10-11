@@ -156,11 +156,14 @@ function drawPredictionPanel(doc, report, y) {
   return y + height
 }
 
-function subjectTableHeight(report) {
-  return report?.subjects?.length ? 26 + report.subjects.length * 34 : 61
+function subjectTableHeight(report, options = {}) {
+  const rows = options.rows || report?.subjects || []
+  const rowHeight = options.rowHeight || 28
+  const additionalHeight = options.additionalCount ? 12 : 0
+  return rows.length ? 26 + rows.length * rowHeight + additionalHeight : 61
 }
 
-function drawSubjectTable(doc, report, y) {
+function drawSubjectTable(doc, report, y, options = {}) {
   const columns = [
     { key: 'subjectCode', label: 'CODE', width: 58 },
     { key: 'subjectName', label: 'SUBJECT', width: 157 },
@@ -169,6 +172,8 @@ function drawSubjectTable(doc, report, y) {
     { key: 'averageInternalMarks', label: 'INTERNAL', width: 78 },
     { key: 'assignmentScore', label: 'ASSIGNMENTS', width: 81 },
   ]
+  const rowHeight = options.rowHeight || 28
+  const compact = rowHeight <= 20
   const headerHeight = 26
   doc.roundedRect(MARGIN, y, CONTENT_WIDTH, headerHeight, 6).fill(COLORS.teal)
   let x = MARGIN
@@ -177,7 +182,7 @@ function drawSubjectTable(doc, report, y) {
     x += column.width
   })
   y += headerHeight
-  const rows = report?.subjects || []
+  const rows = options.rows || report?.subjects || []
   if (!rows.length) {
     const height = 35
     doc.rect(MARGIN, y, CONTENT_WIDTH, height).fillAndStroke(COLORS.soft, COLORS.border)
@@ -185,7 +190,6 @@ function drawSubjectTable(doc, report, y) {
     return y + height
   }
   rows.forEach((subject, index) => {
-    const rowHeight = 34
     doc.rect(MARGIN, y, CONTENT_WIDTH, rowHeight).fillAndStroke(index % 2 ? COLORS.soft : COLORS.white, COLORS.border)
     let cellX = MARGIN
     columns.forEach((column) => {
@@ -196,11 +200,17 @@ function drawSubjectTable(doc, report, y) {
           ? compactNumber(raw, '%', 1)
           : textValue(raw)
       const isName = column.key === 'subjectName'
-      doc.font(isName ? 'Helvetica' : 'Helvetica-Bold').fontSize(isName ? 8.2 : 8).fillColor(COLORS.ink).text(value, cellX + 6, y + (isName ? 8 : 11), { width: column.width - 12, height: rowHeight - 10, lineGap: 0, align: isName ? 'left' : 'center', ellipsis: true })
+      const fontSize = isName ? (compact ? 7.1 : 8.2) : (compact ? 7.1 : 8)
+      const textTop = compact ? (isName ? 4 : 5) : (isName ? 8 : 11)
+      doc.font(isName ? 'Helvetica' : 'Helvetica-Bold').fontSize(fontSize).fillColor(COLORS.ink).text(value, cellX + 6, y + textTop, { width: column.width - 12, height: rowHeight - (compact ? 4 : 10), lineGap: 0, align: isName ? 'left' : 'center', ellipsis: true })
       cellX += column.width
     })
     y += rowHeight
   })
+  if (options.additionalCount) {
+    doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(COLORS.muted).text(`+ ${options.additionalCount} additional subject record(s) available in CAMPS.`, MARGIN, y + 1, { width: CONTENT_WIDTH, ellipsis: true })
+    y += 12
+  }
   return y
 }
 
@@ -210,35 +220,38 @@ function recordBody(item, kind) {
 }
 
 function drawRecordList(doc, title, items, y, options = {}) {
+  const compact = options.compact === true
+  const cardHeight = compact ? 37 : 45
+  const cardGap = compact ? 3 : 5
+  const emptyHeight = compact ? 30 : 35
   y = drawSectionHeading(doc, title, y, options.subtitle || '')
   const list = Array.isArray(items) ? items : []
   if (!list.length) {
-    doc.roundedRect(MARGIN, y, CONTENT_WIDTH, 38, 7).fillAndStroke(COLORS.soft, COLORS.border)
-    doc.font('Helvetica-Oblique').fontSize(8.5).fillColor(COLORS.muted).text(options.empty || 'No records have been recorded for this student.', MARGIN + 12, y + 13, { width: CONTENT_WIDTH - 24 })
-    return y + 50
+    doc.roundedRect(MARGIN, y, CONTENT_WIDTH, emptyHeight, 7).fillAndStroke(COLORS.soft, COLORS.border)
+    doc.font('Helvetica-Oblique').fontSize(compact ? 7.8 : 8.5).fillColor(COLORS.muted).text(options.empty || 'No records have been recorded for this student.', MARGIN + 12, y + (compact ? 10 : 13), { width: CONTENT_WIDTH - 24, height: emptyHeight - 12, ellipsis: true })
+    return y + (compact ? 39 : 47)
   }
-  const visible = list.slice(0, options.limit || 4)
+  const visible = list.slice(0, options.limit || (compact ? 1 : 2))
   visible.forEach((item) => {
     const heading = options.kind === 'achievement'
       ? `${textValue(item.achievementType, 'Achievement')} · ${formatDate(item.date)}`
       : `${textValue(item.label, 'Teacher remark')} · ${formatDate(item.date)}`
     const body = recordBody(item, options.kind)
-    const height = 51
-    doc.roundedRect(MARGIN, y, CONTENT_WIDTH, height, 7).fillAndStroke(COLORS.white, COLORS.border)
-    doc.circle(MARGIN + 14, y + 17, 3.5).fill(options.kind === 'achievement' ? COLORS.teal : COLORS.gold)
-    doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.navy).text(heading, MARGIN + 26, y + 10, { width: CONTENT_WIDTH - 38, ellipsis: true })
-    doc.font('Helvetica').fontSize(8.5).fillColor(COLORS.ink).text(body, MARGIN + 26, y + 25, { width: CONTENT_WIDTH - 38, height: 18, lineGap: 1, ellipsis: true })
-    y += height + 7
+    doc.roundedRect(MARGIN, y, CONTENT_WIDTH, cardHeight, 7).fillAndStroke(COLORS.white, COLORS.border)
+    doc.circle(MARGIN + 14, y + (compact ? 14 : 17), compact ? 3 : 3.5).fill(options.kind === 'achievement' ? COLORS.teal : COLORS.gold)
+    doc.font('Helvetica-Bold').fontSize(compact ? 7.5 : 8).fillColor(COLORS.navy).text(heading, MARGIN + 26, y + (compact ? 7 : 10), { width: CONTENT_WIDTH - 38, ellipsis: true })
+    doc.font('Helvetica').fontSize(compact ? 7.5 : 8.5).fillColor(COLORS.ink).text(body, MARGIN + 26, y + (compact ? 21 : 25), { width: CONTENT_WIDTH - 38, height: compact ? 10 : 18, lineGap: 1, ellipsis: true })
+    y += cardHeight + cardGap
   })
   if (list.length > visible.length) {
-    doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(COLORS.muted).text(`+ ${list.length - visible.length} additional record(s) available in CAMPS.`, MARGIN, y + 1, { width: CONTENT_WIDTH })
-    y += 16
+    doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(COLORS.muted).text(`+ ${list.length - visible.length} additional record(s) available in CAMPS.`, MARGIN, y + 1, { width: CONTENT_WIDTH, ellipsis: true })
+    y += compact ? 9 : 12
   }
   return y
 }
 
-function drawAuthenticationPanel(doc, report, y) {
-  const height = 105
+function drawAuthenticationPanel(doc, report, y, options = {}) {
+  const height = options.compact ? 94 : 100
   const signature = report?.teacherSignature || report?.teacher?.signature || report?.signature?.teacher
   const signatureDate = report?.signatureDate || report?.signature?.date
   doc.roundedRect(MARGIN, y, CONTENT_WIDTH, height, 8).fillAndStroke(COLORS.blueLight, COLORS.border)
@@ -315,20 +328,42 @@ export function renderReportCardPdf(report) {
     })
     y += 4
 
-    const subjectHeight = subjectTableHeight(report)
-    ensureSpace(34 + subjectHeight + 108)
-    y = drawSectionHeading(doc, 'Subject-wise marks', y, 'Actual subject records for this student and semester')
-    y = drawSubjectTable(doc, report, y) + 19
+    const subjects = Array.isArray(report?.subjects) ? report.subjects : []
+    const compactSubjectLayout = subjects.length > 8
+    if (compactSubjectLayout) {
+      // Dense academic schedules still stay within the two-page print limit:
+      // keep the first four actual rows on page one and continue the table on
+      // page two with a compact row treatment. Never fabricate overflow rows.
+      y = drawSectionHeading(doc, 'Subject-wise marks', y, 'Actual subject records for this student and semester')
+      y = drawSubjectTable(doc, report, y, { rows: subjects.slice(0, 4), rowHeight: 17 }) + 6
+      newPage()
+      y = drawSectionHeading(doc, 'Subject-wise marks continued', y, 'Remaining actual subject records')
+      const continuationRows = subjects.slice(4, 20)
+      y = drawSubjectTable(doc, report, y, {
+        rows: continuationRows,
+        rowHeight: 17,
+        additionalCount: Math.max(0, subjects.length - 4 - continuationRows.length),
+      }) + 6
+      y = drawPredictionPanel(doc, report, y) + 10
+      y = drawRecordList(doc, 'Teacher remarks', report?.remarks, y, { compact: true, limit: 1, empty: 'No visible teacher remarks have been recorded for this student.' })
+      y = drawRecordList(doc, 'Achievements', report?.achievements, y, { kind: 'achievement', compact: true, limit: 1, empty: 'No achievements have been recorded for this student.' })
+      drawAuthenticationPanel(doc, report, y, { compact: true })
+    } else {
+      const subjectHeight = subjectTableHeight(report, { rowHeight: 28 })
+      ensureSpace(34 + subjectHeight + 108)
+      y = drawSectionHeading(doc, 'Subject-wise marks', y, 'Actual subject records for this student and semester')
+      y = drawSubjectTable(doc, report, y, { rowHeight: 28 }) + 19
 
-    ensureSpace(108)
-    y = drawPredictionPanel(doc, report, y) + 20
+      ensureSpace(108)
+      y = drawPredictionPanel(doc, report, y) + 20
 
-    ensureSpace(80)
-    y = drawRecordList(doc, 'Teacher remarks', report?.remarks, y, { empty: 'No visible teacher remarks have been recorded for this student.' })
-    ensureSpace(80)
-    y = drawRecordList(doc, 'Achievements', report?.achievements, y, { kind: 'achievement', empty: 'No achievements have been recorded for this student.' })
-    ensureSpace(118)
-    drawAuthenticationPanel(doc, report, y)
+      ensureSpace(80)
+      y = drawRecordList(doc, 'Teacher remarks', report?.remarks, y, { compact: true, limit: 1, empty: 'No visible teacher remarks have been recorded for this student.' })
+      ensureSpace(80)
+      y = drawRecordList(doc, 'Achievements', report?.achievements, y, { kind: 'achievement', compact: true, limit: 1, empty: 'No achievements have been recorded for this student.' })
+      ensureSpace(118)
+      drawAuthenticationPanel(doc, report, y)
+    }
 
     drawFooter(doc, report, pageNumber)
     doc.end()

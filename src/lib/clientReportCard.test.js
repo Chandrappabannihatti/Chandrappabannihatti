@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { PDFDocument } from 'pdf-lib'
 import { createClientReportCardPdf, createClientReportCardsZip } from './clientReportCard.js'
 
 const report = {
@@ -35,4 +36,23 @@ test('creates a valid local fallback PDF and ZIP', async () => {
   assert.deepEqual(Array.from(zipBytes.slice(0, 2)), [80, 75])
   assert.ok(zip.size > 0)
   assert.equal(zip.type, 'application/zip')
+})
+
+test('keeps dense local fallback reports within the two-page maximum', async () => {
+  const denseReport = {
+    ...report,
+    subjects: Array.from({ length: 20 }, (_, index) => ({
+      subjectCode: `CS${701 + index}`,
+      subjectName: `Subject ${index + 1}`,
+      credits: 3,
+      attendancePercentage: 85,
+      averageInternalMarks: 75,
+      assignmentScore: 80,
+    })),
+    remarks: Array.from({ length: 6 }, () => ({ label: 'Teacher remark', note: 'Continue consistent academic work.', date: '2026-08-20' })),
+    achievements: Array.from({ length: 6 }, () => ({ achievementType: 'Academic', title: 'Achievement', description: 'Recorded achievement.', date: '2026-08-20' })),
+  }
+  const pdf = await createClientReportCardPdf(denseReport)
+  const document = await PDFDocument.load(await pdf.arrayBuffer())
+  assert.ok(document.getPageCount() <= 2)
 })
