@@ -2,6 +2,9 @@ import { demoStore } from './demoStore.js'
 import { query } from './db.js'
 import { cleanString, normalizeRisk } from './utils.js'
 
+const DEFAULT_COLLEGE_NAME = 'PES Institute of Technology and Management'
+const DEFAULT_COLLEGE_LOCATION = 'Shivamogga, Karnataka'
+
 function numberOrNull(value) {
   if (value === null || value === undefined || value === '') return null
   const number = Number(value)
@@ -27,6 +30,7 @@ function mapStudent(row) {
     department: cleanString(row.department || row.department_code).toUpperCase(),
     semester: Number(row.semester),
     section: cleanString(row.section || row.sectionName || 'A').toUpperCase(),
+    academicYear: cleanString(row.academicYear || row.academic_year) || null,
     email: cleanString(row.email),
     dateOfBirth: dateOrNull(row.dateOfBirth || row.date_of_birth),
     gender: cleanString(row.gender),
@@ -173,11 +177,11 @@ export async function loadReportCard({ studentId, user, scope = {}, useDemoData,
   assertScope({ user, student: report.student, scope: normalizedScope, isStudentInUserScope, requireTeacherScope })
   return {
     ...report,
-    academicYear: academicYear(),
+    academicYear: report.student.academicYear || academicYear() || null,
     generatedAt: new Date().toISOString(),
     college: {
-      name: cleanString(process.env.COLLEGE_NAME) || null,
-      location: cleanString(process.env.COLLEGE_LOCATION) || null,
+      name: cleanString(process.env.COLLEGE_NAME) || DEFAULT_COLLEGE_NAME,
+      location: cleanString(process.env.COLLEGE_LOCATION) || DEFAULT_COLLEGE_LOCATION,
       logoPath: cleanString(process.env.COLLEGE_LOGO_PATH) || null,
     },
   }

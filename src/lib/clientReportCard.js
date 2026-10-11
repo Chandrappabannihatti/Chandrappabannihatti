@@ -2,242 +2,342 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import JSZip from 'jszip'
 
 const PAGE = { width: 595.28, height: 841.89, margin: 40 }
+const CONTENT_WIDTH = PAGE.width - PAGE.margin * 2
+const FOOTER_TOP = PAGE.height - 52
+const DEFAULT_COLLEGE_NAME = 'PES Institute of Technology and Management'
+const DEFAULT_COLLEGE_LOCATION = 'Shivamogga, Karnataka'
 const COLORS = {
-  navy: rgb(0.07, 0.24, 0.35),
-  navyDark: rgb(0.04, 0.15, 0.23),
-  teal: rgb(0.17, 0.57, 0.53),
+  navy: rgb(0.04, 0.18, 0.28),
+  navyDark: rgb(0.03, 0.12, 0.21),
+  navySoft: rgb(0.07, 0.30, 0.44),
+  teal: rgb(0.09, 0.50, 0.50),
+  tealDark: rgb(0.05, 0.39, 0.42),
   tealLight: rgb(0.92, 0.97, 0.95),
   blueLight: rgb(0.94, 0.97, 0.98),
-  ink: rgb(0.15, 0.29, 0.36),
-  muted: rgb(0.45, 0.55, 0.57),
-  border: rgb(0.83, 0.90, 0.90),
+  ink: rgb(0.12, 0.24, 0.32),
+  muted: rgb(0.38, 0.48, 0.53),
+  border: rgb(0.84, 0.89, 0.91),
   soft: rgb(0.97, 0.98, 0.98),
+  gold: rgb(0.69, 0.51, 0.23),
+  goldLight: rgb(0.98, 0.96, 0.91),
+  coral: rgb(0.72, 0.36, 0.35),
+  coralLight: rgb(1, 0.94, 0.93),
   white: rgb(1, 1, 1),
-  coral: rgb(0.85, 0.47, 0.40),
 }
 
-function value(value, fallback = 'Not recorded') {
-  return value === null || value === undefined || String(value).trim() === '' ? fallback : String(value)
+function value(input, fallback = 'Not recorded') {
+  return input === null || input === undefined || String(input).trim() === '' ? fallback : String(input)
 }
 
-function number(valueToFormat, suffix = '', decimals = 2) {
-  const parsed = Number(valueToFormat)
+function number(input, suffix = '', decimals = 2) {
+  const parsed = Number(input)
   return Number.isFinite(parsed) ? `${parsed.toFixed(decimals)}${suffix}` : 'Not recorded'
 }
 
-function compactNumber(valueToFormat, suffix = '', decimals = 1) {
-  const parsed = Number(valueToFormat)
+function compactNumber(input, suffix = '', decimals = 1) {
+  const parsed = Number(input)
   return Number.isFinite(parsed) ? `${parsed.toFixed(decimals)}${suffix}` : 'Not recorded'
 }
 
-function safeFilePart(valueToFormat) {
-  return String(valueToFormat || 'student').replace(/[^A-Za-z0-9_-]+/g, '_')
+function safeFilePart(input) {
+  return String(input || 'student').replace(/[^A-Za-z0-9_-]+/g, '_')
 }
 
-function dateLabel(dateValue) {
-  if (dateValue === null || dateValue === undefined || String(dateValue).trim() === '') return 'Not recorded'
-  const date = new Date(dateValue)
-  return Number.isNaN(date.getTime()) ? value(dateValue) : new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(date)
+function dateLabel(input) {
+  if (input === null || input === undefined || String(input).trim() === '') return 'Not Provided'
+  const date = new Date(input)
+  return Number.isNaN(date.getTime()) ? value(input, 'Not Provided') : new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(date)
+}
+
+function academicYearValue(report) {
+  const input = report?.academicYear || report?.student?.academicYear
+  return input === null || input === undefined || String(input).trim() === '' ? null : String(input)
+}
+
+function academicYearLabel(report) {
+  const year = academicYearValue(report)
+  return year ? `Academic Year: ${year}` : 'Academic Year: Not Provided'
+}
+
+function collegeName(report) {
+  const name = value(report?.college?.name, DEFAULT_COLLEGE_NAME)
+  const location = value(report?.college?.location, DEFAULT_COLLEGE_LOCATION)
+  return location && !name.toLowerCase().includes(location.toLowerCase()) ? `${name}, ${location}` : name
+}
+
+function collegeLocation(report) {
+  return value(report?.college?.location, DEFAULT_COLLEGE_LOCATION)
+}
+
+function roundedRect(page, x, top, width, height, options = {}) {
+  // pdf-lib's standard build exposes rectangles rather than a rounded-rectangle
+  // primitive. The border, spacing and fill preserve the same clean card treatment
+  // in the browser fallback PDF without requiring a new PDF dependency.
+  page.drawRectangle({ x, y: PAGE.height - top - height, width, height, borderWidth: 0.7, ...options })
+}
+
+function rectangle(page, x, top, width, height, options = {}) {
+  page.drawRectangle({ x, y: PAGE.height - top - height, width, height, ...options })
+}
+
+function line(page, x1, top1, x2, top2, options = {}) {
+  page.drawLine({ start: { x: x1, y: PAGE.height - top1 }, end: { x: x2, y: PAGE.height - top2 }, ...options })
 }
 
 function wrapLines(text, font, size, width) {
   const words = value(text).split(/\s+/)
   const lines = []
-  let line = ''
+  let current = ''
   words.forEach((word) => {
-    const candidate = line ? `${line} ${word}` : word
-    if (font.widthOfTextAtSize(candidate, size) <= width || !line) line = candidate
-    else { lines.push(line); line = word }
+    const candidate = current ? `${current} ${word}` : word
+    if (font.widthOfTextAtSize(candidate, size) <= width || !current) current = candidate
+    else { lines.push(current); current = word }
   })
-  if (line) lines.push(line)
+  if (current) lines.push(current)
   return lines
 }
 
-function drawText(page, text, x, y, font, size, color = COLORS.ink, width = null, maxLines = 1) {
+function textTop(page, text, x, top, font, size, color = COLORS.ink, width = null, maxLines = 1) {
   const lines = width ? wrapLines(text, font, size, width).slice(0, maxLines) : [value(text)]
-  lines.forEach((line, index) => page.drawText(line, { x, y: y - index * (size + 2), font, size, color }))
+  lines.forEach((entry, index) => page.drawText(entry, { x, y: PAGE.height - top - size - index * (size + 2), font, size, color }))
   return lines.length * (size + 2)
 }
 
-function drawRightText(page, text, x, y, font, size, color, width) {
+function rightTextTop(page, text, x, top, font, size, color, width) {
   const rendered = value(text)
   const textWidth = font.widthOfTextAtSize(rendered, size)
-  page.drawText(rendered, { x: x + width - textWidth, y, font, size, color })
+  page.drawText(rendered, { x: x + width - textWidth, y: PAGE.height - top - size, font, size, color })
 }
 
-function drawSectionTitle(page, title, subtitle, y, bold, regular) {
-  page.drawText(title.toUpperCase(), { x: PAGE.margin, y, font: bold, size: 9, color: COLORS.navy })
-  if (subtitle) page.drawText(subtitle, { x: PAGE.margin, y: y - 14, font: regular, size: 7, color: COLORS.muted })
-  return y - (subtitle ? 30 : 18)
+function drawSectionTitle(page, title, subtitle, top, bold, regular) {
+  textTop(page, title.toUpperCase(), PAGE.margin, top, bold, 11, COLORS.navy)
+  line(page, PAGE.margin, top + 19, PAGE.margin + 34, top + 19, { thickness: 2, color: COLORS.teal })
+  if (subtitle) textTop(page, subtitle, PAGE.margin + 46, top + 1, regular, 8.5, COLORS.muted, CONTENT_WIDTH - 46, 1)
+  return top + 32
 }
 
-function drawLabelValue(page, label, fieldValue, x, y, width, bold, regular) {
-  page.drawText(label.toUpperCase(), { x, y, font: bold, size: 6, color: COLORS.muted })
-  drawText(page, fieldValue, x, y - 12, regular, 8, COLORS.ink, width, 1)
+function drawLabelValue(page, label, fieldValue, x, top, width, bold, regular, fontSize = 10) {
+  textTop(page, label.toUpperCase(), x, top, bold, 7.5, COLORS.muted, width, 1)
+  textTop(page, fieldValue, x, top + 13, regular, fontSize, COLORS.ink, width, 1)
 }
 
-function drawMetric(page, x, y, width, label, fieldValue, bold) {
-  page.drawRectangle({ x, y: y - 43, width, height: 43, color: COLORS.soft, borderColor: COLORS.border, borderWidth: 0.7 })
-  page.drawRectangle({ x, y: y - 43, width: 4, height: 43, color: COLORS.teal })
-  page.drawText(label.toUpperCase(), { x: x + 11, y: y - 14, font: bold, size: 6, color: COLORS.muted })
-  drawText(page, fieldValue, x + 11, y - 30, bold, 11, COLORS.navy, width - 17, 1)
+function badgeColors(type, fieldValue) {
+  const normalized = String(fieldValue || '').toLowerCase()
+  if (type === 'result' && normalized === 'pass') return { fill: COLORS.tealLight, text: COLORS.tealDark, border: rgb(0.61, 0.83, 0.79) }
+  if (type === 'result' && normalized === 'fail') return { fill: COLORS.coralLight, text: COLORS.coral, border: rgb(0.9, 0.71, 0.69) }
+  if (normalized.includes('low')) return { fill: COLORS.tealLight, text: COLORS.tealDark, border: rgb(0.61, 0.83, 0.79) }
+  if (normalized.includes('medium')) return { fill: COLORS.goldLight, text: COLORS.gold, border: rgb(0.9, 0.82, 0.61) }
+  if (normalized.includes('high')) return { fill: COLORS.coralLight, text: COLORS.coral, border: rgb(0.9, 0.71, 0.69) }
+  return { fill: COLORS.blueLight, text: COLORS.muted, border: COLORS.border }
+}
+
+function drawBadge(page, label, fieldValue, x, top, width, bold, type = 'status') {
+  const colors = badgeColors(type, fieldValue)
+  roundedRect(page, x, top, width, 25, { color: colors.fill, borderColor: colors.border })
+  textTop(page, label.toUpperCase(), x + 8, top + 5, bold, 7, colors.text, width - 16, 1)
+  textTop(page, fieldValue, x + 8, top + 13, bold, 10, colors.text, width - 16, 1)
 }
 
 function drawFooter(page, report, regular, pageNumber) {
-  page.drawLine({ start: { x: PAGE.margin, y: 34 }, end: { x: PAGE.width - PAGE.margin, y: 34 }, thickness: 0.5, color: COLORS.border })
-  page.drawText('CAMPS · Centralized Academic Monitoring System', { x: PAGE.margin, y: 22, font: regular, size: 6, color: COLORS.muted })
-  drawRightText(page, `Generated ${dateLabel(report.generatedAt)}`, PAGE.width - PAGE.margin - 170, 22, regular, 6, COLORS.muted, 135)
-  drawRightText(page, `Page ${pageNumber}`, PAGE.width - PAGE.margin - 35, 22, regular, 6, COLORS.muted, 35)
+  line(page, PAGE.margin, PAGE.height - 42, PAGE.width - PAGE.margin, PAGE.height - 42, { thickness: 0.5, color: COLORS.border })
+  textTop(page, collegeName(report), PAGE.margin, PAGE.height - 33, regular, 6.8, COLORS.muted, 275, 1)
+  rightTextTop(page, `Generated ${dateLabel(report.generatedAt)}`, PAGE.width - PAGE.margin - 188, PAGE.height - 33, regular, 6.2, COLORS.muted, 145)
+  rightTextTop(page, `Page ${pageNumber}`, PAGE.width - PAGE.margin - 35, PAGE.height - 33, regular, 6.2, COLORS.muted, 35)
+}
+
+function drawLogo(page, report, x, top, size, bold) {
+  // Browser-side fallback reports do not have a bundled logo asset. Keep the
+  // same labelled placeholder as the server PDF instead of displaying a
+  // misleading missing-metadata message.
+  roundedRect(page, x, top, size, size, { color: COLORS.teal, borderColor: rgb(0.46, 0.78, 0.74) })
+  textTop(page, 'College', x + 6, top + 22, bold, 8, COLORS.white, size - 12, 1)
+  textTop(page, 'Logo', x + 6, top + 34, bold, 8, COLORS.white, size - 12, 1)
 }
 
 function drawHeader(page, report, bold, regular, continuation = false) {
   if (continuation) {
-    page.drawRectangle({ x: PAGE.margin, y: PAGE.height - 67, width: PAGE.width - PAGE.margin * 2, height: 30, color: COLORS.blueLight })
-    page.drawText('CAMPS · INDIVIDUAL STUDENT REPORT CARD', { x: PAGE.margin + 12, y: PAGE.height - 55, font: bold, size: 7, color: COLORS.navy })
-    drawRightText(page, `${report.student.name} · ${report.student.usn}`, PAGE.width - PAGE.margin - 190, PAGE.height - 55, regular, 7, COLORS.teal, 178)
-    return PAGE.height - 98
+    roundedRect(page, PAGE.margin, 27, CONTENT_WIDTH, 38, { color: COLORS.blueLight, borderColor: COLORS.border })
+    textTop(page, 'CAMPS — INDIVIDUAL STUDENT ACADEMIC REPORT CARD', PAGE.margin + 12, 37, bold, 8, COLORS.navy, 345, 1)
+    rightTextTop(page, `${value(report.student?.name)} · ${value(report.student?.usn)}`, PAGE.width - PAGE.margin - 174, 39, regular, 8, COLORS.tealDark, 162)
+    textTop(page, collegeName(report), PAGE.margin + 12, 52, regular, 6.5, COLORS.muted, 350, 1)
+    return 86
   }
-  page.drawRectangle({ x: 0, y: PAGE.height - 112, width: PAGE.width, height: 112, color: COLORS.navyDark })
-  page.drawRectangle({ x: PAGE.margin, y: PAGE.height - 85, width: 60, height: 60, color: COLORS.teal })
-  page.drawRectangle({ x: PAGE.margin + 5, y: PAGE.height - 80, width: 50, height: 50, borderColor: rgb(0.72, 0.89, 0.84), borderWidth: 1 })
-  page.drawText('Logo not recorded', { x: PAGE.margin + 7, y: PAGE.height - 62, font: bold, size: 7, color: COLORS.white, maxWidth: 46 })
-  page.drawText(value(report.college?.name), { x: PAGE.margin + 76, y: PAGE.height - 42, font: bold, size: 14, color: COLORS.white })
-  page.drawText(value(report.college?.location), { x: PAGE.margin + 76, y: PAGE.height - 62, font: regular, size: 8, color: rgb(0.78, 0.86, 0.86) })
-  page.drawText('CENTRALIZED ACADEMIC MONITORING SYSTEM', { x: PAGE.margin + 76, y: PAGE.height - 82, font: bold, size: 6.5, color: rgb(0.53, 0.83, 0.77) })
-  drawRightText(page, 'OFFICIAL ACADEMIC RECORD', PAGE.width - PAGE.margin - 160, PAGE.height - 43, bold, 6.5, rgb(0.75, 0.83, 0.85), 145)
-  drawRightText(page, `Academic year ${value(report.academicYear)}`, PAGE.width - PAGE.margin - 160, PAGE.height - 59, regular, 6.5, rgb(0.75, 0.83, 0.85), 145)
-  page.drawText('INDIVIDUAL STUDENT REPORT CARD', { x: PAGE.margin, y: PAGE.height - 140, font: bold, size: 14, color: COLORS.navy })
-  page.drawText('Verified academic summary · Keep this document with the student record.', { x: PAGE.margin, y: PAGE.height - 160, font: regular, size: 7, color: COLORS.muted })
-  return PAGE.height - 190
+  rectangle(page, 0, 0, PAGE.width, 132, { color: COLORS.navyDark })
+  drawLogo(page, report, PAGE.margin, 24, 72, bold)
+  textTop(page, collegeName(report), PAGE.margin + 90, 27, bold, 17, COLORS.white, 300, 2)
+  textTop(page, collegeLocation(report), PAGE.margin + 90, 78, regular, 9, rgb(0.78, 0.86, 0.86), 300, 1)
+  textTop(page, 'CAMPS — Centralized Academic Monitoring System', PAGE.margin + 90, 98, bold, 9, rgb(0.55, 0.84, 0.78), 340, 1)
+  rightTextTop(page, 'OFFICIAL ACADEMIC RECORD', PAGE.width - PAGE.margin - 145, 34, bold, 7.5, rgb(0.75, 0.83, 0.85), 145)
+  rightTextTop(page, academicYearLabel(report), PAGE.width - PAGE.margin - 145, 53, regular, 8, rgb(0.75, 0.83, 0.85), 145)
+  textTop(page, 'INDIVIDUAL STUDENT ACADEMIC REPORT CARD', PAGE.margin, 153, bold, 17, COLORS.navy, CONTENT_WIDTH, 1)
+  textTop(page, 'Official academic summary · Prepared for academic documentation and printing.', PAGE.margin, 177, regular, 9, COLORS.muted, CONTENT_WIDTH, 1)
+  return 205
 }
 
-function drawSubjectTable(page, subjects, y, bold, regular) {
-  const columns = [
-    ['CODE', 55], ['SUBJECT', 165], ['CREDITS', 55], ['ATTENDANCE', 82], ['INTERNAL', 78], ['ASSIGNMENTS', 80],
-  ]
-  const startX = PAGE.margin
-  page.drawRectangle({ x: startX, y: y - 22, width: PAGE.width - PAGE.margin * 2, height: 22, color: COLORS.teal })
-  let x = startX
-  columns.forEach(([label, width]) => { page.drawText(label, { x: x + 5, y: y - 14, font: bold, size: 5.6, color: COLORS.white }); x += width })
-  let cursor = y - 22
+function drawMetric(page, x, top, width, label, fieldValue, bold, accent) {
+  roundedRect(page, x, top, width, 57, { color: COLORS.white, borderColor: COLORS.border })
+  roundedRect(page, x, top, 5, 57, { color: accent, borderColor: accent })
+  textTop(page, label.toUpperCase(), x + 14, top + 11, bold, 7, COLORS.muted, width - 20, 1)
+  textTop(page, fieldValue, x + 14, top + 27, bold, 15, COLORS.navy, width - 20, 1)
+}
+
+function drawSubjectTable(page, subjects, top, bold, regular) {
+  const columns = [['CODE', 58], ['SUBJECT', 157], ['CREDITS', 57], ['ATTENDANCE', 84], ['INTERNAL', 78], ['ASSIGNMENTS', 81]]
+  rectangle(page, PAGE.margin, top, CONTENT_WIDTH, 26, { color: COLORS.teal })
+  let x = PAGE.margin
+  columns.forEach(([label, width]) => { textTop(page, label, x + 6, top + 9, bold, 7, COLORS.white, width - 12, 1); x += width })
+  let cursor = top + 26
   const rows = subjects || []
   if (!rows.length) {
-    page.drawRectangle({ x: startX, y: cursor - 30, width: PAGE.width - PAGE.margin * 2, height: 30, color: COLORS.soft, borderColor: COLORS.border, borderWidth: 0.6 })
-    page.drawText('No subject-wise marks have been recorded for this student.', { x: startX + 10, y: cursor - 18, font: regular, size: 7, color: COLORS.muted })
-    return cursor - 43
+    rectangle(page, PAGE.margin, cursor, CONTENT_WIDTH, 35, { color: COLORS.soft, borderColor: COLORS.border, borderWidth: 0.7 })
+    textTop(page, 'Subject-wise marks have not been recorded yet.', PAGE.margin + 10, cursor + 12, regular, 8.5, COLORS.muted, CONTENT_WIDTH - 20, 1)
+    return cursor + 35
   }
   rows.forEach((subject, index) => {
-    const rowHeight = 27
-    page.drawRectangle({ x: startX, y: cursor - rowHeight, width: PAGE.width - PAGE.margin * 2, height: rowHeight, color: index % 2 ? COLORS.soft : COLORS.white, borderColor: COLORS.border, borderWidth: 0.5 })
-    let cellX = startX
+    const rowHeight = 34
+    rectangle(page, PAGE.margin, cursor, CONTENT_WIDTH, rowHeight, { color: index % 2 ? COLORS.soft : COLORS.white, borderColor: COLORS.border, borderWidth: 0.5 })
+    let cellX = PAGE.margin
     const values = [
-      value(subject.subjectCode), value(subject.subjectName), compactNumber(subject.credits), compactNumber(subject.attendancePercentage, '%'), compactNumber(subject.averageInternalMarks, '%'), compactNumber(subject.assignmentScore, '%'),
+      value(subject.subjectCode),
+      value(subject.subjectName),
+      compactNumber(subject.credits),
+      compactNumber(subject.attendancePercentage, '%'),
+      compactNumber(subject.averageInternalMarks, '%'),
+      compactNumber(subject.assignmentScore ?? subject.averageAssignmentScore, '%'),
     ]
-    columns.forEach(([_, width], valueIndex) => {
+    columns.forEach(([, width], valueIndex) => {
       const font = valueIndex === 1 ? regular : bold
-      const text = values[valueIndex]
-      const textWidth = font.widthOfTextAtSize(text, 6.5)
-      const textX = valueIndex === 1 ? cellX + 5 : cellX + Math.max(5, (width - textWidth) / 2)
-      page.drawText(text, { x: textX, y: cursor - 17, font, size: 6.5, color: COLORS.ink, maxWidth: width - 10 })
+      const size = valueIndex === 1 ? 8.2 : 8
+      const textWidth = font.widthOfTextAtSize(values[valueIndex], size)
+      const textX = valueIndex === 1 ? cellX + 6 : cellX + Math.max(6, (width - textWidth) / 2)
+      textTop(page, values[valueIndex], textX, cursor + (valueIndex === 1 ? 8 : 11), font, size, COLORS.ink, width - 12, valueIndex === 1 ? 2 : 1)
       cellX += width
     })
-    cursor -= rowHeight
-  })
-  return cursor - 14
-}
-
-function drawRecords(page, title, records, y, bold, regular, kind) {
-  const startY = drawSectionTitle(page, title, '', y, bold, regular)
-  const items = records || []
-  if (!items.length) {
-    page.drawRectangle({ x: PAGE.margin, y: startY - 27, width: PAGE.width - PAGE.margin * 2, height: 27, color: COLORS.soft, borderColor: COLORS.border, borderWidth: 0.6 })
-    page.drawText('No records have been recorded for this student.', { x: PAGE.margin + 10, y: startY - 17, font: regular, size: 7, color: COLORS.muted })
-    return startY - 40
-  }
-  let cursor = startY
-  items.slice(0, 5).forEach((item) => {
-    const heading = kind === 'achievement' ? `${value(item.achievementType, 'Achievement')} · ${dateLabel(item.date)}` : `${value(item.label, 'Teacher remark')} · ${dateLabel(item.date)}`
-    const body = kind === 'achievement' ? `${value(item.title)} — ${value(item.description)}` : value(item.note)
-    page.drawRectangle({ x: PAGE.margin, y: cursor - 35, width: PAGE.width - PAGE.margin * 2, height: 35, color: COLORS.white, borderColor: COLORS.border, borderWidth: 0.6 })
-    page.drawCircle({ x: PAGE.margin + 12, y: cursor - 13, size: 3, color: kind === 'achievement' ? COLORS.teal : COLORS.coral })
-    page.drawText(heading, { x: PAGE.margin + 22, y: cursor - 13, font: bold, size: 6.5, color: COLORS.navy })
-    drawText(page, body, PAGE.margin + 22, cursor - 25, regular, 6.8, COLORS.ink, PAGE.width - PAGE.margin * 2 - 32, 1)
-    cursor -= 42
+    cursor += rowHeight
   })
   return cursor
+}
+
+function recordBody(item, kind) {
+  if (kind === 'achievement') return `${value(item.title)}${item.description ? ` — ${item.description}` : ''}`
+  return value(item.note)
+}
+
+function drawRecords(page, title, records, top, bold, regular, kind, empty) {
+  let cursor = drawSectionTitle(page, title, '', top, bold, regular)
+  const items = records || []
+  if (!items.length) {
+    roundedRect(page, PAGE.margin, cursor, CONTENT_WIDTH, 38, { color: COLORS.soft, borderColor: COLORS.border })
+    textTop(page, empty || 'No records have been recorded for this student.', PAGE.margin + 12, cursor + 13, regular, 8.5, COLORS.muted, CONTENT_WIDTH - 24, 1)
+    return cursor + 50
+  }
+  const visible = items.slice(0, 4)
+  visible.forEach((item) => {
+    const heading = kind === 'achievement' ? `${value(item.achievementType, 'Achievement')} · ${dateLabel(item.date)}` : `${value(item.label, 'Teacher remark')} · ${dateLabel(item.date)}`
+    const body = recordBody(item, kind)
+    roundedRect(page, PAGE.margin, cursor, CONTENT_WIDTH, 51, { color: COLORS.white, borderColor: COLORS.border })
+    page.drawCircle({ x: PAGE.margin + 14, y: PAGE.height - cursor - 17, size: 3.5, color: kind === 'achievement' ? COLORS.teal : COLORS.gold })
+    textTop(page, heading, PAGE.margin + 26, cursor + 10, bold, 8, COLORS.navy, CONTENT_WIDTH - 38, 1)
+    textTop(page, body, PAGE.margin + 26, cursor + 25, regular, 8.5, COLORS.ink, CONTENT_WIDTH - 38, 1)
+    cursor += 58
+  })
+  if (items.length > visible.length) {
+    textTop(page, `+ ${items.length - visible.length} additional record(s) available in CAMPS.`, PAGE.margin, cursor + 1, regular, 7.5, COLORS.muted, CONTENT_WIDTH, 1)
+    cursor += 16
+  }
+  return cursor
+}
+
+function drawPrediction(page, report, top, bold, regular) {
+  const prediction = report.prediction || {}
+  rectangle(page, PAGE.margin, top, CONTENT_WIDTH, 91, { color: COLORS.navyDark })
+  textTop(page, 'ACADEMIC PREDICTION', PAGE.margin + 16, top + 13, bold, 8, rgb(0.66, 0.86, 0.81), 230, 1)
+  textTop(page, 'Stored support signal from the selected academic record.', PAGE.margin + 16, top + 28, regular, 8, rgb(0.78, 0.86, 0.86), 230, 1)
+  drawBadge(page, 'Result', prediction.result, PAGE.margin + 16, top + 48, 112, bold, 'result')
+  textTop(page, 'RISK LEVEL', PAGE.margin + 270, top + 13, bold, 8, rgb(0.66, 0.86, 0.81), 220, 1)
+  textTop(page, prediction.modelVersion ? `Model version: ${prediction.modelVersion}` : 'Model version not provided', PAGE.margin + 270, top + 28, regular, 8, rgb(0.78, 0.86, 0.86), 220, 1)
+  drawBadge(page, 'Risk', prediction.risk, PAGE.margin + 270, top + 48, 125, bold, 'risk')
+  return top + 91
+}
+
+function drawAuthentication(page, report, top, bold, regular) {
+  const signature = report?.teacherSignature || report?.teacher?.signature || report?.signature?.teacher
+  const signatureDate = report?.signatureDate || report?.signature?.date
+  roundedRect(page, PAGE.margin, top, CONTENT_WIDTH, 105, { color: COLORS.blueLight, borderColor: COLORS.border })
+  textTop(page, 'AUTHENTICATION AND SIGN-OFF', PAGE.margin + 15, top + 14, bold, 9, COLORS.navy, 300, 1)
+  textTop(page, 'This report is generated from the CAMPS academic record. Missing fields are marked “Not recorded” and have not been inferred.', PAGE.margin + 15, top + 33, regular, 8, COLORS.muted, 280, 3)
+  textTop(page, 'Teacher signature', PAGE.margin + 340, top + 31, bold, 8, COLORS.navy, 145, 1)
+  line(page, PAGE.margin + 340, top + 61, PAGE.margin + 485, top + 61, { thickness: 0.8, color: COLORS.navy })
+  textTop(page, `Signature: ${value(signature, 'Not Provided')}`, PAGE.margin + 340, top + 68, regular, 7.5, COLORS.muted, 145, 1)
+  textTop(page, `Signature date: ${signatureDate ? dateLabel(signatureDate) : 'Not Provided'}`, PAGE.margin + 340, top + 84, regular, 7.5, COLORS.muted, 145, 1)
 }
 
 export async function createClientReportCardPdf(reportInput = {}) {
   const report = {
     ...reportInput,
-    academicYear: reportInput.academicYear,
+    academicYear: reportInput.academicYear || reportInput.student?.academicYear || null,
     generatedAt: reportInput.generatedAt || new Date().toISOString(),
-    college: reportInput.college || {},
+    college: { ...(reportInput.college || {}) },
     prediction: reportInput.prediction || { result: reportInput.student?.result, risk: reportInput.student?.risk },
   }
   const pdf = await PDFDocument.create()
+  pdf.setTitle(`Individual Student Academic Report Card · ${value(report.student?.usn)}`)
+  pdf.setAuthor('CAMPS')
+  pdf.setSubject(collegeName(report))
   const regular = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
   let pageNumber = 1
   let page = pdf.addPage([PAGE.width, PAGE.height])
-  let y = drawHeader(page, report, bold, regular)
+  let top = drawHeader(page, report, bold, regular)
   const newPage = () => {
     drawFooter(page, report, regular, pageNumber)
     page = pdf.addPage([PAGE.width, PAGE.height])
     pageNumber += 1
-    y = drawHeader(page, report, bold, regular, true)
+    top = drawHeader(page, report, bold, regular, true)
   }
-  const ensure = (height) => { if (y - height < 55) newPage() }
+  const ensure = (height) => { if (top + height > FOOTER_TOP) newPage() }
   const student = report.student || {}
 
-  y = drawSectionTitle(page, 'Student information', 'Identity and scope attached to this report', y, bold, regular)
-  page.drawRectangle({ x: PAGE.margin, y: y - 95, width: PAGE.width - PAGE.margin * 2, height: 95, color: COLORS.white, borderColor: COLORS.border, borderWidth: 0.7 })
-  drawLabelValue(page, 'Student name', student.name, PAGE.margin + 14, y - 16, 245, bold, regular)
-  drawLabelValue(page, 'USN', student.usn, PAGE.margin + 270, y - 16, 230, bold, regular)
-  drawLabelValue(page, 'Email address', student.email, PAGE.margin + 14, y - 48, 245, bold, regular)
-  drawLabelValue(page, 'Department', student.department, PAGE.margin + 270, y - 48, 105, bold, regular)
-  drawLabelValue(page, 'Semester', `Semester ${value(student.semester)}`, PAGE.margin + 390, y - 48, 110, bold, regular)
-  drawLabelValue(page, 'Section', student.section, PAGE.margin + 14, y - 79, 100, bold, regular)
-  drawLabelValue(page, 'Academic year', report.academicYear, PAGE.margin + 145, y - 79, 120, bold, regular)
-  drawLabelValue(page, 'Report generated', dateLabel(report.generatedAt), PAGE.margin + 300, y - 79, 200, bold, regular)
-  y -= 112
+  top = drawSectionTitle(page, 'Student information', 'Identity and scope attached to this report', top, bold, regular)
+  rectangle(page, PAGE.margin, top, CONTENT_WIDTH, 113, { color: COLORS.white, borderColor: COLORS.border })
+  drawLabelValue(page, 'Student name', student.name, PAGE.margin + 15, top + 15, 235, bold, regular)
+  drawLabelValue(page, 'USN', student.usn, PAGE.margin + 270, top + 15, 110, bold, regular)
+  drawLabelValue(page, 'Report generated', dateLabel(report.generatedAt), PAGE.margin + 398, top + 15, 102, bold, regular, 9)
+  drawLabelValue(page, 'Email address', student.email, PAGE.margin + 15, top + 49, 235, bold, regular, 9)
+  drawLabelValue(page, 'Department', student.department, PAGE.margin + 270, top + 49, 105, bold, regular)
+  drawLabelValue(page, 'Semester', student.semester ? `Semester ${student.semester}` : null, PAGE.margin + 398, top + 49, 102, bold, regular)
+  drawLabelValue(page, 'Section', student.section, PAGE.margin + 15, top + 83, 105, bold, regular)
+  drawLabelValue(page, 'Academic year', academicYearValue(report) || 'Not Provided', PAGE.margin + 145, top + 83, 150, bold, regular)
+  drawLabelValue(page, 'Record status', student.result || 'Not recorded', PAGE.margin + 330, top + 83, 170, bold, regular)
+  top += 133
 
-  y = drawSectionTitle(page, 'Academic snapshot', 'Values stored in the student academic record', y, bold, regular)
-  const gap = 8
-  const metricWidth = (PAGE.width - PAGE.margin * 2 - gap * 2) / 3
+  top = drawSectionTitle(page, 'Academic snapshot', 'Values stored in the selected student academic record', top, bold, regular)
+  const gap = 9
+  const metricWidth = (CONTENT_WIDTH - gap * 2) / 3
   const metricRows = [
     [['Attendance percentage', number(student.attendancePercentage, '%')], ['Average internal marks', number(student.averageInternalMarks, '%')], ['Average assignment score', number(student.averageAssignmentScore, '%')]],
     [['Previous GPA', number(student.previousGpa, ' / 10')], ['Current GPA', number(student.currentGpa, ' / 10')], ['Participation score', number(student.participationScore, '%')]],
   ]
   metricRows.forEach((row) => {
-    row.forEach((metric, index) => drawMetric(page, PAGE.margin + index * (metricWidth + gap), y, metricWidth, metric[0], metric[1], bold))
-    y -= 52
+    row.forEach((metric, index) => drawMetric(page, PAGE.margin + index * (metricWidth + gap), top, metricWidth, metric[0], metric[1], bold, index === 1 ? COLORS.navySoft : COLORS.teal))
+    top += 66
   })
-  y -= 4
+  top += 4
 
-  ensure(115)
-  y = drawSectionTitle(page, 'Subject-wise marks', 'Only subject records available for this student are shown', y, bold, regular)
-  y = drawSubjectTable(page, report.subjects, y, bold, regular)
+  const subjectHeight = report.subjects?.length ? 26 + report.subjects.length * 34 : 61
+  ensure(34 + subjectHeight + 108)
+  top = drawSectionTitle(page, 'Subject-wise marks', 'Actual subject records for this student and semester', top, bold, regular)
+  top = drawSubjectTable(page, report.subjects, top, bold, regular) + 19
 
-  ensure(72)
-  page.drawRectangle({ x: PAGE.margin, y: y - 67, width: PAGE.width - PAGE.margin * 2, height: 67, color: COLORS.navyDark })
-  page.drawText('ACADEMIC PREDICTION', { x: PAGE.margin + 14, y: y - 16, font: bold, size: 6.5, color: rgb(0.66, 0.86, 0.81) })
-  page.drawText(value(report.prediction?.result), { x: PAGE.margin + 14, y: y - 34, font: bold, size: 13, color: COLORS.white })
-  page.drawText('RISK LEVEL', { x: PAGE.margin + 270, y: y - 16, font: bold, size: 6.5, color: rgb(0.66, 0.86, 0.81) })
-  page.drawText(value(report.prediction?.risk), { x: PAGE.margin + 270, y: y - 34, font: bold, size: 11, color: COLORS.white })
-  y -= 84
+  ensure(108)
+  top = drawPrediction(page, report, top, bold, regular) + 20
 
   ensure(80)
-  y = drawRecords(page, 'Teacher remarks', report.remarks, y, bold, regular, 'remark')
+  top = drawRecords(page, 'Teacher remarks', report.remarks, top, bold, regular, 'remark', 'No visible teacher remarks have been recorded for this student.')
   ensure(80)
-  y = drawRecords(page, 'Achievements', report.achievements, y, bold, regular, 'achievement')
-  ensure(82)
-  page.drawRectangle({ x: PAGE.margin, y: y - 75, width: PAGE.width - PAGE.margin * 2, height: 75, color: COLORS.blueLight, borderColor: COLORS.border, borderWidth: 0.7 })
-  page.drawText('AUTHENTICATION', { x: PAGE.margin + 14, y: y - 17, font: bold, size: 7, color: COLORS.navy })
-  drawText(page, 'This report is generated from the CAMPS academic record. Missing fields are marked “Not recorded” and have not been inferred.', PAGE.margin + 14, y - 32, regular, 7, COLORS.muted, 280, 3)
-  page.drawText('Teacher signature', { x: PAGE.margin + 350, y: y - 27, font: regular, size: 7, color: COLORS.muted })
-  page.drawLine({ start: { x: PAGE.margin + 340, y: y - 55 }, end: { x: PAGE.margin + 475, y: y - 55 }, thickness: 0.7, color: COLORS.navy })
-  page.drawText('Signature and date', { x: PAGE.margin + 350, y: y - 66, font: regular, size: 6, color: COLORS.muted })
+  top = drawRecords(page, 'Achievements', report.achievements, top, bold, regular, 'achievement', 'No achievements have been recorded for this student.')
+  ensure(118)
+  drawAuthentication(page, report, top, bold, regular)
   drawFooter(page, report, regular, pageNumber)
   const bytes = await pdf.save()
   return new Blob([bytes], { type: 'application/pdf' })
