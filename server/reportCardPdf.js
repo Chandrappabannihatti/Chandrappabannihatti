@@ -130,7 +130,7 @@ function drawFooter(doc, report, pageNumber) {
 
 function drawContinuationHeader(doc, report) {
   doc.roundedRect(MARGIN, 27, CONTENT_WIDTH, 38, 6).fillAndStroke(COLORS.blueLight, COLORS.border)
-  doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.navy).text('CAMPS — INDIVIDUAL STUDENT ACADEMIC REPORT CARD', MARGIN + 12, 37, { width: 345 })
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.navy).text('CAMPS — STUDENT ACADEMIC REPORT CARD', MARGIN + 12, 37, { width: 345 })
   doc.font('Helvetica').fontSize(8).fillColor(COLORS.tealDark).text(`${textValue(report?.student?.name)} · ${textValue(report?.student?.usn)}`, PAGE_WIDTH - MARGIN - 174, 39, { width: 162, align: 'right', ellipsis: true })
   doc.font('Helvetica').fontSize(6.5).fillColor(COLORS.muted).text(collegeName(report), MARGIN + 12, 52, { width: 350, ellipsis: true })
 }
@@ -146,13 +146,17 @@ function drawMetricCard(doc, x, y, width, label, value, accent = COLORS.teal) {
 function drawPredictionPanel(doc, report, y) {
   const height = 91
   const prediction = report?.prediction || {}
+  const hasStoredPrediction = prediction.isStored === true
   doc.roundedRect(MARGIN, y, CONTENT_WIDTH, height, 9).fillAndStroke(COLORS.navyDark, COLORS.navyDark)
-  doc.font('Helvetica-Bold').fontSize(8).fillColor('#A9DCD0').text('ACADEMIC PREDICTION', MARGIN + 16, y + 13)
-  doc.font('Helvetica').fontSize(8).fillColor('#C6DADB').text('Stored support signal from the selected academic record.', MARGIN + 16, y + 28, { width: 230 })
-  drawBadge(doc, 'Result', prediction.result, MARGIN + 16, y + 48, 112, 'result')
-  doc.font('Helvetica-Bold').fontSize(8).fillColor('#A9DCD0').text('RISK LEVEL', MARGIN + 270, y + 13)
-  doc.font('Helvetica').fontSize(8).fillColor('#C6DADB').text(prediction.modelVersion ? `Model version: ${prediction.modelVersion}` : 'Model version not provided', MARGIN + 270, y + 28, { width: 220, ellipsis: true })
-  drawBadge(doc, 'Risk', prediction.risk, MARGIN + 270, y + 48, 125, 'risk')
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#A9DCD0').text('RESULT AND ACADEMIC PREDICTION', MARGIN + 16, y + 13)
+  doc.font('Helvetica').fontSize(7.5).fillColor('#C6DADB').text('Official record and model support signal are shown separately.', MARGIN + 16, y + 28, { width: 470 })
+  doc.font('Helvetica-Bold').fontSize(7).fillColor('#A9DCD0').text('RECORDED RESULT', MARGIN + 16, y + 40)
+  drawBadge(doc, 'Official', report?.student?.result, MARGIN + 16, y + 49, 112, 'result')
+  doc.font('Helvetica-Bold').fontSize(7).fillColor('#A9DCD0').text('MODEL PREDICTION', MARGIN + 145, y + 40)
+  drawBadge(doc, 'Support signal', hasStoredPrediction ? prediction.result : null, MARGIN + 145, y + 49, 125, 'result')
+  doc.font('Helvetica-Bold').fontSize(7).fillColor('#A9DCD0').text('RISK LEVEL', MARGIN + 300, y + 40)
+  drawBadge(doc, 'Stored risk', hasStoredPrediction ? prediction.risk : null, MARGIN + 300, y + 49, 125, 'risk')
+  doc.font('Helvetica').fontSize(7).fillColor('#C6DADB').text(hasStoredPrediction ? `Model version: ${textValue(prediction.modelVersion, 'Not recorded')}` : 'No stored model prediction', MARGIN + 300, y + 78, { width: 200, ellipsis: true })
   return y + height
 }
 
@@ -164,14 +168,26 @@ function subjectTableHeight(report, options = {}) {
 }
 
 function drawSubjectTable(doc, report, y, options = {}) {
-  const columns = [
-    { key: 'subjectCode', label: 'CODE', width: 58 },
-    { key: 'subjectName', label: 'SUBJECT', width: 157 },
-    { key: 'credits', label: 'CREDITS', width: 57 },
-    { key: 'attendancePercentage', label: 'ATTENDANCE', width: 84 },
-    { key: 'averageInternalMarks', label: 'INTERNAL', width: 78 },
-    { key: 'assignmentScore', label: 'ASSIGNMENTS', width: 81 },
-  ]
+  const rows = options.rows || report?.subjects || []
+  const supportsOutcome = rows.some((subject) => subject?.totalMarks !== null && subject?.totalMarks !== undefined && subject?.totalMarks !== '' || subject?.result)
+  const columns = supportsOutcome
+    ? [
+      { key: 'subjectCode', label: 'CODE', width: 50 },
+      { key: 'subjectName', label: 'SUBJECT', width: 133 },
+      { key: 'credits', label: 'CREDITS', width: 50 },
+      { key: 'attendancePercentage', label: 'ATTENDANCE', width: 76 },
+      { key: 'averageInternalMarks', label: 'INTERNAL', width: 70 },
+      { key: 'assignmentScore', label: 'ASSIGNMENT', width: 72 },
+      { key: 'outcome', label: 'TOTAL / RESULT', width: 64 },
+    ]
+    : [
+      { key: 'subjectCode', label: 'CODE', width: 58 },
+      { key: 'subjectName', label: 'SUBJECT', width: 157 },
+      { key: 'credits', label: 'CREDITS', width: 57 },
+      { key: 'attendancePercentage', label: 'ATTENDANCE', width: 84 },
+      { key: 'averageInternalMarks', label: 'INTERNAL', width: 78 },
+      { key: 'assignmentScore', label: 'ASSIGNMENT MARKS', width: 81 },
+    ]
   const rowHeight = options.rowHeight || 28
   const compact = rowHeight <= 20
   const headerHeight = 26
@@ -182,7 +198,6 @@ function drawSubjectTable(doc, report, y, options = {}) {
     x += column.width
   })
   y += headerHeight
-  const rows = options.rows || report?.subjects || []
   if (!rows.length) {
     const height = 35
     doc.rect(MARGIN, y, CONTENT_WIDTH, height).fillAndStroke(COLORS.soft, COLORS.border)
@@ -193,7 +208,11 @@ function drawSubjectTable(doc, report, y, options = {}) {
     doc.rect(MARGIN, y, CONTENT_WIDTH, rowHeight).fillAndStroke(index % 2 ? COLORS.soft : COLORS.white, COLORS.border)
     let cellX = MARGIN
     columns.forEach((column) => {
-      const raw = column.key === 'assignmentScore' ? subject.assignmentScore ?? subject.averageAssignmentScore : subject[column.key]
+      const raw = column.key === 'assignmentScore'
+        ? subject.assignmentScore ?? subject.averageAssignmentScore
+        : column.key === 'outcome'
+          ? subject.totalMarks ?? subject.total ?? subject.result
+          : subject[column.key]
       const value = column.key === 'credits'
         ? compactNumber(raw, '', 1)
         : ['attendancePercentage', 'averageInternalMarks', 'assignmentScore'].includes(column.key)
@@ -257,6 +276,7 @@ function drawAuthenticationPanel(doc, report, y, options = {}) {
   doc.roundedRect(MARGIN, y, CONTENT_WIDTH, height, 8).fillAndStroke(COLORS.blueLight, COLORS.border)
   doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.navy).text('AUTHENTICATION AND SIGN-OFF', MARGIN + 15, y + 14)
   doc.font('Helvetica').fontSize(8).fillColor(COLORS.muted).text('This report is generated from the CAMPS academic record. Missing fields are marked “Not recorded” and have not been inferred.', MARGIN + 15, y + 33, { width: 280, lineGap: 2 })
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.navy).text(`Teacher: ${textValue(report?.teacherName, 'Not Provided')}`, MARGIN + 15, y + 77, { width: 280, ellipsis: true })
   doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.navy).text('Teacher signature', MARGIN + 340, y + 31, { width: 145, align: 'center' })
   doc.moveTo(MARGIN + 340, y + 61).lineTo(MARGIN + 485, y + 61).lineWidth(.8).strokeColor(COLORS.navy).stroke()
   doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.muted).text(`Signature: ${textValue(signature, 'Not Provided')}`, MARGIN + 340, y + 68, { width: 145, align: 'center', ellipsis: true })
@@ -266,7 +286,7 @@ function drawAuthenticationPanel(doc, report, y, options = {}) {
 
 export function renderReportCardPdf(report) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 0, compress: true, info: { Title: `Individual Student Academic Report Card · ${textValue(report?.student?.usn)}`, Author: 'CAMPS', Subject: collegeName(report), Keywords: 'CAMPS, academic report card' } })
+    const doc = new PDFDocument({ size: 'A4', margin: 0, compress: true, info: { Title: `Student Academic Report Card · ${textValue(report?.student?.usn)}`, Author: 'CAMPS', Subject: collegeName(report), Keywords: 'CAMPS, academic report card' } })
     const chunks = []
     let pageNumber = 1
     let y = 0
@@ -297,7 +317,7 @@ export function renderReportCardPdf(report) {
     doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#BFD4D8').text('OFFICIAL ACADEMIC RECORD', PAGE_WIDTH - MARGIN - 145, 34, { width: 145, align: 'right' })
     doc.font('Helvetica').fontSize(8).fillColor('#BFD4D8').text(academicYearLabel(report), PAGE_WIDTH - MARGIN - 145, 53, { width: 145, align: 'right' })
 
-    doc.font('Helvetica-Bold').fontSize(17).fillColor(COLORS.navy).text('INDIVIDUAL STUDENT ACADEMIC REPORT CARD', MARGIN, 153, { width: CONTENT_WIDTH })
+    doc.font('Helvetica-Bold').fontSize(17).fillColor(COLORS.navy).text('STUDENT ACADEMIC REPORT CARD', MARGIN, 153, { width: CONTENT_WIDTH })
     doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted).text('Official academic summary · Prepared for academic documentation and printing.', MARGIN, 177, { width: CONTENT_WIDTH })
     y = 205
 
@@ -345,8 +365,8 @@ export function renderReportCardPdf(report) {
         additionalCount: Math.max(0, subjects.length - 4 - continuationRows.length),
       }) + 6
       y = drawPredictionPanel(doc, report, y) + 10
-      y = drawRecordList(doc, 'Teacher remarks', report?.remarks, y, { compact: true, limit: 1, empty: 'No visible teacher remarks have been recorded for this student.' })
-      y = drawRecordList(doc, 'Achievements', report?.achievements, y, { kind: 'achievement', compact: true, limit: 1, empty: 'No achievements have been recorded for this student.' })
+      y = drawRecordList(doc, 'Teacher remarks', report?.remarks, y, { compact: true, limit: 1, empty: 'No records available.' })
+      y = drawRecordList(doc, 'Achievements', report?.achievements, y, { kind: 'achievement', compact: true, limit: 1, empty: 'No records available.' })
       drawAuthenticationPanel(doc, report, y, { compact: true })
     } else {
       const subjectHeight = subjectTableHeight(report, { rowHeight: 28 })
@@ -358,9 +378,9 @@ export function renderReportCardPdf(report) {
       y = drawPredictionPanel(doc, report, y) + 20
 
       ensureSpace(80)
-      y = drawRecordList(doc, 'Teacher remarks', report?.remarks, y, { compact: true, limit: 1, empty: 'No visible teacher remarks have been recorded for this student.' })
+      y = drawRecordList(doc, 'Teacher remarks', report?.remarks, y, { compact: true, limit: 1, empty: 'No records available.' })
       ensureSpace(80)
-      y = drawRecordList(doc, 'Achievements', report?.achievements, y, { kind: 'achievement', compact: true, limit: 1, empty: 'No achievements have been recorded for this student.' })
+      y = drawRecordList(doc, 'Achievements', report?.achievements, y, { kind: 'achievement', compact: true, limit: 1, empty: 'No records available.' })
       ensureSpace(118)
       drawAuthenticationPanel(doc, report, y)
     }

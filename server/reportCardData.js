@@ -111,7 +111,7 @@ async function loadDemoReportCard(studentId) {
     .filter((item) => Number(item.studentId) === mappedStudent.id)
     .sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')))
     .map((item) => ({ date: dateOrNull(item.date), label: cleanString(item.label), note: cleanString(item.note), author: cleanString(item.author) }))
-  return { student: mappedStudent, subjects, achievements, remarks, prediction: { result: mappedStudent.result, risk: mappedStudent.risk, modelVersion: null } }
+  return { student: mappedStudent, subjects, achievements, remarks, prediction: { result: null, risk: null, modelVersion: null, isStored: false } }
 }
 
 async function loadDatabaseReportCard(studentId) {
@@ -163,8 +163,8 @@ async function loadDatabaseReportCard(studentId) {
     achievements: achievementRows.map((row) => ({ date: dateOrNull(row.date), achievementType: cleanString(row.achievementType), title: cleanString(row.title), description: cleanString(row.description) })),
     remarks: remarkRows.map((row) => ({ date: dateOrNull(row.date), label: cleanString(row.label), note: cleanString(row.note), author: cleanString(row.author) })),
     prediction: predictionRows[0]
-      ? { result: predictionRows[0].result === 'Pass' || predictionRows[0].result === 'Fail' ? predictionRows[0].result : null, risk: normalizeRisk(predictionRows[0].risk) || null, modelVersion: cleanString(predictionRows[0].modelVersion) }
-      : { result: student.result, risk: student.risk, modelVersion: null },
+      ? { result: predictionRows[0].result === 'Pass' || predictionRows[0].result === 'Fail' ? predictionRows[0].result : null, risk: normalizeRisk(predictionRows[0].risk) || null, modelVersion: cleanString(predictionRows[0].modelVersion), isStored: true }
+      : { result: null, risk: null, modelVersion: null, isStored: false },
   }
 }
 
@@ -175,10 +175,12 @@ export async function loadReportCard({ studentId, user, scope = {}, useDemoData,
   if (!report) throw httpError(404, 'Student record not found.')
   const normalizedScope = normalizeScope(scope)
   assertScope({ user, student: report.student, scope: normalizedScope, isStudentInUserScope, requireTeacherScope })
+  const recordedTeacherName = report.remarks?.find((item) => item.author)?.author || null
   return {
     ...report,
     academicYear: report.student.academicYear || academicYear() || null,
     generatedAt: new Date().toISOString(),
+    teacherName: cleanString(recordedTeacherName) || (user.role === 'teacher' ? cleanString(user.name) : null),
     college: {
       name: cleanString(process.env.COLLEGE_NAME) || DEFAULT_COLLEGE_NAME,
       location: cleanString(process.env.COLLEGE_LOCATION) || DEFAULT_COLLEGE_LOCATION,

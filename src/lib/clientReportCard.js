@@ -157,7 +157,7 @@ function drawLogo(page, report, x, top, size, bold) {
 function drawHeader(page, report, bold, regular, continuation = false) {
   if (continuation) {
     roundedRect(page, PAGE.margin, 27, CONTENT_WIDTH, 38, { color: COLORS.blueLight, borderColor: COLORS.border })
-    textTop(page, 'CAMPS — INDIVIDUAL STUDENT ACADEMIC REPORT CARD', PAGE.margin + 12, 37, bold, 8, COLORS.navy, 345, 1)
+    textTop(page, 'CAMPS — STUDENT ACADEMIC REPORT CARD', PAGE.margin + 12, 37, bold, 8, COLORS.navy, 345, 1)
     rightTextTop(page, `${value(report.student?.name)} · ${value(report.student?.usn)}`, PAGE.width - PAGE.margin - 174, 39, regular, 8, COLORS.tealDark, 162)
     textTop(page, collegeName(report), PAGE.margin + 12, 52, regular, 6.5, COLORS.muted, 350, 1)
     return 86
@@ -169,7 +169,7 @@ function drawHeader(page, report, bold, regular, continuation = false) {
   textTop(page, 'CAMPS — Centralized Academic Monitoring System', PAGE.margin + 90, 98, bold, 9, rgb(0.55, 0.84, 0.78), 340, 1)
   rightTextTop(page, 'OFFICIAL ACADEMIC RECORD', PAGE.width - PAGE.margin - 145, 34, bold, 7.5, rgb(0.75, 0.83, 0.85), 145)
   rightTextTop(page, academicYearLabel(report), PAGE.width - PAGE.margin - 145, 53, regular, 8, rgb(0.75, 0.83, 0.85), 145)
-  textTop(page, 'INDIVIDUAL STUDENT ACADEMIC REPORT CARD', PAGE.margin, 153, bold, 17, COLORS.navy, CONTENT_WIDTH, 1)
+  textTop(page, 'STUDENT ACADEMIC REPORT CARD', PAGE.margin, 153, bold, 17, COLORS.navy, CONTENT_WIDTH, 1)
   textTop(page, 'Official academic summary · Prepared for academic documentation and printing.', PAGE.margin, 177, regular, 9, COLORS.muted, CONTENT_WIDTH, 1)
   return 205
 }
@@ -182,14 +182,17 @@ function drawMetric(page, x, top, width, label, fieldValue, bold, accent) {
 }
 
 function drawSubjectTable(page, subjects, top, bold, regular, options = {}) {
-  const columns = [['CODE', 58], ['SUBJECT', 157], ['CREDITS', 57], ['ATTENDANCE', 84], ['INTERNAL', 78], ['ASSIGNMENTS', 81]]
+  const rows = subjects || []
+  const supportsOutcome = rows.some((subject) => (subject?.totalMarks !== null && subject?.totalMarks !== undefined && subject?.totalMarks !== '') || subject?.result)
+  const columns = supportsOutcome
+    ? [['CODE', 50], ['SUBJECT', 133], ['CREDITS', 50], ['ATTENDANCE', 76], ['INTERNAL', 70], ['ASSIGNMENT', 72], ['TOTAL / RESULT', 64]]
+    : [['CODE', 58], ['SUBJECT', 157], ['CREDITS', 57], ['ATTENDANCE', 84], ['INTERNAL', 78], ['ASSIGNMENT MARKS', 81]]
   const rowHeight = options.rowHeight || 28
   const compact = rowHeight <= 20
   rectangle(page, PAGE.margin, top, CONTENT_WIDTH, 26, { color: COLORS.teal })
   let x = PAGE.margin
   columns.forEach(([label, width]) => { textTop(page, label, x + 6, top + 9, bold, 7, COLORS.white, width - 12, 1); x += width })
   let cursor = top + 26
-  const rows = subjects || []
   if (!rows.length) {
     rectangle(page, PAGE.margin, cursor, CONTENT_WIDTH, 35, { color: COLORS.soft, borderColor: COLORS.border, borderWidth: 0.7 })
     textTop(page, 'Subject-wise marks have not been recorded yet.', PAGE.margin + 10, cursor + 12, regular, 8.5, COLORS.muted, CONTENT_WIDTH - 20, 1)
@@ -205,6 +208,7 @@ function drawSubjectTable(page, subjects, top, bold, regular, options = {}) {
       compactNumber(subject.attendancePercentage, '%'),
       compactNumber(subject.averageInternalMarks, '%'),
       compactNumber(subject.assignmentScore ?? subject.averageAssignmentScore, '%'),
+      value(subject.totalMarks ?? subject.total ?? subject.result),
     ]
     columns.forEach(([, width], valueIndex) => {
       const font = valueIndex === 1 ? regular : bold
@@ -259,13 +263,17 @@ function drawRecords(page, title, records, top, bold, regular, kind, empty, opti
 
 function drawPrediction(page, report, top, bold, regular) {
   const prediction = report.prediction || {}
+  const hasStoredPrediction = prediction.isStored === true
   rectangle(page, PAGE.margin, top, CONTENT_WIDTH, 91, { color: COLORS.navyDark })
-  textTop(page, 'ACADEMIC PREDICTION', PAGE.margin + 16, top + 13, bold, 8, rgb(0.66, 0.86, 0.81), 230, 1)
-  textTop(page, 'Stored support signal from the selected academic record.', PAGE.margin + 16, top + 28, regular, 8, rgb(0.78, 0.86, 0.86), 230, 1)
-  drawBadge(page, 'Result', prediction.result, PAGE.margin + 16, top + 48, 112, bold, 'result')
-  textTop(page, 'RISK LEVEL', PAGE.margin + 270, top + 13, bold, 8, rgb(0.66, 0.86, 0.81), 220, 1)
-  textTop(page, prediction.modelVersion ? `Model version: ${prediction.modelVersion}` : 'Model version not provided', PAGE.margin + 270, top + 28, regular, 8, rgb(0.78, 0.86, 0.86), 220, 1)
-  drawBadge(page, 'Risk', prediction.risk, PAGE.margin + 270, top + 48, 125, bold, 'risk')
+  textTop(page, 'RESULT AND ACADEMIC PREDICTION', PAGE.margin + 16, top + 13, bold, 8, rgb(0.66, 0.86, 0.81), 470, 1)
+  textTop(page, 'Official record and model support signal are shown separately.', PAGE.margin + 16, top + 28, regular, 7.5, rgb(0.78, 0.86, 0.86), 470, 1)
+  textTop(page, 'RECORDED RESULT', PAGE.margin + 16, top + 40, bold, 7, rgb(0.66, 0.86, 0.81), 112, 1)
+  drawBadge(page, 'Official', report.student?.result, PAGE.margin + 16, top + 49, 112, bold, 'result')
+  textTop(page, 'MODEL PREDICTION', PAGE.margin + 145, top + 40, bold, 7, rgb(0.66, 0.86, 0.81), 125, 1)
+  drawBadge(page, 'Support signal', hasStoredPrediction ? prediction.result : null, PAGE.margin + 145, top + 49, 125, bold, 'result')
+  textTop(page, 'RISK LEVEL', PAGE.margin + 300, top + 40, bold, 7, rgb(0.66, 0.86, 0.81), 125, 1)
+  drawBadge(page, 'Stored risk', hasStoredPrediction ? prediction.risk : null, PAGE.margin + 300, top + 49, 125, bold, 'risk')
+  textTop(page, hasStoredPrediction ? `Model version: ${value(prediction.modelVersion, 'Not recorded')}` : 'No stored model prediction', PAGE.margin + 300, top + 78, regular, 7, rgb(0.78, 0.86, 0.86), 200, 1)
   return top + 91
 }
 
@@ -276,6 +284,7 @@ function drawAuthentication(page, report, top, bold, regular, options = {}) {
   roundedRect(page, PAGE.margin, top, CONTENT_WIDTH, height, { color: COLORS.blueLight, borderColor: COLORS.border })
   textTop(page, 'AUTHENTICATION AND SIGN-OFF', PAGE.margin + 15, top + 14, bold, 9, COLORS.navy, 300, 1)
   textTop(page, 'This report is generated from the CAMPS academic record. Missing fields are marked “Not recorded” and have not been inferred.', PAGE.margin + 15, top + 33, regular, 8, COLORS.muted, 280, 3)
+  textTop(page, `Teacher: ${value(report.teacherName, 'Not Provided')}`, PAGE.margin + 15, top + 77, bold, 7.5, COLORS.navy, 280, 1)
   textTop(page, 'Teacher signature', PAGE.margin + 340, top + 31, bold, 8, COLORS.navy, 145, 1)
   line(page, PAGE.margin + 340, top + 61, PAGE.margin + 485, top + 61, { thickness: 0.8, color: COLORS.navy })
   textTop(page, `Signature: ${value(signature, 'Not Provided')}`, PAGE.margin + 340, top + 68, regular, 7.5, COLORS.muted, 145, 1)
@@ -288,10 +297,10 @@ export async function createClientReportCardPdf(reportInput = {}) {
     academicYear: reportInput.academicYear || reportInput.student?.academicYear || null,
     generatedAt: reportInput.generatedAt || new Date().toISOString(),
     college: { ...(reportInput.college || {}) },
-    prediction: reportInput.prediction || { result: reportInput.student?.result, risk: reportInput.student?.risk },
+    prediction: reportInput.prediction || { result: null, risk: null, modelVersion: null, isStored: false },
   }
   const pdf = await PDFDocument.create()
-  pdf.setTitle(`Individual Student Academic Report Card · ${value(report.student?.usn)}`)
+  pdf.setTitle(`Student Academic Report Card · ${value(report.student?.usn)}`)
   pdf.setAuthor('CAMPS')
   pdf.setSubject(collegeName(report))
   const regular = await pdf.embedFont(StandardFonts.Helvetica)
@@ -349,8 +358,8 @@ export async function createClientReportCardPdf(reportInput = {}) {
       additionalCount: Math.max(0, subjects.length - 4 - continuationRows.length),
     }) + 6
     top = drawPrediction(page, report, top, bold, regular) + 10
-    top = drawRecords(page, 'Teacher remarks', report.remarks, top, bold, regular, 'remark', 'No visible teacher remarks have been recorded for this student.', { compact: true, limit: 1 })
-    top = drawRecords(page, 'Achievements', report.achievements, top, bold, regular, 'achievement', 'No achievements have been recorded for this student.', { compact: true, limit: 1 })
+    top = drawRecords(page, 'Teacher remarks', report.remarks, top, bold, regular, 'remark', 'No records available.', { compact: true, limit: 1 })
+    top = drawRecords(page, 'Achievements', report.achievements, top, bold, regular, 'achievement', 'No records available.', { compact: true, limit: 1 })
     drawAuthentication(page, report, top, bold, regular, { compact: true })
   } else {
     const subjectHeight = subjects.length ? 26 + subjects.length * 28 : 61
@@ -362,9 +371,9 @@ export async function createClientReportCardPdf(reportInput = {}) {
     top = drawPrediction(page, report, top, bold, regular) + 20
 
     ensure(80)
-    top = drawRecords(page, 'Teacher remarks', report.remarks, top, bold, regular, 'remark', 'No visible teacher remarks have been recorded for this student.', { compact: true, limit: 1 })
+    top = drawRecords(page, 'Teacher remarks', report.remarks, top, bold, regular, 'remark', 'No records available.', { compact: true, limit: 1 })
     ensure(80)
-    top = drawRecords(page, 'Achievements', report.achievements, top, bold, regular, 'achievement', 'No achievements have been recorded for this student.', { compact: true, limit: 1 })
+    top = drawRecords(page, 'Achievements', report.achievements, top, bold, regular, 'achievement', 'No records available.', { compact: true, limit: 1 })
     ensure(118)
     drawAuthentication(page, report, top, bold, regular)
   }

@@ -75,11 +75,15 @@ test('rejects invalid or missing backend records', async () => {
 })
 
 test('renders a valid PDF filename and document header', async () => {
-  const report = await request({ role: 'teacher', department: 'CSE' }, { department: 'CSE', semester: 7, section: 'B' })
+  const report = await request({ role: 'teacher', department: 'CSE', name: 'Dr. Ananya Rao' }, { department: 'CSE', semester: 7, section: 'B' })
   const pdf = await renderReportCardPdf(report)
+  const document = await PDFDocument.load(pdf)
   assert.equal(reportCardFilename(report.student.usn), 'Report_Card_4PM21CS033.pdf')
   assert.equal(report.college.name, 'PES Institute of Technology and Management')
   assert.equal(report.college.location, 'Shivamogga, Karnataka')
+  assert.equal(report.prediction.isStored, false)
+  assert.equal(report.teacherName, 'Dr. Ananya Rao')
+  assert.equal(document.getTitle(), 'Student Academic Report Card · 4PM21CS033')
   assert.match(pdf.toString('latin1'), /PES Institute of Technology and Management/)
   assert.equal(pdf.subarray(0, 8).toString(), '%PDF-1.3')
   assert.match(pdf.subarray(-12).toString(), /\n%%EOF\n$/)

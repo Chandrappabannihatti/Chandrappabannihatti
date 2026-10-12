@@ -30,6 +30,8 @@ test('creates a valid local fallback PDF and ZIP', async () => {
   const pdf = await createClientReportCardPdf(report)
   const zip = await createClientReportCardsZip([report])
   assert.equal(pdf.type, 'application/pdf')
+  const document = await PDFDocument.load(await pdf.arrayBuffer())
+  assert.equal(document.getTitle(), 'Student Academic Report Card · 4PM21CS033')
   const pdfBytes = new Uint8Array(await pdf.arrayBuffer())
   const zipBytes = new Uint8Array(await zip.arrayBuffer())
   assert.deepEqual(Array.from(pdfBytes.slice(0, 5)), [37, 80, 68, 70, 45])
