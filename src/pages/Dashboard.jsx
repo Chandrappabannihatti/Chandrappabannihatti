@@ -532,6 +532,8 @@ function AdminPeopleView({ user, token, students, setStudents, onAddStudent, sho
   const [loading, setLoading] = useState(false)
   const [teacherForm, setTeacherForm] = useState(null)
   const [parentForm, setParentForm] = useState(null)
+  const [studentForm, setStudentForm] = useState(null)
+  const [studentOptions, setStudentOptions] = useState(() => students.filter((student) => !selectedDepartment || student.department === selectedDepartment))
   const [error, setError] = useState('')
   const [reloadToken, setReloadToken] = useState(0)
   const limit = 10
@@ -598,6 +600,22 @@ function AdminPeopleView({ user, token, students, setStudents, onAddStudent, sho
     return () => { mounted = false }
   }, [activeRole, apiSession, localParents, localTeachers, students, selectedDepartment, query, status, page, token, reloadToken])
 
+  useEffect(() => {
+    if (!parentForm) return undefined
+    if (!apiSession) {
+      setStudentOptions(students.filter((student) => !selectedDepartment || student.department === selectedDepartment))
+      return undefined
+    }
+    let mounted = true
+    setAuthToken(getAuthToken() || token)
+    api.getStudents({ department: selectedDepartment || undefined, status: 'active', limit: 100 }).then((response) => {
+      if (mounted) setStudentOptions(response?.data || [])
+    }).catch(() => {
+      if (mounted) setStudentOptions(students.filter((student) => !selectedDepartment || student.department === selectedDepartment))
+    })
+    return () => { mounted = false }
+  }, [parentForm, apiSession, selectedDepartment, students, token])
+
   const refresh = () => setReloadToken((current) => current + 1)
   const openStudents = () => navigate('/app/students')
   const toggleStudentStatus = async (student) => {
@@ -613,6 +631,25 @@ function AdminPeopleView({ user, token, students, setStudents, onAddStudent, sho
       refresh()
     } catch (statusError) {
       showToast(statusError.response?.data?.message || statusError.message || 'Student account status could not be changed.')
+    }
+  }
+
+  const saveStudent = async (input) => {
+    try {
+      let saved = input
+      if (apiSession) {
+        setAuthToken(getAuthToken() || token)
+        const response = await api.updateStudent(input.id, input)
+        saved = response.data || input
+      }
+      setStudents?.((current) => current.map((item) => Number(item.id) === Number(saved.id) ? saved : item))
+      setStudentForm(null)
+      showToast(`${saved.name} was updated.`)
+      refresh()
+      return true
+    } catch (saveError) {
+      showToast(saveError.response?.data?.message || saveError.message || 'Student record could not be updated.')
+      return false
     }
   }
 
@@ -694,9 +731,10 @@ function AdminPeopleView({ user, token, students, setStudents, onAddStudent, sho
     <div className="admin-people-tabs" role="tablist" aria-label="People account type">{[['students', 'Students'], ['teachers', 'Teachers'], ['parents', 'Parents']].map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={activeRole === key} className={activeRole === key ? 'active' : ''} onClick={() => { setActiveRole(key); setPage(1) }}>{label}</button>)}</div>
     <div className="toolbar-card"><div className="search-field"><FiSearch /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1) }} placeholder={`Search ${roleLabel.toLowerCase()} accounts`} aria-label={`Search ${roleLabel.toLowerCase()} accounts`} /></div><div className="toolbar-filters"><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }} aria-label="Filter account status"><option value="active">Active accounts</option><option value="inactive">Inactive accounts</option><option value="all">All statuses</option></select><span className="scope-pill">{pagination.total} records</span></div></div>
     {error && <div className="dashboard-data-notice" role="alert"><FiAlertCircle /><span>{error}</span><button type="button" onClick={() => setPage((current) => current)}>Retry</button></div>}
-    <section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">{roleLabel} accounts</h2><p className="card-description">{loading ? 'Loading authorized records…' : `${pagination.total} ${roleLabel.toLowerCase()} record${pagination.total === 1 ? '' : 's'} · page ${pagination.page} of ${pagination.pages}`}</p></div><span className="department-note"><FiShield /> {selectedDepartment || 'All departments'}</span></div>{loading ? <div className="empty-state"><FiRefreshCw className="dashboard-loading-icon" /><span>Loading records…</span></div> : records.length ? <div className="table-scroll"><table className="student-table admin-people-table"><thead><tr>{activeRole === 'students' ? <><th>Student</th><th>Department</th><th>Semester</th><th>Section</th><th>Academic status</th><th>Account</th><th>Actions</th></> : activeRole === 'teachers' ? <><th>Teacher</th><th>Department</th><th>Employee code</th><th>Contact</th><th>Account</th><th>Actions</th></> : <><th>Parent</th><th>Linked student</th><th>Contact</th><th>Relationship</th><th>Account</th><th>Actions</th></> }</tr></thead><tbody>{records.map((record) => { const active = record.isActive !== false; return <tr key={`${activeRole}-${record.id}`}><td><div className="student-cell"><Avatar initials={record.initials || String(record.name || '').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase()} tone={active ? 'sky' : ''} /><div><span className="student-name">{record.name}</span><span className="student-usn">{activeRole === 'students' ? record.usn : record.email}</span></div></div></td>{activeRole === 'students' ? <><td>{record.department}</td><td>Semester {record.semester}</td><td>{record.section}</td><td><RiskBadge risk={record.risk} /></td><td><span className={`account-status ${active ? 'active' : 'inactive'}`}><i /> {active ? 'Active' : 'Inactive'}</span></td><td><button className="row-action" type="button" onClick={openStudents} aria-label={`Open ${record.name} in student records`}><FiEdit3 /></button><button className="row-action" type="button" onClick={() => toggleStudentStatus(record)} aria-label={`${active ? 'Deactivate' : 'Activate'} ${record.name}`}><FiTrash2 /></button></td></> : activeRole === 'teachers' ? <><td>{record.department}</td><td>{record.employeeCode}</td><td>{record.email}{record.phone ? ` · ${record.phone}` : ''}</td><td><span className={`account-status ${active ? 'active' : 'inactive'}`}><i /> {active ? 'Active' : 'Inactive'}</span></td><td><button className="row-action" type="button" onClick={() => setTeacherForm(record)} aria-label={`Edit ${record.name}`}><FiEdit3 /></button><button className="row-action" type="button" onClick={() => toggleTeacherStatus(record)} aria-label={`${active ? 'Deactivate' : 'Activate'} ${record.name}`}><FiTrash2 /></button></td></> : <><td>{record.studentName} · {record.studentUsn}</td><td>{record.email || 'Email not recorded'}{record.phone ? ` · ${record.phone}` : ''}</td><td>{record.relationship || 'Parent'}</td><td><span className={`account-status ${active ? 'active' : 'inactive'}`}><i /> {active ? 'Active' : 'Inactive'}</span></td><td><button className="row-action" type="button" onClick={() => setParentForm(record)} aria-label={`Edit ${record.name}`}><FiEdit3 /></button><button className="row-action" type="button" onClick={() => toggleParentStatus(record)} aria-label={`${active ? 'Deactivate' : 'Activate'} ${record.name}`}><FiTrash2 /></button></td></>}</tr> })}</tbody></table></div> : <div className="empty-state"><FiUsers /><span>No {roleLabel.toLowerCase()} records match the current filters.</span></div>}<div className="table-footer"><span>Showing {records.length ? (pagination.page - 1) * pagination.limit + 1 : 0}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}</span><div className="pagination"><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} aria-label="Previous page">‹</button><span>{pagination.page} / {pagination.pages}</span><button type="button" onClick={() => setPage((current) => Math.min(pagination.pages, current + 1))} disabled={page >= pagination.pages} aria-label="Next page">›</button></div></div></section>
+    <section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">{roleLabel} accounts</h2><p className="card-description">{loading ? 'Loading authorized records…' : `${pagination.total} ${roleLabel.toLowerCase()} record${pagination.total === 1 ? '' : 's'} · page ${pagination.page} of ${pagination.pages}`}</p></div><span className="department-note"><FiShield /> {selectedDepartment || 'All departments'}</span></div>{loading ? <div className="empty-state"><FiRefreshCw className="dashboard-loading-icon" /><span>Loading records…</span></div> : records.length ? <div className="table-scroll"><table className="student-table admin-people-table"><thead><tr>{activeRole === 'students' ? <><th>Student</th><th>Department</th><th>Semester</th><th>Section</th><th>Academic status</th><th>Account</th><th>Actions</th></> : activeRole === 'teachers' ? <><th>Teacher</th><th>Department</th><th>Employee code</th><th>Contact</th><th>Account</th><th>Actions</th></> : <><th>Parent</th><th>Linked student</th><th>Contact</th><th>Relationship</th><th>Account</th><th>Actions</th></> }</tr></thead><tbody>{records.map((record) => { const active = record.isActive !== false; return <tr key={`${activeRole}-${record.id}`}><td><div className="student-cell"><Avatar initials={record.initials || String(record.name || '').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase()} tone={active ? 'sky' : ''} /><div><span className="student-name">{record.name}</span><span className="student-usn">{activeRole === 'students' ? record.usn : record.email}</span></div></div></td>{activeRole === 'students' ? <><td>{record.department}</td><td>Semester {record.semester}</td><td>{record.section}</td><td><RiskBadge risk={record.risk} /></td><td><span className={`account-status ${active ? 'active' : 'inactive'}`}><i /> {active ? 'Active' : 'Inactive'}</span></td><td><button className="row-action" type="button" onClick={() => setStudentForm(record)} aria-label={`Edit ${record.name}`}><FiEdit3 /></button><button className="row-action" type="button" onClick={() => toggleStudentStatus(record)} aria-label={`${active ? 'Deactivate' : 'Activate'} ${record.name}`}><FiTrash2 /></button></td></> : activeRole === 'teachers' ? <><td>{record.department}</td><td>{record.employeeCode}</td><td>{record.email}{record.phone ? ` · ${record.phone}` : ''}</td><td><span className={`account-status ${active ? 'active' : 'inactive'}`}><i /> {active ? 'Active' : 'Inactive'}</span></td><td><button className="row-action" type="button" onClick={() => setTeacherForm(record)} aria-label={`Edit ${record.name}`}><FiEdit3 /></button><button className="row-action" type="button" onClick={() => toggleTeacherStatus(record)} aria-label={`${active ? 'Deactivate' : 'Activate'} ${record.name}`}><FiTrash2 /></button></td></> : <><td>{record.studentName} · {record.studentUsn}</td><td>{record.email || 'Email not recorded'}{record.phone ? ` · ${record.phone}` : ''}</td><td>{record.relationship || 'Parent'}</td><td><span className={`account-status ${active ? 'active' : 'inactive'}`}><i /> {active ? 'Active' : 'Inactive'}</span></td><td><button className="row-action" type="button" onClick={() => setParentForm(record)} aria-label={`Edit ${record.name}`}><FiEdit3 /></button><button className="row-action" type="button" onClick={() => toggleParentStatus(record)} aria-label={`${active ? 'Deactivate' : 'Activate'} ${record.name}`}><FiTrash2 /></button></td></>}</tr> })}</tbody></table></div> : <div className="empty-state"><FiUsers /><span>No {roleLabel.toLowerCase()} records match the current filters.</span></div>}<div className="table-footer"><span>Showing {records.length ? (pagination.page - 1) * pagination.limit + 1 : 0}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}</span><div className="pagination"><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} aria-label="Previous page">‹</button><span>{pagination.page} / {pagination.pages}</span><button type="button" onClick={() => setPage((current) => Math.min(pagination.pages, current + 1))} disabled={page >= pagination.pages} aria-label="Next page">›</button></div></div></section>
     {teacherForm && <TeacherForm teacher={teacherForm.id ? teacherForm : null} department={selectedDepartment} onClose={() => setTeacherForm(null)} onSave={saveTeacher} />}
-    {parentForm && <ParentForm parent={parentForm.id ? parentForm : null} students={students.filter((student) => !selectedDepartment || student.department === selectedDepartment)} onClose={() => setParentForm(null)} onSave={saveParent} />}
+    {parentForm && <ParentForm parent={parentForm.id ? parentForm : null} students={studentOptions} onClose={() => setParentForm(null)} onSave={saveParent} />}
+    {studentForm && <StudentFormModal student={studentForm} departmentScope={selectedDepartment} existingStudents={students} onClose={() => setStudentForm(null)} onSave={saveStudent} />}
   </div>
 }
 
