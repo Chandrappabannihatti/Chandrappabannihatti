@@ -3720,3 +3720,430 @@ body { font-size: var(--font-body); line-height: var(--leading-body); }
   .section-card-letter { width: 55px; height: 55px; border-radius: 15px; font-size: 26px; }
   .section-card-content > strong { font-size: 25px; }
 }
+
+/* --------------------------------------------------------------------------
+   Final contrast and content-visibility audit
+   Keep this layer last: the stylesheet contains several historical theme
+   layers, so shared tokens and the most important text states are normalized
+   here without changing any component or data behaviour.
+   -------------------------------------------------------------------------- */
+:root {
+  --ink: #0b1f3a;
+  --ink-soft: #173b57;
+  --muted: #4b647a;
+  --primary: #0e6f78;
+  --primary-dark: #0b5964;
+  --coral: #0e6f78;
+  --coral-dark: #0b5964;
+  --teal: #0f817f;
+  --teal-dark: #0f716e;
+  --warning: #8a5f14;
+  --slate-700: #344e65;
+  --slate-600: #4b647a;
+  --slate-500: #526b82;
+  --slate-400: #60788e;
+  --line: #cbd9e5;
+  --border-subtle: #d1dee9;
+  --border-strong: #b6c9d8;
+  --teal-700: #0e6f78;
+  --teal-600: #0f777a;
+  --teal-500: #0f817f;
+}
+
+body { color: var(--ink); }
+
+/* Native controls need an explicit foreground, option, and placeholder color.
+   Opacity is deliberately not used to make disabled text readable. */
+:is(input, select, textarea) { color: var(--ink); caret-color: var(--teal-700); }
+:is(input, select, textarea)::placeholder { color: var(--slate-500); opacity: 1; }
+:is(select, option) { color: var(--ink); background: #fff; }
+:is(input, select, textarea):disabled {
+  color: var(--slate-600);
+  -webkit-text-fill-color: var(--slate-600);
+}
+:is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid rgba(14, 111, 120, .62);
+  outline-offset: 3px;
+}
+:is(input, select, textarea):focus-visible { outline-offset: 0; }
+
+/* Light page and dashboard copy */
+.dashboard-main :is(
+  .breadcrumb,
+  .topbar-user-meta span,
+  .page-subtitle,
+  .card-description,
+  .kpi-label,
+  .legend-item span,
+  .risk-center span,
+  .alert-info span,
+  .semester-tab,
+  .student-usn,
+  .table-footer,
+  .view-header p,
+  .info-stat span,
+  .student-detail-hero p,
+  .detail-item span,
+  .mark-row span,
+  .prediction-field > span,
+  .prediction-field small,
+  .result-student p,
+  .result-risk span,
+  .probability-head,
+  .probability p,
+  .model-note-card p,
+  .model-version,
+  .message-item time,
+  .message-item p,
+  .message-detail-head p,
+  .announcement-card p,
+  .announcement-footer,
+  .remark-table th,
+  .remark-table td,
+  .modal-head p,
+  .empty-state,
+  .profile-card-heading p,
+  .profile-detail-grid span,
+  .profile-stat-grid span,
+  .profile-contact-details span,
+  .profile-mark-row span,
+  .profile-mark-row small,
+  .profile-subject-note span,
+  .profile-subject-note strong,
+  .profile-contact span,
+  .profile-remark-list p,
+  .profile-remark-list small,
+  .profile-empty-note
+) { color: var(--slate-600); }
+
+.dashboard-main .dashboard-data-state p,
+.dashboard-main .search-field svg,
+.dashboard-main .topbar-icon,
+.dashboard-main .row-action,
+.dashboard-main .alert-arrow,
+.dashboard-main .pagination button,
+.dashboard-main .announcement-actions button,
+.dashboard-main .modal-close {
+  color: var(--slate-500);
+}
+.dashboard-main .student-table th { color: var(--slate-600); }
+.dashboard-main .student-table td { color: var(--slate-700); }
+.dashboard-main .student-name,
+.dashboard-main .student-detail-hero h2,
+.dashboard-main .detail-item strong,
+.dashboard-main .info-stat strong,
+.dashboard-main .mark-row strong,
+.dashboard-main .result-student h2,
+.dashboard-main .probability-head strong,
+.dashboard-main .model-note-card h3,
+.dashboard-main .announcement-footer strong,
+.dashboard-main .custom-tooltip strong,
+.dashboard-main .profile-identity h1,
+.dashboard-main .profile-card-heading h2,
+.dashboard-main .profile-detail-grid strong,
+.dashboard-main .profile-stat-grid strong,
+.dashboard-main .profile-contact-details strong,
+.dashboard-main .profile-contact strong,
+.dashboard-main .profile-remark-list span {
+  color: var(--navy-900);
+}
+.dashboard-main .kpi-card.primary .kpi-label { color: #c3d5dc; }
+.dashboard-main .kpi-card.primary .kpi-value { color: #fff; }
+.dashboard-main .kpi-card.primary .kpi-change { color: var(--mint-300); }
+.dashboard-main .recharts-cartesian-axis-tick-value { fill: var(--slate-500); }
+.dashboard-main .card-select,
+.dashboard-main .toolbar-filters select { color: var(--slate-700); }
+.dashboard-main .filter-btn { color: var(--slate-700); }
+.dashboard-main .pagination button:hover,
+.dashboard-main .pagination button.active { color: #fff; }
+
+/* Keep data values available on narrow screens instead of clipping them into
+   ellipses. The surrounding table/list containers still provide scrolling. */
+.dashboard-main :is(
+  .breadcrumb strong,
+  .student-name,
+  .student-usn,
+  .admin-person-row strong,
+  .admin-person-row span,
+  .admin-person-row small,
+  .admin-semester-option small,
+  .admin-subject-info strong,
+  .admin-subject-info span,
+  .subject-catalog-item strong,
+  .subject-catalog-item small,
+  .model-evaluation-meta strong,
+  .model-evaluation-meta small,
+  .profile-detail-grid strong,
+  .profile-contact-details strong
+) {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.dashboard-main .student-table td { white-space: normal; vertical-align: top; }
+.dashboard-main .student-cell { min-width: 150px; align-items: flex-start; }
+.dashboard-main .message-item p,
+.dashboard-main .chat-contact-preview {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.dashboard-main .chat-contact-line strong,
+.dashboard-main .chat-recipient h2 {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+/* The prediction banner is a light surface in the final workspace theme. */
+.dashboard-main .prediction-banner {
+  color: var(--navy-900);
+  background: var(--mint-100);
+}
+.dashboard-main .prediction-banner h3 { color: var(--navy-900); }
+.dashboard-main .prediction-banner p,
+.dashboard-main .prediction-score span { color: var(--slate-600); }
+.dashboard-main .prediction-score strong,
+.dashboard-main .prediction-score b { color: var(--teal-700); }
+.dashboard-main .prediction-score b { background: var(--mint-200); }
+
+/* Login, entry, selection, and administration surfaces */
+.login-panel :is(.back-link, .login-subheading, .form-field label span, .demo-hint, .login-foot) { color: var(--slate-600); }
+.login-panel :is(.input-wrap > svg, .input-wrap .password-toggle) { color: var(--slate-500); }
+.login-panel :is(input, textarea)::placeholder { color: var(--slate-500); }
+.erp-entry-page :is(.erp-step-heading p, .erp-department-copy small, .erp-entry-footer, .erp-entry-badge) { color: var(--slate-600); }
+.erp-entry-page .erp-department-action { color: var(--navy-800); }
+.erp-login-page :is(.erp-login-field label span, .erp-login-step p, .erp-demo-hint, .erp-login-security, .erp-login-continue > span, .erp-login-card-heading p) { color: var(--slate-600); }
+.erp-login-page :is(.erp-login-input > svg, .erp-password-toggle) { color: var(--slate-500); }
+.erp-login-page :is(input)::placeholder { color: var(--slate-500); }
+.erp-login-page .erp-login-error { color: #7d2f3d; }
+.department-selection-page :is(.department-account small, .department-list-copy small, .department-list-chevron, .department-list-lock) { color: var(--slate-500); }
+.department-selection-page .department-card-link { color: var(--navy-900); }
+.department-selection-content .department-list-row.locked { opacity: .78; }
+.department-selection-content .department-list-row.locked .department-list-copy strong,
+.department-selection-content .department-list-row.locked .department-card-link { color: var(--slate-700); }
+.semester-selection-page :is(.selection-user small, .selection-note, .selection-scope, .selection-footer, .semester-selection-hero p:last-child, .semester-selection-department small) { color: var(--slate-600); }
+.admin-control-page :is(
+  .admin-control-breadcrumb,
+  .admin-card-heading p,
+  .admin-subject-card-head p,
+  .admin-hierarchy-note,
+  .admin-semester-option small,
+  .admin-subject-info span,
+  .admin-empty-state,
+  .admin-account-details span,
+  .admin-setting-list span,
+  .admin-account-hero p,
+  .subject-catalog-item small,
+  .subject-entry-heading p:not(.page-eyebrow),
+  .subject-entry-toolbar > span
+) { color: var(--slate-600); }
+.admin-control-page .admin-notice { color: #6e4d13; }
+.admin-control-page .admin-notice svg { color: #996f1c; }
+.admin-control-page .admin-department-option > svg,
+.admin-control-page .admin-modal-head > button,
+.admin-control-page .admin-row-action { color: var(--slate-500); }
+.admin-control-page .admin-form-error { color: #7d2f3d; }
+
+/* Academic record, achievement, announcement, and report metadata */
+.dashboard-main :is(
+  .achievement-form-heading p:last-child,
+  .achievement-scope-strip,
+  .achievement-record-meta time,
+  .achievement-student-link small,
+  .profile-achievement-record small,
+  .profile-achievement-record p,
+  .learner-achievement-row p,
+  .learner-achievement-row small,
+  .section-achievement-row small,
+  .section-remark-row p,
+  .section-remark-row small,
+  .report-card-bulk-toolbar span,
+  .report-card-download-success,
+  .report-card-download-error
+) { color: var(--slate-600); }
+.dashboard-main .achievement-scope-strip strong { color: var(--teal-700); }
+.dashboard-main .announcement-type { color: #286f63; }
+.dashboard-main .announcement-type.semester { color: #76540e; }
+.dashboard-main .announcement-type.college { color: #3f6388; }
+.dashboard-main .remark-table th { color: var(--slate-600); }
+.dashboard-main .remark-table td { color: var(--slate-700); }
+.dashboard-main .result-note { color: var(--slate-600); }
+.dashboard-main .prediction-code { color: #2d685f; }
+
+/* Model evaluation uses many intentionally small metadata labels; keep them
+   dark enough and slightly larger without changing the chart or API output. */
+.model-evaluation-page .model-evaluation-status { color: #245f59; font-size: 11px; }
+.model-evaluation-page .model-evaluation-status.audit { color: #765119; }
+.model-evaluation-page .model-evaluation-alert { color: #6e4d13; }
+.model-evaluation-page .model-evaluation-alert strong { color: #5f4111; }
+.model-evaluation-page .model-evaluation-kpi span { color: #356e69; font-size: 11px; }
+.model-evaluation-page .model-evaluation-kpi small { color: #526b82; font-size: 10px; }
+.model-evaluation-page .model-evaluation-meta span,
+.model-evaluation-page .model-evaluation-meta small { color: #526b82; font-size: 10px; }
+.model-evaluation-page .model-evaluation-meta strong { color: #234b59; }
+.model-evaluation-page .model-evaluation-legend > div { color: #526b82; font-size: 11px; }
+.model-evaluation-page .model-evaluation-legend strong { color: #234b59; }
+.model-evaluation-page .model-evaluation-legend small { color: #526b82; font-size: 10px; }
+.model-evaluation-page .model-evaluation-empty,
+.model-evaluation-page .model-evaluation-matrix-empty { color: #526b82; }
+.model-evaluation-page .model-evaluation-matrix-empty strong { color: #315e5b; }
+.model-evaluation-page .model-evaluation-matrix-empty p { color: #526b82; }
+.model-evaluation-page .model-evaluation-matrix caption { color: #526b82; font-size: 10px; }
+.model-evaluation-page .model-evaluation-matrix th { color: #315e5b; }
+.model-evaluation-page .model-evaluation-matrix td { color: #234b59; }
+.model-evaluation-page .model-evaluation-matrix td.correct { color: #176957; }
+.model-evaluation-page .model-evaluation-matrix td.incorrect { color: #8c4038; }
+.model-evaluation-page .evaluation-check strong { color: #315e5b; }
+.model-evaluation-page .evaluation-check p { color: #526b82; font-size: 10px; }
+.model-evaluation-page .model-evaluation-gap { color: #2f6d5f; }
+.model-evaluation-page .model-evaluation-gap.warning { color: #8c4038; }
+.model-evaluation-page .model-evaluation-gap span { color: #526b82; }
+.model-evaluation-page .model-evaluation-fit-assessment strong,
+.model-evaluation-page .model-evaluation-explanations strong { color: #315e5b; }
+.model-evaluation-page .model-evaluation-fit-assessment p,
+.model-evaluation-page .model-evaluation-explanations p,
+.model-evaluation-page .model-evaluation-summary p:not(.page-eyebrow),
+.model-evaluation-page .model-evaluation-summary-note { color: #526b82; }
+.model-evaluation-page .model-evaluation-recommendations li { color: #405f5a; }
+.model-evaluation-page .model-evaluation-loading { color: #526b82; font-size: 10px; }
+
+/* Dark navy workspaces retain light copy at every hierarchy level. */
+.dashboard-sidebar {
+  --slate-700: #d7e3e8;
+  --slate-600: #c5d5dc;
+  --slate-500: #b4c8d1;
+  --slate-400: #a6bdc8;
+}
+.dashboard-sidebar .sidebar-section-label,
+.dashboard-sidebar .sidebar-nav button svg { color: #b4c8d1; }
+.dashboard-sidebar .sidebar-nav button { color: #c5d5dc; }
+.dashboard-sidebar .sidebar-help p { color: #c5d5dc; }
+.dashboard-sidebar .logout-btn { color: #b4c8d1; }
+.section-selection-page,
+.teacher-account-page {
+  --slate-700: #d7e3e8;
+  --slate-600: #c5d5dc;
+  --slate-500: #b4c8d1;
+  --slate-400: #a6bdc8;
+}
+.section-selection-page :is(.section-selection-hero-copy > p:last-child, .section-selection-context small, .section-selection-toolbar p:last-child, .section-card-index, .section-card-kicker, .section-card-meta, .section-card-arrow, .section-empty) { color: #c0d1d7; }
+.section-selection-page .section-card-content > strong,
+.section-selection-page .section-selection-toolbar h2,
+.section-selection-page .section-selection-context strong { color: #fff; }
+.teacher-account-page :is(.teacher-account-heading p, .teacher-account-card-head p, .teacher-account-details span, .teacher-settings-list span, .teacher-account-header-actions button) { color: #c5d5dc; }
+.teacher-account-page .teacher-account-details strong,
+.teacher-account-page .teacher-settings-list strong { color: #f4fbfd; }
+.dashboard-main .profile-prediction-card .profile-prediction-risk > span,
+.dashboard-main .profile-prediction-card .profile-probability > div:first-child span,
+.dashboard-main .profile-prediction-card .profile-prediction-copy { color: #c5d5dc; }
+.dashboard-main .profile-prediction-card .profile-card-heading h2 { color: #fff; }
+.dashboard-main .profile-prediction-card .profile-probability > div:first-child strong { color: var(--mint-300); }
+.dashboard-main .chat-message-row.outgoing .chat-message-bubble footer { color: #d8f0ea; }
+.dashboard-main .chat-message-row.incoming .chat-message-bubble footer { color: var(--slate-500); }
+
+/* Disabled controls remain visibly disabled, but their labels stay legible. */
+.button-primary:disabled,
+.admin-primary-button:disabled,
+.section-add-save:disabled,
+.erp-login-submit:disabled {
+  opacity: .78;
+  color: #e8f5f3;
+}
+.button-ghost:disabled,
+.admin-secondary-button:disabled,
+.back-button:disabled,
+.subject-save-button:disabled {
+  opacity: .88;
+  border-color: #c5d2dc;
+  color: var(--slate-600);
+  background: #eef3f6;
+}
+.subject-save-button:disabled { -webkit-text-fill-color: var(--slate-600); }
+.chat-send-button:disabled {
+  opacity: .92;
+  color: #34515f;
+  background: #b8cdd0;
+}
+.report-card-download-control > button:disabled { opacity: .78; }
+
+/* Do not let important form and metadata values disappear behind truncation. */
+:is(
+  .profile-meta span,
+  .message-detail-head p,
+  .admin-selected-scope > div > small,
+  .model-evaluation-meta strong,
+  .model-evaluation-meta small,
+  .admin-subject-info strong,
+  .admin-subject-info span
+) {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+@media (prefers-contrast: more) {
+  :root { --border-subtle: #aebfce; --border-strong: #879fb3; }
+  :is(a, button, input, select, textarea, [tabindex]):focus-visible { outline-color: #063f4a; }
+  .dashboard-sidebar .sidebar-nav button,
+  .section-card,
+  .teacher-account-card { border-color: rgba(255,255,255,.35); }
+}
+
+/* Placeholder overrides must outrank the older field-specific declarations. */
+.field-control::placeholder,
+.input-wrap input::placeholder,
+.input-wrap textarea::placeholder,
+.admin-modal-body input::placeholder,
+.subject-entry-input::placeholder,
+.search-field input::placeholder,
+.toolbar-card input::placeholder,
+.message-search input::placeholder,
+.chat-search input::placeholder {
+  color: var(--slate-500);
+  opacity: 1;
+}
+
+/* Landing page light surfaces use the same readable muted scale. */
+.landing-page :is(.brand-wordmark small, .nav-links, .hero-description, .hero-footnote, .section-subtitle, .affiliation-code, .affiliation-card p, .department-note, .dept-name, .landing-footer) { color: var(--slate-600); }
+.landing-page .hero-footnote svg { color: #27795f; }
+.landing-page .department-card:hover .dept-name,
+.landing-page .department-card.selected .dept-name { color: #d7e3e8; }
+.landing-page .role-chooser-copy p { color: var(--slate-600); }
+.landing-page .info-card.primary p { color: #c5d5dc; }
+.landing-page .nav-links a:hover { color: var(--navy-900); }
+
+/* Remaining compact badges and labels on light selection/admin surfaces. */
+.department-selection-content .department-list-code,
+.erp-login-page .erp-login-department { color: var(--teal-700); }
+.admin-control-page .admin-control-breadcrumb strong,
+.admin-control-page .admin-page-intro > div > p:last-child,
+.admin-control-page .admin-sync-banner span,
+.admin-control-page .admin-subject-synced,
+.admin-control-page .admin-subject-footnote,
+.admin-control-page .admin-modal-head p,
+.admin-control-page .admin-selected-scope > div > span,
+.admin-control-page .admin-selected-scope em,
+.admin-control-page .subject-entry-toolbar label { color: var(--slate-600); }
+.admin-control-page .admin-department-option small,
+.admin-control-page .admin-semester-option > svg,
+.admin-control-page .admin-subject-footnote svg,
+.admin-control-page .admin-empty-state > svg { color: var(--slate-500); }
+.admin-control-page .admin-subject-code,
+.admin-control-page .subject-catalog-item > span { color: #8f3e2d; }
+.admin-control-page .subject-entry-badge,
+.admin-control-page .subject-save-button { color: #286f63; }
+.admin-department-orb.coral { color: #85402f; }
+.admin-department-orb.mint,
+.admin-department-orb.teal { color: #286f63; }
+.admin-department-orb.sky { color: #2f6178; }
+.admin-department-orb.lavender { color: #57518c; }
+.admin-department-orb.yellow { color: #76540e; }
+.admin-department-orb.peach { color: #854838; }
+.admin-department-orb.slate { color: #3e5668; }
+.dashboard-main .achievement-form-heading .page-eyebrow { color: #8a5f14; }
+.dashboard-main .achievement-type-pill { color: #286f63; }
