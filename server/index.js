@@ -52,6 +52,52 @@ function publicTeacher(teacher) {
   }
 }
 
+function publicParent(parent) {
+  return {
+    id: parent.id,
+    studentId: parent.studentId ?? parent.student_id,
+    studentName: parent.studentName || parent.student_name,
+    studentUsn: parent.studentUsn || parent.student_usn || parent.usn,
+    name: parent.name,
+    email: parent.email || '',
+    phone: parent.phone || '',
+    relationship: parent.relationship || 'Parent',
+    department: parent.department || parent.department_code,
+    semester: parent.semester == null ? null : Number(parent.semester),
+    isActive: parent.isActive ?? parent.is_active ?? true,
+    initials: parent.initials || String(parent.name || 'Parent').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(),
+  }
+}
+
+function summaryNumber(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+async function modelEvaluationSummary() {
+  try {
+    const report = JSON.parse(await readFile(evaluationReportPath, 'utf8'))
+    const metricsAvailable = report.status === 'evaluated' && report.modelLoaded === true && Number.isFinite(Number(report.metrics?.accuracy))
+    return {
+      available: true,
+      status: report.status || 'unknown',
+      modelLoaded: report.modelLoaded === true,
+      metricsAvailable,
+      datasetRows: summaryNumber(report.dataset?.rowsAfterCleaning ?? report.dataset?.rowsBeforeCleaning),
+      warning: report.summary || (metricsAvailable ? '' : 'Evaluation metrics are not available from the current report.'),
+    }
+  } catch (error) {
+    return {
+      available: false,
+      status: error.code === 'ENOENT' ? 'unavailable' : 'invalid',
+      modelLoaded: false,
+      metricsAvailable: false,
+      datasetRows: 0,
+      warning: error.code === 'ENOENT' ? 'No model evaluation report has been generated yet.' : 'The model evaluation report could not be read.',
+    }
+  }
+}
+
 const demoAccounts = {
   admin: { id: 1, secret: 'admin@camps.edu', password: 'Admin@123', name: 'Kavya Menon', role: 'admin', department: 'ALL', email: 'admin@camps.edu', designation: 'Academic Administrator', initials: 'KM' },
   teacher: { id: 1, secret: 'teacher@camps.edu', password: 'Teacher@123', name: 'Dr. Ananya Rao', role: 'teacher', department: 'CSE', email: 'ananya.rao@pestrust.edu.in', designation: 'Assistant Professor', initials: 'AR' },
@@ -325,6 +371,7 @@ function normalizeStudent(input, id) {
     ...academic,
     result: cleanString(input.result) === 'Pass' || cleanString(input.result) === 'Fail' ? cleanString(input.result) : outcome.result,
     risk: normalizeRisk(input.risk) || outcome.risk,
+    isActive: input.isActive !== false,
     initials: cleanString(input.initials) || cleanString(input.name).split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(),
   }
 }
@@ -355,6 +402,7 @@ function mapStudentRow(row) {
     ...academic,
     result: row.result === 'Pass' || row.result === 'Fail' ? row.result : outcome.result,
     risk: normalizeRisk(row.risk) || outcome.risk,
+    isActive: row.isActive ?? row.is_active ?? true,
     initials: row.initials || String(row.name || 'CA').split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(),
   }
 }
@@ -477,10 +525,22 @@ app.post('/api/auth/login', async (req, res, next) => {
         }
       }
       if (role === 'parent') {
-        const linkedStudent = demoStore.students.find((student) => String(student.usn).toUpperCase() === identifier.toUpperCase())
-        account = demoParentForStudent(linkedStudent) || demoAccounts.parent
+        const linkedStudent = demoStore.students.find((student) => String(student.usn).toUpperCase() === identifier.toUpperCase() && student.isActive !== false)
+        const linkedParents = linkedStudent ? demoStore.parents.filter((parent) => Number(parent.studentId) === Number(linkedStudent.id) && parent.isActive !== false) : []
+        let savedParent = null
+        for (const candidate of linkedParents) {
+          if (candidate.passwordHash && await bcrypt.compare(password, candidate.passwordHash)) {
+            savedParent = candidate
+            break
+          }
+        }
+        if (!savedParent) savedParent = linkedParents.find((parent) => !parent.passwordHash) || null
+        account = savedParent
+          ? { ...savedParent, secret: linkedStudent.usn, role: 'parent', studentId: linkedStudent.id, studentName: linkedStudent.name, usn: linkedStudent.usn }
+          : demoParentForStudent(linkedStudent) || demoAccounts.parent
       }
-      if (!account || identifier.toLowerCase() !== String(account.secret).toLowerCase() || (role !== 'teacher' && password !== account.password)) {
+      const validDemoPassword = account?.passwordHash ? await bcrypt.compare(password, account.passwordHash) : password === (account?.password || (role === 'parent' ? 'Parent@123' : ''))
+      if (!account || identifier.toLowerCase() !== String(account.secret).toLowerCase() || (role !== 'teacher' && !validDemoPassword)) {
         console.warn('[camps-auth] Login rejected: invalid demo credentials', { role, identifier, department: requestedDepartment })
         return res.status(401).json({ message: 'Invalid demo credentials.' })
       }
@@ -500,10 +560,19 @@ app.post('/api/auth/login', async (req, res, next) => {
     let rows
     if (role === 'teacher') rows = await query('SELECT id, name, email, password_hash, department_code AS department, designation FROM teachers WHERE email = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toLowerCase() })
     else if (role === 'student') rows = await query('SELECT id, name, usn, email, password_hash, department_code AS department, semester FROM students WHERE usn = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toUpperCase() })
-    else if (role === 'parent') rows = await query('SELECT p.id, p.name, p.email, p.password_hash, p.student_id AS studentId, s.usn, s.name AS studentName, s.department_code AS department, s.semester FROM parents p JOIN students s ON s.id = p.student_id WHERE s.usn = :identifier AND p.is_active = 1 AND s.is_active = 1 ORDER BY p.id LIMIT 1', { identifier: identifier.toUpperCase() })
+    else if (role === 'parent') rows = await query('SELECT p.id, p.name, p.email, p.password_hash, p.student_id AS studentId, s.usn, s.name AS studentName, s.department_code AS department, s.semester FROM parents p JOIN students s ON s.id = p.student_id WHERE s.usn = :identifier AND p.is_active = 1 AND s.is_active = 1 ORDER BY p.id', { identifier: identifier.toUpperCase() })
     else rows = await query('SELECT id, name, email, password_hash FROM admins WHERE email = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toLowerCase() })
-    const found = rows[0]
-    if (!found || !(await bcrypt.compare(password, found.password_hash))) {
+    let found = rows[0]
+    if (role === 'parent') {
+      found = null
+      for (const candidate of rows) {
+        if (await bcrypt.compare(password, candidate.password_hash)) {
+          found = candidate
+          break
+        }
+      }
+    }
+    if (!found || !(role === 'parent' || await bcrypt.compare(password, found.password_hash))) {
       console.warn('[camps-auth] Login rejected: invalid database credentials', { role, identifier, department: requestedDepartment })
       return res.status(401).json({ message: 'Invalid credentials.' })
     }
@@ -531,20 +600,101 @@ app.post('/api/auth/logout', authRequired, (req, res) => {
   res.json({ ok: true, message: 'Signed out.' })
 })
 
+app.get('/api/admin/summary', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const department = selectedAdminDepartment(req)
+    const model = await modelEvaluationSummary()
+    if (useDemoData) {
+      const students = demoStore.students.filter((student) => student.isActive !== false && (!department || student.department === department))
+      const teachers = demoStore.teachers.filter((teacher) => teacher.isActive !== false && (!department || teacher.department === department))
+      const parents = demoStore.parents.filter((parent) => parent.isActive !== false && (!department || parent.department === department))
+      const subjects = demoStore.subjects.filter((subject) => subject.isActive !== false && (!department || subject.department === department))
+      const average = (key, rows = students) => {
+        const values = rows.map((row) => Number(row[key])).filter((value) => Number.isFinite(value))
+        return values.length ? Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2)) : null
+      }
+      const semesterRows = validSemesters.map((semester) => {
+        const semesterStudents = students.filter((student) => Number(student.semester) === semester)
+        return {
+          semester,
+          studentCount: semesterStudents.length,
+          subjectCount: subjects.filter((subject) => Number(subject.semester) === semester).length,
+          averageAttendance: average('attendancePercentage', semesterStudents),
+          averageInternalMarks: average('averageInternalMarks', semesterStudents),
+          averageAssignmentScore: average('averageAssignmentScore', semesterStudents),
+          averagePreviousGpa: average('previousGpa', semesterStudents),
+          averageParticipationScore: average('participationScore', semesterStudents),
+        }
+      })
+      return res.json({ data: {
+        scope: { department: department || 'ALL' },
+        counts: { totalStudents: students.length, totalTeachers: teachers.length, totalParents: parents.length, totalSemesters: validSemesters.length, totalConfiguredSubjects: subjects.length },
+        academic: { averageAttendance: average('attendancePercentage'), averageInternalMarks: average('averageInternalMarks'), averageAssignmentScore: average('averageAssignmentScore'), averagePreviousGpa: average('previousGpa'), averageCurrentGpa: average('currentGpa'), averageParticipationScore: average('participationScore'), atRisk: students.filter((student) => ['Medium Risk', 'High Risk'].includes(student.risk)).length, pass: students.filter((student) => student.result === 'Pass').length, fail: students.filter((student) => student.result === 'Fail').length },
+        semesters: semesterRows,
+        configuration: { semesterCrudSupported: false, semesterActivationSupported: false },
+        model,
+      } })
+    }
+
+    const studentWhere = `s.is_active=1${department ? ' AND s.department_code=:department' : ''}`
+    const teacherWhere = `t.is_active=1${department ? ' AND t.department_code=:department' : ''}`
+    const parentWhere = `p.is_active=1 AND s.is_active=1${department ? ' AND s.department_code=:department' : ''}`
+    const subjectWhere = `sub.is_active=1${department ? ' AND sub.department_code=:department' : ''}`
+    const params = department ? { department } : {}
+    const [studentCountRows, teacherCountRows, parentCountRows, subjectCountRows, academicRows, semesterRows, subjectSemesterRows, riskRows, resultRows] = await Promise.all([
+      query(`SELECT COUNT(*) AS total FROM students s WHERE ${studentWhere}`, params),
+      query(`SELECT COUNT(*) AS total FROM teachers t WHERE ${teacherWhere}`, params),
+      query(`SELECT COUNT(*) AS total FROM parents p JOIN students s ON s.id=p.student_id WHERE ${parentWhere}`, params),
+      query(`SELECT COUNT(*) AS total FROM subjects sub WHERE ${subjectWhere}`, params),
+      query(`SELECT COUNT(*) AS total, AVG(s.attendance_percentage) AS averageAttendance, AVG(s.average_internal_marks) AS averageInternalMarks, AVG(s.average_assignment_score) AS averageAssignmentScore, AVG(s.previous_gpa) AS averagePreviousGpa, AVG(s.current_gpa) AS averageCurrentGpa, AVG(s.participation_score) AS averageParticipationScore, SUM(s.risk IN ('Medium Risk','High Risk')) AS atRisk, SUM(s.result='Pass') AS pass, SUM(s.result='Fail') AS fail FROM students s WHERE ${studentWhere}`, params),
+      query(`SELECT s.semester, COUNT(*) AS studentCount, AVG(s.attendance_percentage) AS averageAttendance, AVG(s.average_internal_marks) AS averageInternalMarks, AVG(s.average_assignment_score) AS averageAssignmentScore, AVG(s.previous_gpa) AS averagePreviousGpa, AVG(s.participation_score) AS averageParticipationScore FROM students s WHERE ${studentWhere} GROUP BY s.semester ORDER BY s.semester`, params),
+      query(`SELECT sub.semester, COUNT(*) AS subjectCount FROM subjects sub WHERE ${subjectWhere} GROUP BY sub.semester`, params),
+      query(`SELECT s.risk, COUNT(*) AS total FROM students s WHERE ${studentWhere} GROUP BY s.risk`, params),
+      query(`SELECT s.result, COUNT(*) AS total FROM students s WHERE ${studentWhere} GROUP BY s.result`, params),
+    ])
+    const academic = academicRows[0] || {}
+    const subjectCounts = Object.fromEntries(subjectSemesterRows.map((row) => [Number(row.semester), summaryNumber(row.subjectCount)]))
+    const semesterData = validSemesters.map((semester) => {
+      const row = semesterRows.find((item) => Number(item.semester) === semester) || {}
+      return { semester, studentCount: summaryNumber(row.studentCount), subjectCount: subjectCounts[semester] || 0, averageAttendance: row.averageAttendance == null ? null : Number(row.averageAttendance), averageInternalMarks: row.averageInternalMarks == null ? null : Number(row.averageInternalMarks), averageAssignmentScore: row.averageAssignmentScore == null ? null : Number(row.averageAssignmentScore), averagePreviousGpa: row.averagePreviousGpa == null ? null : Number(row.averagePreviousGpa), averageParticipationScore: row.averageParticipationScore == null ? null : Number(row.averageParticipationScore) }
+    })
+    res.json({ data: {
+      scope: { department: department || 'ALL' },
+      counts: { totalStudents: summaryNumber(studentCountRows[0]?.total), totalTeachers: summaryNumber(teacherCountRows[0]?.total), totalParents: summaryNumber(parentCountRows[0]?.total), totalSemesters: validSemesters.length, totalConfiguredSubjects: summaryNumber(subjectCountRows[0]?.total) },
+      academic: { averageAttendance: academic.averageAttendance == null ? null : Number(academic.averageAttendance), averageInternalMarks: academic.averageInternalMarks == null ? null : Number(academic.averageInternalMarks), averageAssignmentScore: academic.averageAssignmentScore == null ? null : Number(academic.averageAssignmentScore), averagePreviousGpa: academic.averagePreviousGpa == null ? null : Number(academic.averagePreviousGpa), averageCurrentGpa: academic.averageCurrentGpa == null ? null : Number(academic.averageCurrentGpa), averageParticipationScore: academic.averageParticipationScore == null ? null : Number(academic.averageParticipationScore), atRisk: summaryNumber(academic.atRisk), pass: summaryNumber(academic.pass), fail: summaryNumber(academic.fail) },
+      riskDistribution: Object.fromEntries(riskRows.map((row) => [row.risk, summaryNumber(row.total)])),
+      resultDistribution: Object.fromEntries(resultRows.map((row) => [row.result, summaryNumber(row.total)])),
+      semesters: semesterData,
+      configuration: { semesterCrudSupported: false, semesterActivationSupported: false },
+      model,
+    } })
+  } catch (error) { next(error) }
+})
+
 app.get('/api/teachers', authRequired, roleRequired('admin'), async (req, res, next) => {
   try {
     const selectedDepartment = selectedAdminDepartment(req)
     const requestedDepartment = selectedDepartment || cleanString(req.query.department).toUpperCase()
+    const requestedStatus = cleanString(req.query.status || 'active').toLowerCase()
+    const search = cleanString(req.query.search).toLowerCase()
+    const page = Math.max(1, Number(req.query.page) || 1)
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25))
     if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
+    if (!['active', 'inactive', 'all'].includes(requestedStatus)) return res.status(422).json({ message: 'Choose active, inactive or all teacher accounts.' })
     if (useDemoData) {
-      const data = demoStore.teachers.filter((teacher) => !requestedDepartment || teacher.department === requestedDepartment).map(publicTeacher)
-      return res.json({ data })
+      const items = demoStore.teachers.filter((teacher) => (!requestedDepartment || teacher.department === requestedDepartment) && (requestedStatus === 'all' || (requestedStatus === 'active' ? teacher.isActive !== false : teacher.isActive === false)) && (!search || `${teacher.name} ${teacher.email} ${teacher.employeeCode} ${teacher.department}`.toLowerCase().includes(search)))
+      const total = items.length
+      return res.json({ data: items.slice((page - 1) * limit, page * limit).map(publicTeacher), pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } })
     }
-    const conditions = ['is_active = 1']
+    const conditions = [requestedStatus === 'all' ? '1=1' : `is_active = ${requestedStatus === 'active' ? 1 : 0}`]
     const params = {}
     if (requestedDepartment) { conditions.push('department_code = :department'); params.department = requestedDepartment }
-    const rows = await query(`SELECT id, employee_code AS employeeCode, name, email, department_code AS department, designation, phone, is_active AS isActive FROM teachers WHERE ${conditions.join(' AND ')} ORDER BY name`, params)
-    res.json({ data: rows.map(publicTeacher) })
+    if (search) { conditions.push('(name LIKE :search OR email LIKE :search OR employee_code LIKE :search OR department_code LIKE :search)'); params.search = `%${search}%` }
+    const where = conditions.join(' AND ')
+    const rows = await query(`SELECT id, employee_code AS employeeCode, name, email, department_code AS department, designation, phone, is_active AS isActive FROM teachers WHERE ${where} ORDER BY name LIMIT :limit OFFSET :offset`, { ...params, limit, offset: (page - 1) * limit })
+    const countRows = await query(`SELECT COUNT(*) AS total FROM teachers WHERE ${where}`, params)
+    const total = summaryNumber(countRows[0]?.total)
+    res.json({ data: rows.map(publicTeacher), pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } })
   } catch (error) { next(error) }
 })
 
@@ -587,6 +737,210 @@ app.post('/api/teachers', authRequired, roleRequired('admin'), async (req, res, 
     if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'A teacher with this email or employee code already exists.' })
     next(error)
   }
+})
+
+app.put('/api/teachers/:id', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    const selectedDepartment = selectedAdminDepartment(req)
+    const existing = useDemoData
+      ? demoStore.teachers.find((teacher) => Number(teacher.id) === id)
+      : (await query('SELECT id, user_id AS userId, employee_code AS employeeCode, name, email, department_code AS department, designation, phone, is_active AS isActive FROM teachers WHERE id=:id LIMIT 1', { id }))[0]
+    if (!existing) return res.status(404).json({ message: 'Teacher account not found.' })
+    if (selectedDepartment && existing.department !== selectedDepartment) return res.status(403).json({ message: 'Teacher account is outside this admin scope.' })
+    const input = {
+      employeeCode: cleanString(req.body.employeeCode ?? existing.employeeCode).toUpperCase(),
+      name: cleanString(req.body.name ?? existing.name),
+      email: cleanString(req.body.email ?? existing.email).toLowerCase(),
+      department: cleanString(req.body.department ?? existing.department).toUpperCase(),
+      designation: cleanString(req.body.designation ?? existing.designation),
+      phone: cleanString(req.body.phone ?? existing.phone),
+      password: cleanString(req.body.password),
+      isActive: req.body.isActive === undefined ? (existing.isActive !== false) : Boolean(req.body.isActive),
+    }
+    const errors = []
+    if (!/^[A-Z0-9][A-Z0-9-]{2,29}$/.test(input.employeeCode)) errors.push('Employee code must be 3–30 letters, numbers or hyphens.')
+    if (!input.name) errors.push('Teacher name is required.')
+    if (!isEmail(input.email)) errors.push('A valid teacher email is required.')
+    if (!validDepartments.includes(input.department)) errors.push('Choose a valid department.')
+    if (selectedDepartment && input.department !== selectedDepartment) errors.push(`This admin session is scoped to ${selectedDepartment}.`)
+    if (input.designation.length > 100) errors.push('Designation must be 100 characters or fewer.')
+    if (input.phone && !isPhone(input.phone)) errors.push('Phone number is invalid.')
+    if (input.password && input.password.length < 8) errors.push('Password must be at least 8 characters.')
+    if (errors.length) return res.status(422).json({ message: 'Teacher validation failed.', errors })
+    const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null
+    if (useDemoData) {
+      const updated = { ...existing, ...input, id, initials: input.name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase() }
+      if (passwordHash) updated.passwordHash = passwordHash
+      const index = demoStore.teachers.findIndex((teacher) => Number(teacher.id) === id)
+      if (demoStore.teachers.some((teacher) => Number(teacher.id) !== id && (teacher.email.toLowerCase() === input.email || teacher.employeeCode.toUpperCase() === input.employeeCode))) return res.status(409).json({ message: 'A teacher with this email or employee code already exists.' })
+      demoStore.teachers[index] = updated
+      return res.json({ data: publicTeacher(updated) })
+    }
+    await transaction(async (connection) => {
+      const fields = ['employee_code=?', 'name=?', 'email=?', 'department_code=?', 'designation=?', 'phone=?', 'is_active=?']
+      const values = [input.employeeCode, input.name, input.email, input.department, input.designation || null, input.phone || null, input.isActive]
+      if (passwordHash) { fields.push('password_hash=?'); values.push(passwordHash) }
+      values.push(id)
+      await connection.query(`UPDATE teachers SET ${fields.join(', ')} WHERE id=?`, values)
+      if (existing.userId) {
+        const userFields = ['display_name=?', 'email=?', 'is_active=?']
+        const userValues = [input.name, input.email, input.isActive]
+        if (passwordHash) { userFields.push('password_hash=?'); userValues.push(passwordHash) }
+        userValues.push(existing.userId)
+        await connection.query(`UPDATE users SET ${userFields.join(', ')} WHERE id=?`, userValues)
+      }
+    })
+    res.json({ data: publicTeacher({ ...existing, ...input, id }) })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'A teacher with this email or employee code already exists.' })
+    next(error)
+  }
+})
+
+app.delete('/api/teachers/:id', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    const selectedDepartment = selectedAdminDepartment(req)
+    if (useDemoData) {
+      const teacher = demoStore.teachers.find((item) => Number(item.id) === id)
+      if (!teacher) return res.status(404).json({ message: 'Teacher account not found.' })
+      if (selectedDepartment && teacher.department !== selectedDepartment) return res.status(403).json({ message: 'Teacher account is outside this admin scope.' })
+      teacher.isActive = false
+      return res.json({ ok: true })
+    }
+    const rows = await query('SELECT id, user_id AS userId, department_code AS department FROM teachers WHERE id=:id LIMIT 1', { id })
+    if (!rows[0]) return res.status(404).json({ message: 'Teacher account not found.' })
+    if (selectedDepartment && rows[0].department !== selectedDepartment) return res.status(403).json({ message: 'Teacher account is outside this admin scope.' })
+    await transaction(async (connection) => {
+      await connection.query('UPDATE teachers SET is_active=0 WHERE id=?', [id])
+      if (rows[0].userId) await connection.query('UPDATE users SET is_active=0 WHERE id=?', [rows[0].userId])
+    })
+    res.json({ ok: true })
+  } catch (error) { next(error) }
+})
+
+app.get('/api/parents', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const selectedDepartment = selectedAdminDepartment(req)
+    const requestedDepartment = selectedDepartment || cleanString(req.query.department).toUpperCase()
+    const requestedStatus = cleanString(req.query.status || 'active').toLowerCase()
+    const search = cleanString(req.query.search).toLowerCase()
+    const page = Math.max(1, Number(req.query.page) || 1)
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25))
+    if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
+    if (!['active', 'inactive', 'all'].includes(requestedStatus)) return res.status(422).json({ message: 'Choose active, inactive or all parent accounts.' })
+    if (useDemoData) {
+      const items = demoStore.parents.filter((parent) => {
+        const linkedStudent = demoStore.students.find((student) => Number(student.id) === Number(parent.studentId))
+        return (!requestedDepartment || parent.department === requestedDepartment)
+          && (requestedStatus === 'all' || (requestedStatus === 'active' ? parent.isActive !== false && linkedStudent?.isActive !== false : parent.isActive === false))
+          && (!search || `${parent.name} ${parent.email} ${parent.studentName} ${parent.studentUsn}`.toLowerCase().includes(search))
+      })
+      const total = items.length
+      return res.json({ data: items.slice((page - 1) * limit, page * limit).map(publicParent), pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } })
+    }
+    const conditions = [requestedStatus === 'all' ? '1=1' : `p.is_active=${requestedStatus === 'active' ? 1 : 0}`, requestedStatus === 'active' ? 's.is_active=1' : '1=1']
+    const params = {}
+    if (requestedDepartment) { conditions.push('s.department_code=:department'); params.department = requestedDepartment }
+    if (search) { conditions.push('(p.name LIKE :search OR p.email LIKE :search OR s.name LIKE :search OR s.usn LIKE :search)'); params.search = `%${search}%` }
+    const where = conditions.join(' AND ')
+    const rows = await query(`SELECT p.id, p.student_id AS studentId, p.name, p.email, p.phone, p.relationship, p.is_active AS isActive, s.name AS studentName, s.usn AS studentUsn, s.department_code AS department, s.semester FROM parents p JOIN students s ON s.id=p.student_id WHERE ${where} ORDER BY p.name LIMIT :limit OFFSET :offset`, { ...params, limit, offset: (page - 1) * limit })
+    const countRows = await query(`SELECT COUNT(*) AS total FROM parents p JOIN students s ON s.id=p.student_id WHERE ${where}`, params)
+    const total = summaryNumber(countRows[0]?.total)
+    res.json({ data: rows.map(publicParent), pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/parents', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const studentId = Number(req.body.studentId)
+    const name = cleanString(req.body.name)
+    const email = cleanString(req.body.email).toLowerCase()
+    const phone = cleanString(req.body.phone)
+    const relationship = cleanString(req.body.relationship || 'Parent')
+    const password = cleanString(req.body.password)
+    const selectedDepartment = selectedAdminDepartment(req)
+    const student = useDemoData ? demoStore.students.find((item) => Number(item.id) === studentId && item.isActive !== false) : (await query('SELECT id, name, usn, department_code AS department, semester FROM students WHERE id=:studentId AND is_active=1 LIMIT 1', { studentId }))[0]
+    const errors = []
+    if (!student) errors.push('Choose an active student record.')
+    if (student && selectedDepartment && student.department !== selectedDepartment) errors.push(`This admin session is scoped to ${selectedDepartment}.`)
+    if (!name) errors.push('Parent name is required.')
+    if (email && !isEmail(email)) errors.push('Parent email is invalid.')
+    if (phone && !isPhone(phone)) errors.push('Parent phone number is invalid.')
+    if (!password || password.length < 8) errors.push('Parent password must be at least 8 characters.')
+    if (errors.length) return res.status(422).json({ message: 'Parent validation failed.', errors })
+    const passwordHash = await bcrypt.hash(password, 10)
+    if (useDemoData) {
+      if (demoStore.parents.some((parent) => parent.studentId === studentId && parent.email === email && parent.isActive !== false)) return res.status(409).json({ message: 'An active parent account with this email already exists for the student.' })
+      const parent = { id: nextId(demoStore.parents), studentId, studentName: student.name, studentUsn: student.usn, name, email, phone, relationship, department: student.department, semester: Number(student.semester), isActive: true, passwordHash }
+      demoStore.parents.push(parent)
+      return res.status(201).json({ data: publicParent(parent) })
+    }
+    const result = await query('INSERT INTO parents (student_id, name, email, phone, password_hash, relationship) VALUES (:studentId, :name, :email, :phone, :passwordHash, :relationship)', { studentId, name, email: email || null, phone: phone || null, passwordHash, relationship })
+    res.status(201).json({ data: publicParent({ id: result.insertId, studentId, studentName: student.name, studentUsn: student.usn, name, email, phone, relationship, department: student.department, semester: student.semester, isActive: true }) })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'An active parent account with this email already exists for the student.' })
+    next(error)
+  }
+})
+
+app.put('/api/parents/:id', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    const selectedDepartment = selectedAdminDepartment(req)
+    const existing = useDemoData ? demoStore.parents.find((parent) => Number(parent.id) === id) : (await query('SELECT p.id, p.student_id AS studentId, p.name, p.email, p.phone, p.relationship, p.password_hash AS passwordHash, p.is_active AS isActive, s.name AS studentName, s.usn AS studentUsn, s.department_code AS department, s.semester FROM parents p JOIN students s ON s.id=p.student_id WHERE p.id=:id LIMIT 1', { id }))[0]
+    if (!existing) return res.status(404).json({ message: 'Parent account not found.' })
+    if (selectedDepartment && existing.department !== selectedDepartment) return res.status(403).json({ message: 'Parent account is outside this admin scope.' })
+    const name = cleanString(req.body.name ?? existing.name)
+    const email = cleanString(req.body.email ?? existing.email).toLowerCase()
+    const phone = cleanString(req.body.phone ?? existing.phone)
+    const relationship = cleanString(req.body.relationship ?? (existing.relationship || 'Parent'))
+    const password = cleanString(req.body.password)
+    const isActive = req.body.isActive === undefined ? existing.isActive !== false : Boolean(req.body.isActive)
+    const errors = []
+    if (!name) errors.push('Parent name is required.')
+    if (email && !isEmail(email)) errors.push('Parent email is invalid.')
+    if (phone && !isPhone(phone)) errors.push('Parent phone number is invalid.')
+    if (password && password.length < 8) errors.push('Parent password must be at least 8 characters.')
+    if (errors.length) return res.status(422).json({ message: 'Parent validation failed.', errors })
+    const passwordHash = password ? await bcrypt.hash(password, 10) : null
+    if (useDemoData) {
+      if (demoStore.parents.some((parent) => Number(parent.id) !== id && parent.studentId === Number(existing.studentId) && parent.email === email && parent.isActive !== false)) return res.status(409).json({ message: 'An active parent account with this email already exists for the student.' })
+      const index = demoStore.parents.findIndex((parent) => Number(parent.id) === id)
+      const updated = { ...existing, name, email, phone, relationship, isActive }
+      if (passwordHash) updated.passwordHash = passwordHash
+      demoStore.parents[index] = updated
+      return res.json({ data: publicParent(updated) })
+    }
+    const fields = ['name=:name', 'email=:email', 'phone=:phone', 'relationship=:relationship', 'is_active=:isActive']
+    const params = { id, name, email: email || null, phone: phone || null, relationship, isActive }
+    if (passwordHash) { fields.push('password_hash=:passwordHash'); params.passwordHash = passwordHash }
+    await query(`UPDATE parents SET ${fields.join(', ')} WHERE id=:id`, params)
+    res.json({ data: publicParent({ ...existing, name, email, phone, relationship, isActive }) })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'An active parent account with this email already exists for the student.' })
+    next(error)
+  }
+})
+
+app.delete('/api/parents/:id', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    const selectedDepartment = selectedAdminDepartment(req)
+    if (useDemoData) {
+      const parent = demoStore.parents.find((item) => Number(item.id) === id)
+      if (!parent) return res.status(404).json({ message: 'Parent account not found.' })
+      if (selectedDepartment && parent.department !== selectedDepartment) return res.status(403).json({ message: 'Parent account is outside this admin scope.' })
+      parent.isActive = false
+      return res.json({ ok: true })
+    }
+    const rows = await query('SELECT p.id, s.department_code AS department FROM parents p JOIN students s ON s.id=p.student_id WHERE p.id=:id LIMIT 1', { id })
+    if (!rows[0]) return res.status(404).json({ message: 'Parent account not found.' })
+    if (selectedDepartment && rows[0].department !== selectedDepartment) return res.status(403).json({ message: 'Parent account is outside this admin scope.' })
+    await query('UPDATE parents SET is_active=0 WHERE id=:id', { id })
+    res.json({ ok: true })
+  } catch (error) { next(error) }
 })
 
 app.get('/api/sections', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
@@ -753,7 +1107,7 @@ async function subjectStudent(req, subject, input) {
   return student
 }
 
-app.put('/api/subjects/:subjectId/attendance', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+app.put('/api/subjects/:subjectId/attendance', authRequired, roleRequired('teacher'), async (req, res, next) => {
   try {
     const semester = Number(req.body.semester)
     const adminDepartment = selectedAdminDepartment(req)
@@ -777,7 +1131,7 @@ app.put('/api/subjects/:subjectId/attendance', authRequired, roleRequired('teach
   } catch (error) { next(error) }
 })
 
-app.put('/api/subjects/:subjectId/marks', authRequired, roleRequired('teacher', 'admin'), async (req, res, next) => {
+app.put('/api/subjects/:subjectId/marks', authRequired, roleRequired('teacher'), async (req, res, next) => {
   try {
     const semester = Number(req.body.semester)
     const adminDepartment = selectedAdminDepartment(req)
@@ -803,13 +1157,17 @@ app.put('/api/subjects/:subjectId/marks', authRequired, roleRequired('teacher', 
 
 app.get('/api/students', authRequired, async (req, res, next) => {
   try {
-    const { search = '', semester, section, department, risk, result, page = 1, limit = 25, sortBy = 'usn', sortOrder = 'asc' } = req.query
+    const { search = '', semester, section, department, risk, result, status = 'active', page = 1, limit = 25, sortBy = 'usn', sortOrder = 'asc' } = req.query
     const adminDepartment = selectedAdminDepartment(req)
     const requestedDepartment = req.user.role === 'teacher' ? req.user.department : adminDepartment || (department && department !== 'all' ? cleanString(department).toUpperCase() : '')
+    const requestedStatus = cleanString(status).toLowerCase()
     if (requestedDepartment && !validDepartments.includes(requestedDepartment)) return res.status(422).json({ message: 'Choose a valid department.' })
     if (semester && !validSemesters.includes(Number(semester))) return res.status(422).json({ message: 'Semester must be between 1 and 8.' })
+    if (!['active', 'inactive', 'all'].includes(requestedStatus)) return res.status(422).json({ message: 'Choose active, inactive or all student records.' })
+    if (req.user.role !== 'admin' && requestedStatus !== 'active') return res.status(403).json({ message: 'Only administrators can view inactive student records.' })
     if (useDemoData) {
       let items = demoStore.students.filter((student) => scopeStudent(req, student)
+        && (requestedStatus === 'all' || (requestedStatus === 'active' ? student.isActive !== false : student.isActive === false))
         && (!requestedDepartment || student.department === requestedDepartment)
         && (!semester || Number(student.semester) === Number(semester))
         && (!section || String(student.section).toUpperCase() === String(section).toUpperCase())
@@ -827,7 +1185,7 @@ app.get('/api/students', authRequired, async (req, res, next) => {
     const safeSort = allowedSort.includes(sortBy) ? sortBy : 'usn'
     const dbSort = { usn: 's.usn', name: 's.name', semester: 's.semester', attendancePercentage: 's.attendance_percentage', averageInternalMarks: 's.average_internal_marks', averageAssignmentScore: 's.average_assignment_score', previousGpa: 's.previous_gpa', currentGpa: 's.current_gpa', participationScore: 's.participation_score', result: 's.result', risk: 's.risk' }
     const order = sortOrder === 'desc' ? 'DESC' : 'ASC'
-    const conditions = ['s.is_active = 1']
+    const conditions = [requestedStatus === 'all' ? '1=1' : `s.is_active = ${requestedStatus === 'active' ? 1 : 0}`]
     const params = {}
     if (req.user.role === 'teacher') { conditions.push('s.department_code = :teacherDepartment'); params.teacherDepartment = req.user.department }
     else if (req.user.role === 'student' || req.user.role === 'parent') { conditions.push('s.usn = :userUsn'); params.userUsn = req.user.usn }
@@ -901,6 +1259,25 @@ app.put('/api/students/:id', authRequired, roleRequired('teacher', 'admin'), asy
     if (!sectionRow) return res.status(422).json({ message: `Section ${student.section} does not exist for ${student.department} Semester ${student.semester}.` })
     await query('UPDATE students SET usn=:usn, name=:name, department_code=:department, semester=:semester, section=:section, section_id=:sectionId, gender=:gender, date_of_birth=:dateOfBirth, blood_group=:bloodGroup, address=:address, email=:email, phone=:phone, parent_name=:parentName, father_name=:fatherName, mother_name=:motherName, parent_phone=:parentPhone, parent_email=:parentEmail, certifications=:certifications, skills=:skills, attendance_percentage=:attendancePercentage, average_internal_marks=:averageInternalMarks, average_assignment_score=:averageAssignmentScore, previous_gpa=:previousGpa, current_gpa=:currentGpa, participation_score=:participationScore, result=:result, risk=:risk WHERE id=:id', { ...student, id, sectionId: sectionRow.sectionId, dateOfBirth: student.dateOfBirth || null, bloodGroup: student.bloodGroup || null, address: student.address || null, fatherName: student.fatherName || null, motherName: student.motherName || null, parentEmail: student.parentEmail || null, parentPhone: student.parentPhone || null, certifications: JSON.stringify(normalizeList(student.certifications)), skills: JSON.stringify(normalizeList(student.skills)) })
     res.json({ data: { ...student, id, sectionId: sectionRow.sectionId } })
+  } catch (error) { next(error) }
+})
+
+app.patch('/api/students/:id/status', authRequired, roleRequired('admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    if (typeof req.body.isActive !== 'boolean') return res.status(422).json({ message: 'isActive must be a boolean.' })
+    if (useDemoData) {
+      const student = demoStore.students.find((item) => Number(item.id) === id)
+      if (!student) return res.status(404).json({ message: 'Student not found.' })
+      if (!scopeStudent(req, student)) return res.status(403).json({ message: 'Student is outside your access scope.' })
+      student.isActive = req.body.isActive
+      return res.json({ data: { id, isActive: student.isActive } })
+    }
+    const rows = await query('SELECT id, department_code AS department FROM students WHERE id=:id LIMIT 1', { id })
+    if (!rows[0]) return res.status(404).json({ message: 'Student not found.' })
+    if (!scopeStudent(req, rows[0])) return res.status(403).json({ message: 'Student is outside your access scope.' })
+    await query('UPDATE students SET is_active=:isActive WHERE id=:id', { id, isActive: req.body.isActive })
+    res.json({ data: { id, isActive: req.body.isActive } })
   } catch (error) { next(error) }
 })
 

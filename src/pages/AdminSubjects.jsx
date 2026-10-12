@@ -41,23 +41,36 @@ export default function AdminSubjectHierarchy() {
   const apiToken = getAuthToken() || token
   const apiSession = !DEMO_MODE && isApiToken(apiToken)
   const department = useMemo(() => departmentCards.find((item) => item.code === user.department) || departmentCards[0], [user.department])
-  const [subjectCounts, setSubjectCounts] = useState(() => Object.fromEntries(adminSemesters.map((semester) => [semester, scopedLocalSubjects(department.code, semester).length])))
+  const [subjectCounts, setSubjectCounts] = useState(() => Object.fromEntries(adminSemesters.map((semester) => [semester, apiSession ? null : scopedLocalSubjects(department.code, semester).length])))
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     let mounted = true
     const loadCounts = async () => {
       if (apiSession) setAuthToken(apiToken)
-      let subjects = scopedLocalSubjects(department.code)
-      if (apiSession) {
-        try { const response = await api.getSubjects({ department: department.code }); subjects = response.data || [] } catch { /* local fallback keeps the hierarchy usable */ }
+      if (!apiSession) {
+        if (mounted) setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, scopedLocalSubjects(department.code, semester).length])))
+        return
       }
-      if (mounted) setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, subjects.filter((subject) => Number(subject.semester) === semester).length])))
+      try {
+        const response = await api.getSubjects({ department: department.code })
+        const subjects = response.data || []
+        if (mounted) {
+          setNotice('')
+          setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, subjects.filter((subject) => Number(subject.semester) === semester).length])))
+        }
+      } catch (error) {
+        if (mounted) {
+          setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, null])))
+          setNotice(error.response?.data?.message || 'Subject counts are unavailable until the subject service responds.')
+        }
+      }
     }
     loadCounts()
     return () => { mounted = false }
-  }, [department.code, apiSession])
+  }, [department.code, apiSession, apiToken])
 
-  return <AdminShell crumb="Semester hierarchy"><section className="admin-control-content"><BackButton fallbackPath="/" minHistoryIndex={1} /><AdminPageIntro eyebrow={`${department.label} · Academic structure`} title="Semester hierarchy" description={`Select a semester to manage the subjects shared by every ${department.label} academic portal.`} actions={<><button className="admin-secondary-button" type="button" onClick={() => navigate('/app/people')}><FiUsers /> People management</button><span className="admin-scope-pill"><FiGrid /> Selected at login · {department.label}</span></>} /><div className="admin-selected-scope"><span className={`admin-department-orb ${department.tone}`}>{department.icon}</span><div><span>Selected department</span><strong>{department.label}</strong><small>{department.name}</small></div><em><FiShield /> Department is fixed for this session</em></div><section className="admin-structure-card admin-semester-card admin-semester-dashboard"><div className="admin-card-heading"><div><h2>Semesters 1–8</h2><p>{department.label} · Choose a semester to open Subject Management.</p></div><FiBookOpen /></div><div className="admin-semester-grid">{adminSemesters.map((semester) => <button type="button" className="admin-semester-option" key={semester} onClick={() => navigate(`/admin/subjects/${department.code}/${semester}`)}><span className="admin-semester-number">{String(semester).padStart(2, '0')}</span><span><strong>Semester {semester}</strong><small>{subjectCounts[semester] || 0} subjects configured</small></span><FiArrowRight /></button>)}</div><div className="admin-hierarchy-note"><FiCheck /><span>Subjects added here sync automatically to Teacher, Student and Parent dashboards for {department.label} Semester 1–8.</span></div></section></section></AdminShell>
+  return <AdminShell crumb="Semester hierarchy"><section className="admin-control-content"><BackButton fallbackPath="/" minHistoryIndex={1} /><AdminPageIntro eyebrow={`${department.label} · Academic structure`} title="Semester hierarchy" description={`Select a semester to manage the subjects shared by every ${department.label} academic portal.`} actions={<><button className="admin-secondary-button" type="button" onClick={() => navigate('/app/people')}><FiUsers /> People management</button><span className="admin-scope-pill"><FiGrid /> Selected at login · {department.label}</span></>} />{notice && <div className="admin-notice" role="alert"><FiRefreshCw /> {notice}</div>}<div className="admin-selected-scope"><span className={`admin-department-orb ${department.tone}`}>{department.icon}</span><div><span>Selected department</span><strong>{department.label}</strong><small>{department.name}</small></div><em><FiShield /> Department is fixed for this session</em></div><section className="admin-structure-card admin-semester-card admin-semester-dashboard"><div className="admin-card-heading"><div><h2>Semesters 1–8</h2><p>{department.label} · Choose a semester to open Subject Management.</p></div><FiBookOpen /></div><div className="admin-semester-grid">{adminSemesters.map((semester) => <button type="button" className="admin-semester-option" key={semester} onClick={() => navigate(`/admin/subjects/${department.code}/${semester}`)}><span className="admin-semester-number">{String(semester).padStart(2, '0')}</span><span><strong>Semester {semester}</strong><small>{subjectCounts[semester] == null ? 'Unavailable' : `${subjectCounts[semester]} subjects configured`}</small></span><FiArrowRight /></button>)}</div><div className="admin-hierarchy-note"><FiCheck /><span>Subjects added here sync automatically to Teacher, Student and Parent dashboards for {department.label} Semester 1–8.</span></div></section></section></AdminShell>
 }
 
 export function AdminSubjectManagement() {
@@ -72,7 +85,7 @@ export function AdminSubjectManagement() {
   const departmentDetails = useMemo(() => departmentCards.find((item) => item.code === department) || departmentCards[0], [department])
   const scopeMismatch = user.department !== 'ALL' && routeDepartment !== user.department
   const validSemester = Number.isInteger(semester) && semester >= 1 && semester <= 8
-  const [subjects, setSubjects] = useState(() => validSemester ? scopedLocalSubjects(departmentDetails.code, semester) : [])
+  const [subjects, setSubjects] = useState(() => validSemester && !apiSession ? scopedLocalSubjects(departmentDetails.code, semester) : [])
   const [loading, setLoading] = useState(Boolean(apiSession))
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -84,13 +97,20 @@ export function AdminSubjectManagement() {
 
   const loadSubjects = async () => {
     if (!validSemester) return
-    if (apiSession) setAuthToken(apiToken)
-    setLoading(true)
-    let next = scopedLocalSubjects(departmentDetails.code, semester)
     if (apiSession) {
-      try { const response = await api.getSubjects({ department: departmentDetails.code, semester }); next = response.data || [] } catch { setNotice('API unavailable · showing locally saved subjects') }
+      setAuthToken(apiToken)
+      setLoading(true)
+      try {
+        const response = await api.getSubjects({ department: departmentDetails.code, semester })
+        setSubjects(response.data || [])
+        setNotice('')
+      } catch (error) {
+        setSubjects([])
+        setNotice(error.response?.data?.message || 'Subjects are unavailable until the subject service responds.')
+      } finally { setLoading(false) }
+      return
     }
-    setSubjects(next)
+    setSubjects(scopedLocalSubjects(departmentDetails.code, semester))
     setLoading(false)
   }
 
@@ -101,36 +121,31 @@ export function AdminSubjectManagement() {
   const saveSubject = async (form) => {
     const payload = { department: departmentDetails.code, semester, subjectCode: form.subjectCode.trim().toUpperCase(), subjectName: form.subjectName.trim(), credits: Number(form.credits) }
     let saved
-    let usedLocalFallback = !apiSession
     if (apiSession) {
       setAuthToken(apiToken)
       try {
         const response = editing ? await api.updateSubject(editing.subjectId || editing.id, payload) : await api.createSubject(payload)
         saved = response.data
       } catch (error) {
-        const status = error.response?.status
-        const message = error.response?.data?.errors?.join(' ') || error.response?.data?.message || 'Subject could not be saved.'
-        const canUseLocalFallback = !error.response || status >= 500 || (!editing && status === 404)
-        if (!canUseLocalFallback) { setNotice(message); return { ok: false, message } }
-        usedLocalFallback = true
-        setNotice('API unavailable · saving this subject to the local review cache')
+        const message = error.response?.data?.errors?.join(' ') || error.response?.data?.message || 'Subject could not be saved. The API did not confirm this change.'
+        setNotice(message)
+        return { ok: false, message }
       }
-    }
-    const localBase = getDemoSubjects()
-    if (!saved) {
+    } else {
+      const localBase = getDemoSubjects()
       const id = editing ? (editing.id || editing.subjectId) : nextDemoSubjectId(localBase)
       saved = { ...payload, id, subjectId: id, isActive: true }
+      const savedId = saved.id || saved.subjectId
+      const hasLocalSubject = localBase.some((item) => Number(item.id || item.subjectId) === Number(savedId))
+      const nextLocal = hasLocalSubject
+        ? localBase.map((item) => (Number(item.id || item.subjectId) === Number(savedId) ? { ...item, ...saved } : item))
+        : [...localBase, saved]
+      persistDemoSubjects(nextLocal)
     }
-    const savedId = saved.id || saved.subjectId
-    const hasLocalSubject = localBase.some((item) => Number(item.id || item.subjectId) === Number(savedId))
-    const nextLocal = editing && hasLocalSubject
-      ? localBase.map((item) => (Number(item.id || item.subjectId) === Number(savedId) ? { ...item, ...saved } : item))
-      : hasLocalSubject ? localBase.map((item) => (Number(item.id || item.subjectId) === Number(savedId) ? { ...item, ...saved } : item)) : [...localBase, saved]
-    persistDemoSubjects(nextLocal)
     setSubjects((current) => editing ? current.map((item) => Number(item.id || item.subjectId) === Number(editing.id || editing.subjectId) ? saved : item) : [...current, saved])
     setFormOpen(false)
     setEditing(null)
-    setNotice(usedLocalFallback ? `${saved.subjectCode} ${editing ? 'updated' : 'created'} · saved locally and synced to dashboard views` : `${saved.subjectCode} ${editing ? 'updated' : 'created'} · dashboards are now in sync`)
+    setNotice(`${saved.subjectCode} ${editing ? 'updated' : 'created'} · ${apiSession ? 'API confirmed and dashboards are now in sync' : 'saved in demo review storage'}`)
     return true
   }
 
@@ -141,10 +156,12 @@ export function AdminSubjectManagement() {
       setAuthToken(apiToken)
       try { await api.deleteSubject(id) } catch (error) { setNotice(error.response?.data?.message || 'Subject could not be deleted.'); return }
     }
-    const next = getDemoSubjects().filter((item) => Number(item.id || item.subjectId) !== Number(id))
-    persistDemoSubjects(next)
+    if (!apiSession) {
+      const next = getDemoSubjects().filter((item) => Number(item.id || item.subjectId) !== Number(id))
+      persistDemoSubjects(next)
+    }
     setSubjects((current) => current.filter((item) => Number(item.id || item.subjectId) !== Number(id)))
-    setNotice(`${subject.subjectCode} deleted · dashboard subject lists updated`)
+    setNotice(`${subject.subjectCode} deleted · ${apiSession ? 'API confirmed and dashboard subject lists updated' : 'removed from demo review storage'}`)
   }
 
   if (!validSemester) return <AdminShell crumb="Subject management"><section className="admin-control-content"><BackButton fallbackPath="/admin/subjects" /><div className="admin-empty-state"><FiBookOpen /><h1>Choose a valid semester</h1><button className="admin-primary-button" type="button" onClick={() => navigate('/admin/subjects')}>Open hierarchy <FiArrowRight /></button></div></section></AdminShell>

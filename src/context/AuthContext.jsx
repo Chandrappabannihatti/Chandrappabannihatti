@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, isApiToken, setAuthToken } from '../lib/api'
 import { currentUser, parentUser, studentUser } from '../data/demo'
+import { hashLocalCredential } from '../lib/localCredentials'
 
 const AuthContext = createContext(null)
 
@@ -125,13 +126,35 @@ export function AuthProvider({ children }) {
     if (normalizedRole === 'teacher') {
       try {
         const storedTeachers = JSON.parse(localStorage.getItem('camps_teachers') || '[]')
-        localTeacher = Array.isArray(storedTeachers) ? storedTeachers.find((teacher) => teacher.email?.toLowerCase() === identifier.trim().toLowerCase() && teacher.password) : null
+        localTeacher = Array.isArray(storedTeachers) ? storedTeachers.find((teacher) => teacher.email?.toLowerCase() === identifier.trim().toLowerCase() && (teacher.passwordHash || teacher.password)) : null
       } catch { /* fall through to the bundled demo account */ }
     }
     if (localTeacher) {
-      if (password !== localTeacher.password) throw new Error('Invalid teacher credentials.')
+      if (localTeacher.passwordHash) {
+        const submittedHash = await hashLocalCredential(password)
+        if (submittedHash !== localTeacher.passwordHash) throw new Error('Invalid teacher credentials.')
+      } else if (password !== localTeacher.password) {
+        throw new Error('Invalid teacher credentials.')
+      } else {
+        // Migrate legacy review records once; newly created accounts never
+        // persist the entered password, only a browser-local hash.
+        try {
+          const storedTeachers = JSON.parse(localStorage.getItem('camps_teachers') || '[]')
+          const migrated = Array.isArray(storedTeachers) ? await Promise.all(storedTeachers.map(async (teacher) => {
+            if (teacher.email?.toLowerCase() !== localTeacher.email?.toLowerCase() || !teacher.password) return teacher
+            const passwordHash = await hashLocalCredential(teacher.password)
+            const { password: _legacyPassword, ...withoutPassword } = teacher
+            return { ...withoutPassword, passwordHash }
+          })) : []
+          localStorage.setItem('camps_teachers', JSON.stringify(migrated))
+          localTeacher = { ...localTeacher, passwordHash: await hashLocalCredential(password) }
+          delete localTeacher.password
+        } catch (migrationError) {
+          console.warn('[camps-auth] Legacy teacher credential could not be migrated.', migrationError.message)
+        }
+      }
       if (requestedDepartment && requestedDepartment !== localTeacher.department) throw new Error(`This demo teacher account is scoped to ${localTeacher.department}. Choose that department to continue.`)
-      const { password: _password, ...teacherProfile } = localTeacher
+      const { password: _password, passwordHash: _passwordHash, ...teacherProfile } = localTeacher
       user = { ...teacherProfile, role: 'teacher', department: localTeacher.department }
     } else {
       const account = demoAccounts[normalizedRole]
