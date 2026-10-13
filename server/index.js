@@ -504,10 +504,17 @@ async function findSubject(subjectId, department, semester, subjectCode) {
 
 app.get('/api/health', async (_req, res) => {
   let database = 'demo'
+  let databaseName = null
   if (!useDemoData) {
-    try { await query('SELECT 1 AS ok'); database = 'mysql' } catch { database = 'unavailable' }
+    try {
+      const rows = await query('SELECT DATABASE() AS databaseName')
+      database = 'mysql'
+      databaseName = rows[0]?.databaseName || null
+    } catch {
+      database = 'unavailable'
+    }
   }
-  res.json({ ok: true, service: 'camps-api', database, prediction: process.env.ML_SERVICE_URL ? 'flask-or-fallback' : 'deterministic-fallback' })
+  res.json({ ok: true, service: 'camps-api', database, databaseName, prediction: process.env.ML_SERVICE_URL ? 'flask-or-fallback' : 'deterministic-fallback' })
 })
 
 app.post('/api/auth/login', async (req, res, next) => {

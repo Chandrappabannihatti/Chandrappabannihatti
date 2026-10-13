@@ -160,10 +160,11 @@ export function importSummary(rows = [], imported = 0) {
   const total = rows.length
   const matching = rows.filter((row) => row.scopeMatch).length
   const ready = rows.filter((row) => row.ready).length
-  const skipped = rows.filter((row) => !row.ready).length
   const outOfScope = rows.filter((row) => row.status === 'out-of-scope').length
   const duplicates = rows.filter((row) => row.status === 'duplicate').length
   const invalid = rows.filter((row) => row.status === 'invalid').length
+  const failed = rows.filter((row) => row.status === 'failed').length
+  const skipped = outOfScope + duplicates + invalid
   return {
     total,
     matching,
@@ -172,6 +173,7 @@ export function importSummary(rows = [], imported = 0) {
     outOfScope,
     duplicates,
     invalid,
+    failed,
     imported: Number(imported),
   }
 }
@@ -179,6 +181,7 @@ export function importSummary(rows = [], imported = 0) {
 export function importStatusLabel(status) {
   if (status === 'ready') return 'Ready'
   if (status === 'out-of-scope') return 'Skipped · different scope'
-  if (status === 'duplicate') return 'Skipped · duplicate USN'
+  if (status === 'duplicate') return 'Skipped · duplicate record'
+  if (status === 'failed') return 'Failed during save'
   return 'Needs attention'
 }
