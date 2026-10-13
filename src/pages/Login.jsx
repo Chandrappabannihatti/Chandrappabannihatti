@@ -5,6 +5,7 @@ import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
 import { departmentCards } from '../data/departments'
 import { useAuth } from '../context/AuthContext'
+import { dashboardPathForRole } from '../lib/roleRoutes'
 
 const accountDetails = {
   admin: { title: 'Admin Login', portal: 'Admin Portal', label: 'Email Address', placeholder: 'admin@camps.edu', value: 'admin@camps.edu', password: 'Admin@123' },
@@ -23,7 +24,7 @@ const roleOptions = [
 export default function Login() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const { login } = useAuth()
+  const { login, isAuthenticated, user } = useAuth()
   const initialRole = accountDetails[params.get('role')] ? params.get('role') : 'teacher'
   const department = String(params.get('department') || '').trim().toUpperCase()
   const departmentDetails = useMemo(() => departmentCards.find((item) => item.code === department) || departmentCards[0], [department])
@@ -34,6 +35,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(params.get('reason') === 'session' ? 'Your session expired. Please sign in again to continue.' : '')
   const details = useMemo(() => accountDetails[role], [role])
+  if (isAuthenticated && user) return <Navigate to={dashboardPathForRole(user.role)} replace />
   if (!departmentCards.some((item) => item.code === department)) return <Navigate to="/" replace />
 
   const changeRole = (nextRole) => {
@@ -48,8 +50,9 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      await login({ role, identifier, password, department: departmentDetails.code })
-      navigate(role === 'teacher' ? '/teacher/semesters' : role === 'admin' ? '/admin/subjects' : '/app', { replace: true })
+      const authenticatedUser = await login({ role, identifier, password, department: departmentDetails.code })
+      if (!authenticatedUser?.role) throw new Error('The authentication service returned no user role.')
+      navigate(dashboardPathForRole(authenticatedUser.role), { replace: true })
     } catch (loginError) {
       setError(loginError.response?.data?.message || loginError.message || 'We could not sign you in. Please check your details.')
     } finally {

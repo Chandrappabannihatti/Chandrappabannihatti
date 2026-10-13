@@ -9,29 +9,24 @@ import DepartmentSelection, { TeacherDepartment } from './pages/DepartmentSelect
 import TeacherSemester, { TeacherStudentProfile } from './pages/TeacherSemester'
 import TeacherAccount from './pages/TeacherAccount'
 import AdminSubjectHierarchy, { AdminAccount, AdminSubjectManagement } from './pages/AdminSubjects'
+import { canAccessDashboardRole, dashboardPathForRole } from './lib/roleRoutes'
 
-function ProtectedRoute({ children, role }) {
+function ProtectedRoute({ children, role, roles }) {
   const { isAuthenticated, user } = useAuth()
   const currentPath = window.location.pathname
+  const allowedRoles = roles || (role ? [role] : ['admin', 'student', 'parent'])
+  const requiredRoles = allowedRoles.join(',')
   useEffect(() => {
-    if (isAuthenticated && user) console.info('[route-access] Protected route evaluated.', { path: currentPath, role: user.role, userId: user.id, requiredRole: role || 'learner-or-admin' })
-  }, [currentPath, isAuthenticated, role, user])
+    if (isAuthenticated && user) console.info('[route-access] Protected route evaluated.', { path: currentPath, role: user.role, userId: user.id, requiredRole: role || requiredRoles })
+  }, [currentPath, isAuthenticated, role, requiredRoles, user])
   if (!isAuthenticated) {
-    console.warn('[route-access] Protected route requires authentication.', { path: currentPath, requiredRole: role || 'learner-or-admin' })
+    console.warn('[route-access] Protected route requires authentication.', { path: currentPath, requiredRole: role || requiredRoles })
     return <Navigate to="/" replace />
   }
-  if (role && user.role !== role) {
-    const fallback = user.role === 'teacher' ? '/teacher/departments' : user.role === 'admin' ? '/admin/subjects' : '/app'
-    console.warn('[route-access] Role mismatch; redirecting to the authenticated workspace.', { path: currentPath, requiredRole: role, actualRole: user.role, redirect: fallback, userId: user.id })
+  if (!canAccessDashboardRole(user.role) || !allowedRoles.includes(user.role)) {
+    const fallback = canAccessDashboardRole(user.role) ? dashboardPathForRole(user.role) : '/'
+    console.warn('[route-access] Role mismatch; redirecting to the authenticated workspace.', { path: currentPath, requiredRole: role || allowedRoles.join(','), actualRole: user.role, redirect: fallback, userId: user.id })
     return <Navigate to={fallback} replace />
-  }
-  if (!role && user.role === 'teacher') {
-    console.info('[route-access] Teacher sent to the teacher workspace.', { path: currentPath, userId: user.id })
-    return <Navigate to="/teacher/departments" replace />
-  }
-  if (!role && !['admin', 'student', 'parent'].includes(user.role)) {
-    console.warn('[route-access] Unknown role blocked from learner workspace.', { path: currentPath, actualRole: user.role, userId: user.id })
-    return <Navigate to="/" replace />
   }
   return children
 }
@@ -52,7 +47,7 @@ export default function App() {
       <Route path="/teacher/settings" element={<ProtectedRoute role="teacher"><TeacherAccount mode="settings" /></ProtectedRoute>} />
       <Route path="/teacher/student/:usn" element={<ProtectedRoute role="teacher"><TeacherStudentProfile /></ProtectedRoute>} />
       <Route path="/teacher/semester/:semester/*" element={<ProtectedRoute role="teacher"><TeacherSemester /></ProtectedRoute>} />
-      <Route path="/app/*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/app/*" element={<ProtectedRoute roles={['admin', 'student', 'parent']}><Dashboard /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
