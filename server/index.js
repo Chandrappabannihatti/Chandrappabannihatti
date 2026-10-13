@@ -74,6 +74,17 @@ function summaryNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function semesterAvailability(studentCount, subjectCount) {
+  const students = summaryNumber(studentCount)
+  const subjects = summaryNumber(subjectCount)
+  return {
+    configured: true,
+    status: students === 0 && subjects === 0 ? 'empty' : 'available',
+    studentCount: students,
+    subjectCount: subjects,
+  }
+}
+
 async function modelEvaluationSummary() {
   try {
     const report = JSON.parse(await readFile(evaluationReportPath, 'utf8'))
@@ -615,15 +626,23 @@ app.get('/api/admin/summary', authRequired, roleRequired('admin'), async (req, r
       }
       const semesterRows = validSemesters.map((semester) => {
         const semesterStudents = students.filter((student) => Number(student.semester) === semester)
+        const subjectCount = subjects.filter((subject) => Number(subject.semester) === semester).length
+        const riskDistribution = Object.fromEntries(['Low Risk', 'Medium Risk', 'High Risk'].map((risk) => [risk, semesterStudents.filter((student) => student.risk === risk).length]))
+        const resultDistribution = { Pass: semesterStudents.filter((student) => student.result === 'Pass').length, Fail: semesterStudents.filter((student) => student.result === 'Fail').length }
         return {
           semester,
-          studentCount: semesterStudents.length,
-          subjectCount: subjects.filter((subject) => Number(subject.semester) === semester).length,
+          ...semesterAvailability(semesterStudents.length, subjectCount),
           averageAttendance: average('attendancePercentage', semesterStudents),
           averageInternalMarks: average('averageInternalMarks', semesterStudents),
           averageAssignmentScore: average('averageAssignmentScore', semesterStudents),
           averagePreviousGpa: average('previousGpa', semesterStudents),
+          averageCurrentGpa: average('currentGpa', semesterStudents),
           averageParticipationScore: average('participationScore', semesterStudents),
+          atRisk: semesterStudents.filter((student) => ['Medium Risk', 'High Risk'].includes(student.risk)).length,
+          pass: resultDistribution.Pass,
+          fail: resultDistribution.Fail,
+          riskDistribution,
+          resultDistribution,
         }
       })
       return res.json({ data: {
@@ -631,7 +650,7 @@ app.get('/api/admin/summary', authRequired, roleRequired('admin'), async (req, r
         counts: { totalStudents: students.length, totalTeachers: teachers.length, totalParents: parents.length, totalSemesters: validSemesters.length, totalConfiguredSubjects: subjects.length },
         academic: { averageAttendance: average('attendancePercentage'), averageInternalMarks: average('averageInternalMarks'), averageAssignmentScore: average('averageAssignmentScore'), averagePreviousGpa: average('previousGpa'), averageCurrentGpa: average('currentGpa'), averageParticipationScore: average('participationScore'), atRisk: students.filter((student) => ['Medium Risk', 'High Risk'].includes(student.risk)).length, pass: students.filter((student) => student.result === 'Pass').length, fail: students.filter((student) => student.result === 'Fail').length },
         semesters: semesterRows,
-        configuration: { semesterCrudSupported: false, semesterActivationSupported: false },
+        configuration: { semesterIds: validSemesters, semesterCrudSupported: false, semesterActivationSupported: false },
         model,
       } })
     }
@@ -647,7 +666,7 @@ app.get('/api/admin/summary', authRequired, roleRequired('admin'), async (req, r
       query(`SELECT COUNT(*) AS total FROM parents p JOIN students s ON s.id=p.student_id WHERE ${parentWhere}`, params),
       query(`SELECT COUNT(*) AS total FROM subjects sub WHERE ${subjectWhere}`, params),
       query(`SELECT COUNT(*) AS total, AVG(s.attendance_percentage) AS averageAttendance, AVG(s.average_internal_marks) AS averageInternalMarks, AVG(s.average_assignment_score) AS averageAssignmentScore, AVG(s.previous_gpa) AS averagePreviousGpa, AVG(s.current_gpa) AS averageCurrentGpa, AVG(s.participation_score) AS averageParticipationScore, SUM(s.risk IN ('Medium Risk','High Risk')) AS atRisk, SUM(s.result='Pass') AS pass, SUM(s.result='Fail') AS fail FROM students s WHERE ${studentWhere}`, params),
-      query(`SELECT s.semester, COUNT(*) AS studentCount, AVG(s.attendance_percentage) AS averageAttendance, AVG(s.average_internal_marks) AS averageInternalMarks, AVG(s.average_assignment_score) AS averageAssignmentScore, AVG(s.previous_gpa) AS averagePreviousGpa, AVG(s.participation_score) AS averageParticipationScore FROM students s WHERE ${studentWhere} GROUP BY s.semester ORDER BY s.semester`, params),
+      query(`SELECT s.semester, COUNT(*) AS studentCount, AVG(s.attendance_percentage) AS averageAttendance, AVG(s.average_internal_marks) AS averageInternalMarks, AVG(s.average_assignment_score) AS averageAssignmentScore, AVG(s.previous_gpa) AS averagePreviousGpa, AVG(s.current_gpa) AS averageCurrentGpa, AVG(s.participation_score) AS averageParticipationScore, SUM(s.risk IN ('Medium Risk','High Risk')) AS atRisk, SUM(s.result='Pass') AS pass, SUM(s.result='Fail') AS fail, SUM(s.risk='Low Risk') AS lowRisk, SUM(s.risk='Medium Risk') AS mediumRisk, SUM(s.risk='High Risk') AS highRisk FROM students s WHERE ${studentWhere} GROUP BY s.semester ORDER BY s.semester`, params),
       query(`SELECT sub.semester, COUNT(*) AS subjectCount FROM subjects sub WHERE ${subjectWhere} GROUP BY sub.semester`, params),
       query(`SELECT s.risk, COUNT(*) AS total FROM students s WHERE ${studentWhere} GROUP BY s.risk`, params),
       query(`SELECT s.result, COUNT(*) AS total FROM students s WHERE ${studentWhere} GROUP BY s.result`, params),
@@ -656,7 +675,23 @@ app.get('/api/admin/summary', authRequired, roleRequired('admin'), async (req, r
     const subjectCounts = Object.fromEntries(subjectSemesterRows.map((row) => [Number(row.semester), summaryNumber(row.subjectCount)]))
     const semesterData = validSemesters.map((semester) => {
       const row = semesterRows.find((item) => Number(item.semester) === semester) || {}
-      return { semester, studentCount: summaryNumber(row.studentCount), subjectCount: subjectCounts[semester] || 0, averageAttendance: row.averageAttendance == null ? null : Number(row.averageAttendance), averageInternalMarks: row.averageInternalMarks == null ? null : Number(row.averageInternalMarks), averageAssignmentScore: row.averageAssignmentScore == null ? null : Number(row.averageAssignmentScore), averagePreviousGpa: row.averagePreviousGpa == null ? null : Number(row.averagePreviousGpa), averageParticipationScore: row.averageParticipationScore == null ? null : Number(row.averageParticipationScore) }
+      const studentCount = summaryNumber(row.studentCount)
+      const subjectCount = subjectCounts[semester] || 0
+      return {
+        semester,
+        ...semesterAvailability(studentCount, subjectCount),
+        averageAttendance: row.averageAttendance == null ? null : Number(row.averageAttendance),
+        averageInternalMarks: row.averageInternalMarks == null ? null : Number(row.averageInternalMarks),
+        averageAssignmentScore: row.averageAssignmentScore == null ? null : Number(row.averageAssignmentScore),
+        averagePreviousGpa: row.averagePreviousGpa == null ? null : Number(row.averagePreviousGpa),
+        averageCurrentGpa: row.averageCurrentGpa == null ? null : Number(row.averageCurrentGpa),
+        averageParticipationScore: row.averageParticipationScore == null ? null : Number(row.averageParticipationScore),
+        atRisk: summaryNumber(row.atRisk),
+        pass: summaryNumber(row.pass),
+        fail: summaryNumber(row.fail),
+        riskDistribution: { 'Low Risk': summaryNumber(row.lowRisk), 'Medium Risk': summaryNumber(row.mediumRisk), 'High Risk': summaryNumber(row.highRisk) },
+        resultDistribution: { Pass: summaryNumber(row.pass), Fail: summaryNumber(row.fail) },
+      }
     })
     res.json({ data: {
       scope: { department: department || 'ALL' },
@@ -665,7 +700,7 @@ app.get('/api/admin/summary', authRequired, roleRequired('admin'), async (req, r
       riskDistribution: Object.fromEntries(riskRows.map((row) => [row.risk, summaryNumber(row.total)])),
       resultDistribution: Object.fromEntries(resultRows.map((row) => [row.result, summaryNumber(row.total)])),
       semesters: semesterData,
-      configuration: { semesterCrudSupported: false, semesterActivationSupported: false },
+      configuration: { semesterIds: validSemesters, semesterCrudSupported: false, semesterActivationSupported: false },
       model,
     } })
   } catch (error) { next(error) }

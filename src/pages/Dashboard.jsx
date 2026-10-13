@@ -188,58 +188,74 @@ function DashboardDataNotice({ message, onRetry }) {
 function Overview({ user, students, subjects = [], onNavigate, onAddStudent, onUpload, onExport, adminSummary, adminSummaryError, onRetrySummary }) {
   const isAdmin = user.role === 'admin'
   const departmentScope = user.department === 'ALL' ? '' : user.department
-  const [selectedSemester, setSelectedSemester] = useState(7)
+  const preferredSemester = Number(user.semester)
+  const hasPreferredSemester = Number.isInteger(preferredSemester) && semesters.includes(preferredSemester)
+  const [selectedSemester, setSelectedSemester] = useState(() => hasPreferredSemester ? preferredSemester : null)
   const department = departmentScope || (isAdmin ? 'All departments' : user.department)
   const scopeStudents = useMemo(() => departmentScope ? students.filter((student) => student.department === departmentScope) : students, [departmentScope, students])
-  const semesterStudents = scopeStudents.filter((student) => Number(student.semester) === Number(selectedSemester))
   const summaryRows = Array.isArray(adminSummary?.semesters) ? adminSummary.semesters : []
-  const semesterCounts = semesters.map((semester) => {
-    const summaryRow = summaryRows.find((row) => Number(row.semester) === Number(semester))
-    return { semester, count: summaryRow ? Number(summaryRow.studentCount || 0) : (isAdmin && !DEMO_MODE ? null : scopeStudents.filter((student) => Number(student.semester) === Number(semester)).length) }
+  const semesterRows = semesters.map((semester) => {
+    const summaryRow = summaryRows.find((row) => Number(row.semester) === semester)
+    const fallbackStudentCount = scopeStudents.filter((student) => Number(student.semester) === semester).length
+    const fallbackSubjectCount = subjects.filter((subject) => subject.isActive !== false && (!departmentScope || subject.department === departmentScope) && Number(subject.semester) === semester).length
+    const studentCount = summaryRow?.studentCount == null ? fallbackStudentCount : Number(summaryRow.studentCount)
+    const subjectCount = summaryRow?.subjectCount == null ? fallbackSubjectCount : Number(summaryRow.subjectCount)
+    const status = summaryRow?.status || (adminSummaryError && isAdmin && !adminSummary ? 'error' : studentCount === 0 && subjectCount === 0 ? 'empty' : 'available')
+    return { ...(summaryRow || {}), semester, studentCount: Number.isFinite(studentCount) ? studentCount : 0, subjectCount: Number.isFinite(subjectCount) ? subjectCount : 0, status }
   })
+  const recommendedSemester = hasPreferredSemester ? preferredSemester : semesterRows.find((row) => row.status === 'available')?.semester || semesterRows[0]?.semester || null
+  useEffect(() => {
+    if (selectedSemester === null && recommendedSemester !== null) setSelectedSemester(recommendedSemester)
+  }, [recommendedSemester, selectedSemester])
+  const selectedSummary = semesterRows.find((row) => Number(row.semester) === Number(selectedSemester)) || null
+  const semesterStudents = scopeStudents.filter((student) => Number(student.semester) === Number(selectedSemester))
   const totalFrom = (value, fallback) => value === null || value === undefined ? fallback : Number(value)
-  const total = adminSummary?.counts?.totalStudents == null ? (isAdmin && !DEMO_MODE ? '—' : scopeStudents.length) : Number(adminSummary.counts.totalStudents)
   const averageFor = (rows, key, decimals = 1) => {
     const values = rows.map((student) => Number(student[key])).filter((value) => Number.isFinite(value))
     return values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(decimals) : '—'
   }
-  const summaryAverage = (key, fallbackKey) => adminSummary?.academic?.[key] === null || adminSummary?.academic?.[key] === undefined
-    ? averageFor(scopeStudents, fallbackKey)
-    : Number(adminSummary.academic[key]).toFixed(1)
-  const avgAttendance = summaryAverage('averageAttendance', 'attendancePercentage')
-  const avgCurrentGpa = summaryAverage('averageCurrentGpa', 'currentGpa')
-  const semesterAttendance = semesters.map((semester) => {
-    const summaryRow = summaryRows.find((row) => Number(row.semester) === Number(semester))
-    if (summaryRow) return { semester: `Sem ${semester}`, attendance: summaryRow.averageAttendance == null ? null : Number(summaryRow.averageAttendance), students: Number(summaryRow.studentCount || 0) }
-    const rows = scopeStudents.filter((student) => Number(student.semester) === Number(semester))
-    const average = averageFor(rows, 'attendancePercentage')
-    return { semester: `Sem ${semester}`, attendance: average === '—' ? null : Number(average), students: rows.length }
+  const selectedAverage = (key, fallbackKey) => {
+    const value = selectedSummary?.[key]
+    return value === null || value === undefined ? averageFor(semesterStudents, fallbackKey) : Number(value).toFixed(1)
+  }
+  const scopeTotal = scopeStudents.length
+  const total = selectedSummary ? selectedSummary.studentCount : adminSummary?.counts?.totalStudents == null ? scopeTotal : Number(adminSummary.counts.totalStudents)
+  const avgAttendance = selectedAverage('averageAttendance', 'attendancePercentage')
+  const avgCurrentGpa = selectedAverage('averageCurrentGpa', 'currentGpa')
+  const semesterAttendance = semesterRows.map((row) => {
+    const average = row.averageAttendance == null ? averageFor(scopeStudents.filter((student) => Number(student.semester) === Number(row.semester)), 'attendancePercentage') : Number(row.averageAttendance).toFixed(1)
+    return { semester: `Sem ${row.semester}`, attendance: average === '—' ? null : Number(average), students: row.studentCount }
   })
-  const atRisk = totalFrom(adminSummary?.academic?.atRisk, scopeStudents.filter((student) => student.risk === 'High Risk' || student.risk === 'Medium Risk').length)
+  const atRisk = selectedSummary?.atRisk == null
+    ? semesterStudents.filter((student) => student.risk === 'High Risk' || student.risk === 'Medium Risk').length
+    : Number(selectedSummary.atRisk)
   const totalTeachers = adminSummary?.counts?.totalTeachers == null ? (DEMO_MODE ? demoTeachers.filter((teacher) => !departmentScope || teacher.department === departmentScope).length : '—') : Number(adminSummary.counts.totalTeachers)
   const totalParents = adminSummary?.counts?.totalParents == null ? (DEMO_MODE ? scopeStudents.filter((student) => student.parentName).length : '—') : Number(adminSummary.counts.totalParents)
   const totalConfiguredSubjects = adminSummary?.counts?.totalConfiguredSubjects == null ? (DEMO_MODE || subjects.length ? subjects.filter((subject) => subject.isActive !== false && (!departmentScope || subject.department === departmentScope)).length : '—') : Number(adminSummary.counts.totalConfiguredSubjects)
   const totalSemesters = totalFrom(adminSummary?.counts?.totalSemesters, semesters.length)
-  const academic = adminSummary?.academic || {}
+  const academic = selectedSummary || adminSummary?.academic || {}
   const academicMetric = (key, fallbackKey, suffix = '') => {
-    const value = academic[key] === null || academic[key] === undefined ? averageFor(scopeStudents, fallbackKey) : Number(academic[key]).toFixed(1)
+    const value = academic[key] === null || academic[key] === undefined ? averageFor(semesterStudents, fallbackKey) : Number(academic[key]).toFixed(1)
     return value === '—' ? value : `${value}${suffix}`
   }
   const localSemesterRows = semesters.map((semester) => {
     const rows = scopeStudents.filter((student) => Number(student.semester) === Number(semester))
     return { semester, studentCount: rows.length, subjectCount: subjects.filter((subject) => subject.isActive !== false && (!departmentScope || subject.department === departmentScope) && Number(subject.semester) === Number(semester)).length, averageAttendance: averageFor(rows, 'attendancePercentage'), averageInternalMarks: averageFor(rows, 'averageInternalMarks'), averageAssignmentScore: averageFor(rows, 'averageAssignmentScore'), averagePreviousGpa: averageFor(rows, 'previousGpa'), averageParticipationScore: averageFor(rows, 'participationScore') }
   })
-  const academicSemesterRows = summaryRows.length ? summaryRows : localSemesterRows
+  const academicSemesterRows = summaryRows.length ? semesterRows : localSemesterRows
+  const selectedPass = academic.pass == null ? semesterStudents.filter((student) => student.result === 'Pass').length : Number(academic.pass)
+  const selectedFail = academic.fail == null ? semesterStudents.filter((student) => student.result === 'Fail').length : Number(academic.fail)
   const modelStatus = adminSummary?.model
     ? adminSummary.model.metricsAvailable ? 'Evaluation available' : adminSummary.model.status === 'audit_only' ? 'Audit only' : 'Evaluation unavailable'
     : 'Open evaluation page'
   const modelDetail = adminSummary?.model?.datasetRows ? `${adminSummary.model.datasetRows} dataset records · ${adminSummary.model.modelLoaded ? 'model loaded' : 'model artifact unavailable'}` : adminSummary?.model?.warning || 'The evaluation report status is not loaded in this dashboard.'
+  const selectedRiskDistribution = selectedSummary?.riskDistribution || {}
   const riskData = [
-    { name: 'Low Risk', value: totalFrom(adminSummary?.riskDistribution?.['Low Risk'], scopeStudents.filter((student) => student.risk === 'Low Risk').length) },
-    { name: 'Medium Risk', value: totalFrom(adminSummary?.riskDistribution?.['Medium Risk'], scopeStudents.filter((student) => student.risk === 'Medium Risk').length) },
-    { name: 'High Risk', value: totalFrom(adminSummary?.riskDistribution?.['High Risk'], scopeStudents.filter((student) => student.risk === 'High Risk').length) },
+    { name: 'Low Risk', value: totalFrom(selectedRiskDistribution['Low Risk'], semesterStudents.filter((student) => student.risk === 'Low Risk').length) },
+    { name: 'Medium Risk', value: totalFrom(selectedRiskDistribution['Medium Risk'], semesterStudents.filter((student) => student.risk === 'Medium Risk').length) },
+    { name: 'High Risk', value: totalFrom(selectedRiskDistribution['High Risk'], semesterStudents.filter((student) => student.risk === 'High Risk').length) },
   ]
-  const alerts = scopeStudents.filter((student) => student.risk === 'High Risk' || student.attendancePercentage < 76).slice(0, 3)
+  const alerts = semesterStudents.filter((student) => student.risk === 'High Risk' || student.attendancePercentage < 76).slice(0, 3)
   const currentDate = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())
   const firstName = String(user.name || '').trim().split(/\s+/)[0] || 'there'
 
@@ -247,20 +263,20 @@ function Overview({ user, students, subjects = [], onNavigate, onAddStudent, onU
     <PageIntro eyebrow={`${department} · Academic year 2026–27`} title={`Good morning, ${firstName}.`} description={`${currentDate}  ·  Here is what needs your attention today.`} actions={<><button type="button" className="button-ghost" onClick={onExport}><FiDownload /> Export report</button><button type="button" className="button-primary" onClick={onAddStudent}><FiPlus /> Add student</button>{isAdmin && <button type="button" className="button-ghost" onClick={() => onNavigate('people')}><FiUsers /> Manage people</button>}</>} />
     <section className="semester-picker-card">
       <div className="semester-picker-head"><div><p className="page-eyebrow">{isAdmin ? 'Administration workspace' : 'Teacher workspace'}</p><h2>Choose a semester</h2><p>Select a semester to view only records inside your current access scope.</p></div><span className="scope-pill"><FiShield /> {departmentScope ? `${departmentScope} only` : isAdmin ? 'All departments' : `${user.department} only`}</span></div>
-      <div className="semester-picker-list">{semesterCounts.map(({ semester, count }, index) => <button type="button" className={`semester-picker-item ${semester === selectedSemester ? 'active' : ''}`} key={semester} onClick={() => setSelectedSemester(semester)}><span className="semester-picker-number">{semesterOrdinals[index]}</span><span className="semester-picker-label">Semester {semester}</span><span className="semester-picker-count">{count == null ? 'Unavailable' : `${count} ${count === 1 ? 'student' : 'students'}`}</span><FiChevronRight /></button>)}</div>
+      <div className="semester-picker-list">{semesterRows.map(({ semester, studentCount, subjectCount, status }, index) => <button type="button" aria-pressed={semester === selectedSemester} className={`semester-picker-item semester-status-${status} ${semester === selectedSemester ? 'active' : ''}`} key={semester} onClick={() => setSelectedSemester(semester)}><span className="semester-picker-number">{semesterOrdinals[index]}</span><span className="semester-picker-label">Semester {semester}</span><span className="semester-picker-count">{studentCount} {studentCount === 1 ? 'student' : 'students'} · {subjectCount} {subjectCount === 1 ? 'subject' : 'subjects'}</span><span className="semester-picker-status">{status === 'empty' ? 'Empty' : status === 'inactive' ? 'Inactive' : status === 'error' ? 'Error' : 'Available'}</span><FiChevronRight /></button>)}</div>
     </section>
     <div className="kpi-grid">
-      <div className="kpi-card primary"><div className="kpi-top"><span className="kpi-label">Total students</span><span className="kpi-icon"><FiUsers /></span></div><div className="kpi-value">{total || 0}</div><span className="kpi-change"><FiUsers /> Current scope</span></div>
-      <div className="kpi-card mint"><div className="kpi-top"><span className="kpi-label">Average attendance</span><span className="kpi-icon"><FiClock /></span></div><div className="kpi-value">{avgAttendance === '—' ? avgAttendance : `${avgAttendance}%`}</div><span className="kpi-change"><FiClock /> Current records</span></div>
-      <div className="kpi-card sky"><div className="kpi-top"><span className="kpi-label">Average GPA</span><span className="kpi-icon"><FiTrendingUp /></span></div><div className="kpi-value">{avgCurrentGpa}</div><span className="kpi-change"><FiTrendingUp /> Current records</span></div>
-      <div className="kpi-card peach"><div className="kpi-top"><span className="kpi-label">Need attention</span><span className="kpi-icon"><FiAlertCircle /></span></div><div className="kpi-value">{atRisk}</div><span className="kpi-change alert"><FiAlertCircle /> Current risk flags</span></div>
+      <div className="kpi-card primary"><div className="kpi-top"><span className="kpi-label">Total students</span><span className="kpi-icon"><FiUsers /></span></div><div className="kpi-value">{Number.isFinite(Number(total)) ? Number(total) : 0}</div><span className="kpi-change"><FiUsers /> Semester {selectedSemester ?? 'scope'}</span></div>
+      <div className="kpi-card mint"><div className="kpi-top"><span className="kpi-label">Average attendance</span><span className="kpi-icon"><FiClock /></span></div><div className="kpi-value">{avgAttendance === '—' ? avgAttendance : `${avgAttendance}%`}</div><span className="kpi-change"><FiClock /> Semester {selectedSemester ?? 'scope'}</span></div>
+      <div className="kpi-card sky"><div className="kpi-top"><span className="kpi-label">Average GPA</span><span className="kpi-icon"><FiTrendingUp /></span></div><div className="kpi-value">{avgCurrentGpa}</div><span className="kpi-change"><FiTrendingUp /> Semester {selectedSemester ?? 'scope'}</span></div>
+      <div className="kpi-card peach"><div className="kpi-top"><span className="kpi-label">Need attention</span><span className="kpi-icon"><FiAlertCircle /></span></div><div className="kpi-value">{atRisk}</div><span className="kpi-change alert"><FiAlertCircle /> Semester risk flags</span></div>
     </div>
     {isAdmin && <section className="admin-overview-stat-grid" aria-label="Administration summary"><article className="admin-overview-stat"><span><FiUsers /> Teachers</span><strong>{totalTeachers}</strong><small>Active accounts in this scope</small></article><article className="admin-overview-stat"><span><FiUser /> Parents</span><strong>{totalParents}</strong><small>Linked parent accounts</small></article><article className="admin-overview-stat"><span><FiBookOpen /> Configured subjects</span><strong>{totalConfiguredSubjects}</strong><small>Active catalog records</small></article><article className="admin-overview-stat"><span><FiGrid /> Semesters</span><strong>{totalSemesters}</strong><small>{adminSummary?.configuration?.semesterCrudSupported ? 'Configurable' : 'Fixed academic structure'}</small></article><button className="admin-overview-stat model" type="button" onClick={() => onNavigate('evaluation')}><span><FiZap /> XGBoost evaluation</span><strong>{modelStatus}</strong><small>{modelDetail}</small></button></section>}
     <div className="chart-grid">
       <section className="content-card"><div className="card-heading"><div><h2 className="card-title">Attendance by semester</h2><p className="card-description">Average attendance from the current scoped student records</p></div><span className="scope-pill"><FiClock /> {total} records</span></div><div className="chart-container"><ResponsiveContainer width="100%" height="100%"><BarChart data={semesterAttendance} margin={{ top: 8, right: 10, left: -22, bottom: 0 }}><CartesianGrid vertical={false} strokeDasharray="3 4" /><XAxis dataKey="semester" axisLine={false} tickLine={false} /><YAxis domain={[0, 100]} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} /><Tooltip content={<ChartTooltip />} /><Bar dataKey="attendance" fill="#138A8A" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div></section>
       <section className="content-card"><div className="card-heading"><div><h2 className="card-title">Risk distribution</h2><p className="card-description">Prediction values in the current roster</p></div><span className="live-tag" style={{ color: '#4f9276', background: '#eaf6f0', borderColor: '#d7ecdf' }}><i style={{ background: '#5BAA87' }} /> Current records</span></div><div className="risk-card-content"><div className="risk-donut"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={riskData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={75} paddingAngle={3} stroke="none"><Cell fill={pieColors[0]} /><Cell fill={pieColors[1]} /><Cell fill={pieColors[2]} /></Pie></PieChart></ResponsiveContainer><div className="risk-center"><strong>{total}</strong><span>students</span></div></div><div className="risk-legend">{riskData.map((item, index) => <div className="legend-item" key={item.name}><i className="legend-dot" style={{ background: pieColors[index] }} /><span>{item.name}</span><strong>{item.value}</strong></div>)}</div></div></section>
     </div>
-    {isAdmin && <section className="content-card admin-academic-summary"><div className="card-heading"><div><h2 className="card-title">Academic performance overview</h2><p className="card-description">Department-wide averages from the current authorized records</p></div><span className="scope-pill"><FiActivity /> {department}</span></div><div className="admin-academic-metrics"><div><span>Internal marks</span><strong>{academicMetric('averageInternalMarks', 'averageInternalMarks', '%')}</strong></div><div><span>Assignment score</span><strong>{academicMetric('averageAssignmentScore', 'averageAssignmentScore', '%')}</strong></div><div><span>Previous GPA</span><strong>{academicMetric('averagePreviousGpa', 'previousGpa', ' / 10')}</strong></div><div><span>Participation</span><strong>{academicMetric('averageParticipationScore', 'participationScore', '%')}</strong></div><div><span>Pass / Fail</span><strong>{academic.pass === undefined && academic.fail === undefined ? '—' : `${academic.pass || 0} / ${academic.fail || 0}`}</strong></div></div><div className="table-scroll admin-semester-summary-table"><table className="student-table"><thead><tr><th>Semester</th><th>Students</th><th>Subjects</th><th>Attendance</th><th>Internal marks</th><th>Assignments</th><th>Previous GPA</th><th>Participation</th></tr></thead><tbody>{academicSemesterRows.map((row) => <tr key={row.semester}><td>Semester {row.semester}</td><td>{row.studentCount || 0}</td><td>{row.subjectCount || 0}</td><td>{row.averageAttendance === '—' || row.averageAttendance == null ? '—' : `${Number(row.averageAttendance).toFixed(1)}%`}</td><td>{row.averageInternalMarks === '—' || row.averageInternalMarks == null ? '—' : `${Number(row.averageInternalMarks).toFixed(1)}%`}</td><td>{row.averageAssignmentScore === '—' || row.averageAssignmentScore == null ? '—' : `${Number(row.averageAssignmentScore).toFixed(1)}%`}</td><td>{row.averagePreviousGpa === '—' || row.averagePreviousGpa == null ? '—' : `${Number(row.averagePreviousGpa).toFixed(1)} / 10`}</td><td>{row.averageParticipationScore === '—' || row.averageParticipationScore == null ? '—' : `${Number(row.averageParticipationScore).toFixed(1)}%`}</td></tr>)}</tbody></table></div></section>}
+    {isAdmin && <section className="content-card admin-academic-summary"><div className="card-heading"><div><h2 className="card-title">Academic performance overview</h2><p className="card-description">Semester {selectedSemester} averages from the current authorized records</p></div><span className="scope-pill"><FiActivity /> {department} · Sem {selectedSemester}</span></div><div className="admin-academic-metrics"><div><span>Internal marks</span><strong>{academicMetric('averageInternalMarks', 'averageInternalMarks', '%')}</strong></div><div><span>Assignment score</span><strong>{academicMetric('averageAssignmentScore', 'averageAssignmentScore', '%')}</strong></div><div><span>Previous GPA</span><strong>{academicMetric('averagePreviousGpa', 'previousGpa', ' / 10')}</strong></div><div><span>Participation</span><strong>{academicMetric('averageParticipationScore', 'participationScore', '%')}</strong></div><div><span>Pass / Fail</span><strong>{selectedSummary || semesterStudents.length ? `${selectedPass} / ${selectedFail}` : '—'}</strong></div></div><div className="table-scroll admin-semester-summary-table"><table className="student-table"><thead><tr><th>Semester</th><th>Students</th><th>Subjects</th><th>Attendance</th><th>Internal marks</th><th>Assignments</th><th>Previous GPA</th><th>Participation</th></tr></thead><tbody>{academicSemesterRows.map((row) => <tr className={Number(row.semester) === Number(selectedSemester) ? 'selected-semester-row' : undefined} key={row.semester}><td>Semester {row.semester}</td><td>{row.studentCount || 0}</td><td>{row.subjectCount || 0}</td><td>{row.averageAttendance === '—' || row.averageAttendance == null ? '—' : `${Number(row.averageAttendance).toFixed(1)}%`}</td><td>{row.averageInternalMarks === '—' || row.averageInternalMarks == null ? '—' : `${Number(row.averageInternalMarks).toFixed(1)}%`}</td><td>{row.averageAssignmentScore === '—' || row.averageAssignmentScore == null ? '—' : `${Number(row.averageAssignmentScore).toFixed(1)}%`}</td><td>{row.averagePreviousGpa === '—' || row.averagePreviousGpa == null ? '—' : `${Number(row.averagePreviousGpa).toFixed(1)} / 10`}</td><td>{row.averageParticipationScore === '—' || row.averageParticipationScore == null ? '—' : `${Number(row.averageParticipationScore).toFixed(1)}%`}</td></tr>)}</tbody></table></div></section>}
     {adminSummaryError && isAdmin && <DashboardDataNotice message={`Administration summary unavailable: ${adminSummaryError}`} onRetry={onRetrySummary} />}
     <section className="content-card alerts-card"><div className="card-heading"><div><h2 className="card-title">Needs a closer look</h2><p className="card-description">A short list for a more intentional follow-up</p></div><button className="button-ghost" type="button" onClick={() => onNavigate('prediction')}>Open prediction desk <FiArrowRight /></button></div><div className="alert-list">{alerts.length ? alerts.map((student) => <div className="alert-row" key={student.id}><Avatar initials={student.initials} tone={student.risk === 'High Risk' ? '' : 'mint'} /><div className="alert-info"><strong>{student.name}</strong><span>{student.usn} · {student.attendancePercentage}% attendance · {student.currentGpa} current GPA</span></div><RiskBadge risk={student.risk} /><FiChevronRight className="alert-arrow" /></div>) : <div className="empty-state">No students need attention right now.</div>}</div></section>
     <section className="content-card table-card"><div className="table-card-head"><div><h2 className="card-title">Semester {selectedSemester} students</h2><p className="card-description">{semesterStudents.length} learners in {isAdmin ? 'the current access scope' : `${user.department} · all sections`}</p></div><div className="table-tools"><div className="search-field"><FiSearch /><input placeholder="Search students" aria-label="Search students" /></div><button className="filter-btn" type="button" onClick={() => onNavigate('students')}><FiFilter /> Filter</button></div></div><StudentTable students={semesterStudents.slice(0, 6)} compact onView={(student) => onNavigate('student', student)} /></section>

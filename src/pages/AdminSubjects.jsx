@@ -42,14 +42,22 @@ export default function AdminSubjectHierarchy() {
   const apiSession = !DEMO_MODE && isApiToken(apiToken)
   const department = useMemo(() => departmentCards.find((item) => item.code === user.department) || departmentCards[0], [user.department])
   const [subjectCounts, setSubjectCounts] = useState(() => Object.fromEntries(adminSemesters.map((semester) => [semester, apiSession ? null : scopedLocalSubjects(department.code, semester).length])))
+  const [countsLoading, setCountsLoading] = useState(apiSession)
   const [notice, setNotice] = useState('')
 
   useEffect(() => {
     let mounted = true
     const loadCounts = async () => {
-      if (apiSession) setAuthToken(apiToken)
+      if (apiSession) {
+        setAuthToken(apiToken)
+        setCountsLoading(true)
+      }
       if (!apiSession) {
-        if (mounted) setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, scopedLocalSubjects(department.code, semester).length])))
+        if (mounted) {
+          setCountsLoading(false)
+          setNotice('')
+          setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, scopedLocalSubjects(department.code, semester).length])))
+        }
         return
       }
       try {
@@ -57,12 +65,14 @@ export default function AdminSubjectHierarchy() {
         const subjects = response.data || []
         if (mounted) {
           setNotice('')
+          setCountsLoading(false)
           setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, subjects.filter((subject) => Number(subject.semester) === semester).length])))
         }
       } catch (error) {
         if (mounted) {
+          setCountsLoading(false)
           setSubjectCounts(Object.fromEntries(adminSemesters.map((semester) => [semester, null])))
-          setNotice(error.response?.data?.message || 'Subject counts are unavailable until the subject service responds.')
+          setNotice(error.response?.data?.message || 'Subject counts could not be loaded.')
         }
       }
     }
@@ -70,7 +80,7 @@ export default function AdminSubjectHierarchy() {
     return () => { mounted = false }
   }, [department.code, apiSession, apiToken])
 
-  return <AdminShell crumb="Semester hierarchy"><section className="admin-control-content"><BackButton fallbackPath="/" minHistoryIndex={1} /><AdminPageIntro eyebrow={`${department.label} · Academic structure`} title="Semester hierarchy" description={`Select a semester to manage the subjects shared by every ${department.label} academic portal.`} actions={<><button className="admin-secondary-button" type="button" onClick={() => navigate('/app/people')}><FiUsers /> People management</button><span className="admin-scope-pill"><FiGrid /> Selected at login · {department.label}</span></>} />{notice && <div className="admin-notice" role="alert"><FiRefreshCw /> {notice}</div>}<div className="admin-selected-scope"><span className={`admin-department-orb ${department.tone}`}>{department.icon}</span><div><span>Selected department</span><strong>{department.label}</strong><small>{department.name}</small></div><em><FiShield /> Department is fixed for this session</em></div><section className="admin-structure-card admin-semester-card admin-semester-dashboard"><div className="admin-card-heading"><div><h2>Semesters 1–8</h2><p>{department.label} · Choose a semester to open Subject Management.</p></div><FiBookOpen /></div><div className="admin-semester-grid">{adminSemesters.map((semester) => <button type="button" className="admin-semester-option" key={semester} onClick={() => navigate(`/admin/subjects/${department.code}/${semester}`)}><span className="admin-semester-number">{String(semester).padStart(2, '0')}</span><span><strong>Semester {semester}</strong><small>{subjectCounts[semester] == null ? 'Unavailable' : `${subjectCounts[semester]} subjects configured`}</small></span><FiArrowRight /></button>)}</div><div className="admin-hierarchy-note"><FiCheck /><span>Subjects added here sync automatically to Teacher, Student and Parent dashboards for {department.label} Semester 1–8.</span></div></section></section></AdminShell>
+  return <AdminShell crumb="Semester hierarchy"><section className="admin-control-content"><BackButton fallbackPath="/" minHistoryIndex={1} /><AdminPageIntro eyebrow={`${department.label} · Academic structure`} title="Semester hierarchy" description={`Select a semester to manage the subjects shared by every ${department.label} academic portal.`} actions={<><button className="admin-secondary-button" type="button" onClick={() => navigate('/app/people')}><FiUsers /> People management</button><span className="admin-scope-pill"><FiGrid /> Selected at login · {department.label}</span></>} />{notice && <div className="admin-notice" role="alert"><FiRefreshCw /> {notice}</div>}<div className="admin-selected-scope"><span className={`admin-department-orb ${department.tone}`}>{department.icon}</span><div><span>Selected department</span><strong>{department.label}</strong><small>{department.name}</small></div><em><FiShield /> Department is fixed for this session</em></div><section className="admin-structure-card admin-semester-card admin-semester-dashboard"><div className="admin-card-heading"><div><h2>Semesters 1–8</h2><p>{department.label} · Choose a semester to open Subject Management.</p></div><FiBookOpen /></div><div className="admin-semester-grid">{adminSemesters.map((semester) => <button type="button" className="admin-semester-option" key={semester} onClick={() => navigate(`/admin/subjects/${department.code}/${semester}`)}><span className="admin-semester-number">{String(semester).padStart(2, '0')}</span><span><strong>Semester {semester}</strong><small>{subjectCounts[semester] == null ? (countsLoading ? 'Loading…' : notice ? 'Error' : '0 subjects configured') : `${subjectCounts[semester]} subjects configured`}</small></span><FiArrowRight /></button>)}</div><div className="admin-hierarchy-note"><FiCheck /><span>Subjects added here sync automatically to Teacher, Student and Parent dashboards for {department.label} Semester 1–8.</span></div></section></section></AdminShell>
 }
 
 export function AdminSubjectManagement() {
