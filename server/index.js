@@ -1440,9 +1440,15 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
       }, Date.now() + index)
       return { ...normalized, password: cleanString(cell(row, ['Password', 'password'], uploadPassword)) }
     })
-    const existing = useDemoData ? demoStore.students : (await query('SELECT id, usn FROM students WHERE is_active=1')).map((row) => ({ id: row.id, usn: row.usn }))
+    const existing = useDemoData ? demoStore.students : (await query('SELECT id, usn, email FROM students WHERE is_active=1')).map((row) => ({ id: row.id, usn: row.usn, email: row.email }))
     const existingUsns = new Set(existing.map((student) => cleanString(student.usn).toUpperCase()).filter(Boolean))
+    const existingEmails = new Set(existing.map((student) => cleanString(student.email).toLowerCase()).filter(Boolean))
+    if (!useDemoData) {
+      const accountEmails = await query('SELECT email FROM users WHERE email IS NOT NULL')
+      accountEmails.forEach((row) => { const email = cleanString(row.email).toLowerCase(); if (email) existingEmails.add(email) })
+    }
     const seen = new Set()
+    const seenEmails = new Set()
     const sectionCache = new Map()
     const requiredAcademic = ['attendancePercentage', 'averageInternalMarks', 'averageAssignmentScore', 'previousGpa', 'currentGpa', 'participationScore']
     const academicLabels = { attendancePercentage: 'Attendance Percentage', averageInternalMarks: 'Average Internal Marks', averageAssignmentScore: 'Average Assignment Score', previousGpa: 'Previous GPA', currentGpa: 'Current GPA', participationScore: 'Participation Score' }
@@ -1470,7 +1476,10 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
       if (!scopeIssues.length && (!allowedDepartments.includes(row.department) || !validSemesters.includes(Number(row.semester)) || !(await getSection(row)))) validationIssues.push(`Section ${row.section} does not exist for ${row.department} Semester ${row.semester}.`)
       if (row.usn && seen.has(row.usn)) duplicateIssues.push('Duplicate USN in upload.')
       if (row.usn && existingUsns.has(row.usn)) duplicateIssues.push('USN already exists.')
+      if (row.email && seenEmails.has(row.email)) duplicateIssues.push('Duplicate email in upload.')
+      if (row.email && existingEmails.has(row.email)) duplicateIssues.push('Email already exists.')
       if (row.usn) seen.add(row.usn)
+      if (row.email) seenEmails.add(row.email)
       const issues = [...new Set([...scopeIssues, ...duplicateIssues, ...validationIssues])]
       const status = scopeIssues.length ? 'out-of-scope' : duplicateIssues.length ? 'duplicate' : validationIssues.length ? 'invalid' : 'ready'
       evaluated.push({ row, rowNumber: index + 2, status, scopeMatch: scopeIssues.length === 0, ready: status === 'ready', issues, scopeIssues, duplicateIssues, validationIssues })
