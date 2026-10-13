@@ -17,8 +17,8 @@ const connection = await mysql.createConnection({
 
 const rawSchema = await fs.readFile(path.resolve('database/schema.sql'), 'utf8')
 const schema = rawSchema
-  .replace(/^CREATE DATABASE IF NOT EXISTS `?camps`?[^;]*;\s*/i, '')
-  .replace(/^USE `?camps`?;\s*/i, '')
+  .replace(/^\s*CREATE DATABASE IF NOT EXISTS `?camps`?[^;]*;\s*/im, '')
+  .replace(/^\s*USE `?camps`?;\s*/im, '')
 await connection.query(`CREATE DATABASE IF NOT EXISTS ${identifier(configuredDatabase)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`)
 await connection.query(`USE ${identifier(configuredDatabase)}`)
 await connection.query(schema)
