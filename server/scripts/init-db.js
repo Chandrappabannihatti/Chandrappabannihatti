@@ -5,6 +5,8 @@ import dotenv from 'dotenv'
 
 dotenv.config()
 
+const configuredDatabase = String(process.env.DB_NAME || 'camps_project4').trim()
+const identifier = (name) => `\`${name.replaceAll('`', '``')}\``
 const connection = await mysql.createConnection({
   host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 3306),
@@ -13,10 +15,13 @@ const connection = await mysql.createConnection({
   multipleStatements: true,
 })
 
-const schema = await fs.readFile(path.resolve('database/schema.sql'), 'utf8')
+const rawSchema = await fs.readFile(path.resolve('database/schema.sql'), 'utf8')
+const schema = rawSchema
+  .replace(/^CREATE DATABASE IF NOT EXISTS `?camps`?[^;]*;\s*/i, '')
+  .replace(/^USE `?camps`?;\s*/i, '')
+await connection.query(`CREATE DATABASE IF NOT EXISTS ${identifier(configuredDatabase)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`)
+await connection.query(`USE ${identifier(configuredDatabase)}`)
 await connection.query(schema)
-
-const identifier = (name) => `\`${name.replaceAll('`', '``')}\``
 const tableExists = async (table) => {
   const [rows] = await connection.query('SELECT COUNT(*) AS total FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?', [table])
   return Number(rows[0]?.total) > 0

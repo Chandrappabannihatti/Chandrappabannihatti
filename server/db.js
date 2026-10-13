@@ -11,7 +11,7 @@ export function getPool() {
   pool = mysql.createPool({
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT || 3306),
-    database: process.env.DB_NAME || 'camps',
+    database: process.env.DB_NAME || 'camps_project4',
     user: process.env.DB_USER || 'camps_app',
     password: process.env.DB_PASSWORD || '',
     waitForConnections: true,
