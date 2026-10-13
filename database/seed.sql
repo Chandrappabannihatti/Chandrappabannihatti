@@ -6,7 +6,7 @@
 -- 4PM21CS033 / Student@123
 -- 4PM21CS033 / Parent@123
 
-USE camps;
+USE camps_project4;
 INSERT INTO departments (code, name) VALUES
 ('CSE', 'Computer Science & Engineering'),
 ('AIML', 'Artificial Intelligence & ML'),

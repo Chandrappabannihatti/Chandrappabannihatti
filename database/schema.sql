@@ -1,6 +1,6 @@
 -- CAMPS MySQL 8.0 schema
-CREATE DATABASE IF NOT EXISTS camps CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE camps;
+CREATE DATABASE IF NOT EXISTS camps_project4 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE camps_project4;
 
 CREATE TABLE IF NOT EXISTS departments (
   code VARCHAR(10) PRIMARY KEY,
