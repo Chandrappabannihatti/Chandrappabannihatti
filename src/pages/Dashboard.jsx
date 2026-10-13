@@ -912,6 +912,18 @@ function StudentDetailModal({ student, remarks = [], achievements = [], subjects
   return <div className="modal-backdrop"><div className="modal-card wide"><div className="modal-head"><div><h2>Average Academic Performance</h2><p>{student.name} · {student.department} · Semester {student.semester}</p></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close"><FiX /></button></div><div className="modal-body"><div className="student-detail-hero"><Avatar initials={student.initials} tone="mint" /><div><h2>{student.name}</h2><p>{student.usn} · Section {student.section} · {student.email}</p></div><span style={{ marginLeft: 'auto' }}><RiskBadge risk={risk} /></span></div><div className="profile-stat-grid academic-performance-grid" style={{ marginTop: 18 }}>{ACADEMIC_ATTRIBUTES.map(({ key, label, suffix }) => <div key={key}><span>{label}</span><strong>{Number(academic[key]).toFixed(1)}</strong><small>{suffix}</small></div>)}</div><div className="detail-list" style={{ marginTop: 18 }}><div className="detail-item"><span>Prediction</span><strong>{outcome}</strong></div><div className="detail-item"><span>Risk level</span><strong>{risk}</strong></div><div className="detail-item"><span>Parent / guardian</span><strong>{student.parentName || 'Not recorded'}</strong></div><div className="detail-item"><span>Parent phone</span><strong>{student.parentPhone || 'Not recorded'}</strong></div></div></div><div className="modal-foot"><ReportCardDownloadButton studentId={student.id} usn={student.usn} scope={{ department: student.department, semester: student.semester, section: student.section }} reportData={{ student, subjects: studentSubjects, remarks: studentRemarks, achievements: studentAchievements }} /><button className="button-primary" type="button" onClick={onClose}>Done</button></div></div></div>
 }
 
+function sharedImportScope(rows = [], departmentScope = '') {
+  const readyRows = rows.filter((row) => row.ready)
+  const unique = (key, normalize = (value) => String(value || '').trim()) => {
+    const values = [...new Set(readyRows.map((row) => normalize(row[key])).filter(Boolean))]
+    return values.length === 1 ? values[0] : ''
+  }
+  const department = departmentScope || unique('department', (value) => String(value || '').trim().toUpperCase())
+  const semester = unique('semester', (value) => Number(value) || '')
+  const section = unique('section', (value) => String(value || '').trim().toUpperCase())
+  return { ...(department ? { department } : {}), ...(semester ? { semester } : {}), ...(section ? { section } : {}) }
+}
+
 function UploadModal({ departmentScope = '', existingStudents = [], onClose, onImport, onPreview }) {
   const [file, setFile] = useState(null)
   const [rows, setRows] = useState([])
@@ -950,7 +962,7 @@ function UploadModal({ departmentScope = '', existingStudents = [], onClose, onI
         setRows(localRows)
         if (onPreview && password.length >= 8) {
           setValidating(true)
-          Promise.resolve(onPreview(selectedFile, password))
+          Promise.resolve(onPreview(selectedFile, password, sharedImportScope(localRows, departmentScope)))
             .then((result) => {
               if (result) mergeServerPreview(localRows, result)
               else setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.')
@@ -974,7 +986,7 @@ function UploadModal({ departmentScope = '', existingStudents = [], onClose, onI
     setCredentialError('')
     setImporting(true)
     try {
-      const saved = await onImport(rows, file, password)
+      const saved = await onImport(rows, file, password, sharedImportScope(rows, departmentScope))
       if (saved !== false) onClose()
     } catch (error) {
       console.error('[students-import] Import handler failed unexpectedly.', error)
@@ -1142,7 +1154,7 @@ export default function Dashboard() {
 
   const showToast = (message) => { setToast(message); window.setTimeout(() => setToast(''), 3000) }
   const exportStudents = () => { const departmentScope = user.department === 'ALL' ? '' : user.department; const visibleStudents = departmentScope ? students.filter((student) => student.department === departmentScope) : students; const rows = visibleStudents.map((student) => ({ USN: student.usn, Name: student.name, Department: student.department, Semester: student.semester, Section: student.section, Gender: student.gender || '', Email: student.email, Phone: student.phone || '', 'Parent Name': student.parentName || '', 'Parent Phone': student.parentPhone || '', 'Attendance Percentage': student.attendancePercentage, 'Average Internal Marks': student.averageInternalMarks, 'Average Assignment Score': student.averageAssignmentScore, 'Previous GPA': student.previousGpa, 'Current GPA': student.currentGpa, 'Participation Score': student.participationScore, Result: student.result || predictAcademic(student).result, Risk: student.risk || predictAcademic(student).risk })); const worksheet = XLSX.utils.json_to_sheet(rows); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, 'Students'); XLSX.writeFile(workbook, 'camps-student-roster.xlsx'); showToast('Roster exported as camps-student-roster.xlsx') }
-  const previewImportedStudents = async (file, password) => {
+  const previewImportedStudents = async (file, password, importScope = {}) => {
     if (DEMO_MODE) return null
     const activeToken = getAuthToken() || token
     if (!isApiToken(activeToken)) {
@@ -1152,13 +1164,13 @@ export default function Dashboard() {
     const departmentScope = user.department === 'ALL' ? '' : user.department
     try {
       setAuthToken(activeToken)
-      return await api.uploadStudents(file, false, { ...(departmentScope ? { department: departmentScope } : {}), password })
+      return await api.uploadStudents(file, false, { ...importScope, ...(departmentScope ? { department: departmentScope } : {}), password })
     } catch (error) {
       console.warn('[students-import] Dashboard server preview failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message })
       return null
     }
   }
-  const importStudents = async (rows, file, password) => {
+  const importStudents = async (rows, file, password, importScope = {}) => {
     const departmentScope = user.department === 'ALL' ? '' : user.department
     const activeToken = getAuthToken() || token
     if (!DEMO_MODE && !isApiToken(activeToken)) {
@@ -1175,7 +1187,7 @@ export default function Dashboard() {
     if (!DEMO_MODE) {
       try {
         setAuthToken(activeToken)
-        const response = await api.uploadStudents(file, true, { ...(departmentScope ? { department: departmentScope } : {}), password })
+        const response = await api.uploadStudents(file, true, { ...importScope, ...(departmentScope ? { department: departmentScope } : {}), password })
         savedRows = response.data || []
         summary = response.summary || { ...summary, imported: savedRows.length }
         importErrors = Array.isArray(response.errors) ? response.errors : []
