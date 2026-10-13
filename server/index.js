@@ -1479,10 +1479,11 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
       total: evaluated.length,
       matching: evaluated.filter((entry) => entry.scopeMatch).length,
       ready: evaluated.filter((entry) => entry.ready).length,
-      skipped: evaluated.filter((entry) => !entry.ready).length,
+      skipped: evaluated.filter((entry) => ['out-of-scope', 'duplicate', 'invalid'].includes(entry.status)).length,
       outOfScope: evaluated.filter((entry) => entry.status === 'out-of-scope').length,
       duplicates: evaluated.filter((entry) => entry.status === 'duplicate').length,
       invalid: evaluated.filter((entry) => entry.status === 'invalid').length,
+      failed: evaluated.filter((entry) => entry.status === 'failed').length,
       imported,
     })
     const toPreview = () => evaluated.map(({ row, ...meta }) => {
@@ -1521,17 +1522,25 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
           const { password: _password, ...safeRow } = row
           importedRows.push({ ...safeRow, id: created.studentId, userId: created.userId, sectionId: sectionRow.sectionId })
         } catch (error) {
-          if (error.code !== 'ER_DUP_ENTRY') throw error
-          entry.status = 'duplicate'
           entry.ready = false
-          entry.duplicateIssues.push(error.sqlMessage?.toLowerCase().includes('email') ? 'Email already exists.' : 'USN already exists.')
-          entry.issues = [...new Set([...entry.issues, ...entry.duplicateIssues.slice(-1)])]
-          console.warn('[students-import] Duplicate skipped during insert', { userId: req.user?.sub, usn: row.usn, department: row.department, semester: row.semester, section: row.section })
+          if (error.code === 'ER_DUP_ENTRY') {
+            entry.status = 'duplicate'
+            const duplicateMessage = String(error.sqlMessage || error.message || '').toLowerCase().includes('email') ? 'Email already exists.' : 'USN already exists.'
+            entry.duplicateIssues.push(duplicateMessage)
+            entry.issues = [...new Set([...entry.issues, duplicateMessage])]
+            console.warn('[students-import] Duplicate skipped during insert', { userId: req.user?.sub, usn: row.usn, department: row.department, semester: row.semester, section: row.section })
+          } else {
+            entry.status = 'failed'
+            const failureMessage = error.message || 'The database rejected this student row.'
+            entry.failureIssues = [failureMessage]
+            entry.issues = [...new Set([...entry.issues, failureMessage])]
+            console.error('[students-import] Row failed during insert', { userId: req.user?.sub, usn: row.usn, department: row.department, semester: row.semester, section: row.section, code: error.code, message: error.message })
+          }
         }
       }
     }
     summary = makeSummary(importedRows.length)
-    if (!importedRows.length) return res.status(422).json({ message: 'No students were imported. All rows were skipped or invalid.', errors: errors(), preview: toPreview(), summary })
+    if (!importedRows.length) return res.status(422).json({ message: 'No students were imported. Review the skipped and failed rows before retrying.', errors: errors(), preview: toPreview(), summary })
     console.info('[students-import] Import complete', { userId: req.user?.sub, role: req.user?.role, department: uploadDepartment, semester: requestedSemester, section: requestedSection, ...summary })
     res.status(201).json({ imported: importedRows.length, data: importedRows.map((row) => useDemoData ? row : mapStudentRow(row)), preview: toPreview(), summary, errors: errors() })
   } catch (error) {

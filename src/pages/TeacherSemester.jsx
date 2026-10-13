@@ -468,6 +468,7 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
   const [file, setFile] = useState(null)
   const [rows, setRows] = useState([])
   const [password, setPassword] = useState('')
+  const [credentialError, setCredentialError] = useState('')
   const [fileError, setFileError] = useState('')
   const [previewNotice, setPreviewNotice] = useState('')
   const [reading, setReading] = useState(false)
@@ -490,6 +491,7 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
     setFile(selectedFile)
     setRows([])
     setFileError('')
+    setCredentialError('')
     setPreviewNotice('')
     setServerSummary(null)
     setReading(true)
@@ -523,7 +525,7 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
   }
 
   const downloadTemplate = () => {
-    const template = [{ USN: '4PM25CS101', Name: 'Sample Student', Department: user.department, Semester: semester, Section: section || 'A', Gender: 'Female', Email: 'sample@pestrust.edu.in', Phone: '+91 98450 00000', 'Parent Name': 'Parent Name', 'Parent Phone': '+91 98450 00001', 'Father Name': 'Parent Name', 'Mother Name': 'Mother Name', 'Parent Email': 'parent@example.com', Password: 'ChangeMe@123', 'Date of Birth': '2004-06-15', 'Blood Group': 'O+', Address: 'Residential address', Certifications: 'NPTEL, AWS', Skills: 'Python, React', 'Attendance Percentage': 80, 'Average Internal Marks': 75, 'Average Assignment Score': 80, 'Previous GPA': 7.4, 'Current GPA': 7.5, 'Participation Score': 78 }]
+    const template = [{ USN: '4PM25CS101', Name: 'Sample Student', Department: user.department, Semester: semester, Section: section || '', Gender: 'Female', Email: 'sample@pestrust.edu.in', Phone: '+91 98450 00000', 'Parent Name': 'Parent Name', 'Parent Phone': '+91 98450 00001', 'Father Name': 'Parent Name', 'Mother Name': 'Mother Name', 'Parent Email': 'parent@example.com', Password: 'ChangeMe@123', 'Date of Birth': '2004-06-15', 'Blood Group': 'O+', Address: 'Residential address', Certifications: 'NPTEL, AWS', Skills: 'Python, React', 'Attendance Percentage': 80, 'Average Internal Marks': 75, 'Average Assignment Score': 80, 'Previous GPA': 7.4, 'Current GPA': 7.5, 'Participation Score': 78 }]
     const worksheet = XLSX.utils.json_to_sheet(template)
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, `Semester ${semester}`)
@@ -532,10 +534,20 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
 
   const importRows = async () => {
     const readyRows = rows.filter((row) => row.ready)
-    if (!readyRows.length || password.length < 8 || reading || validating || importing) return
+    if (!readyRows.length || reading || validating || importing) return
+    if (!password.trim()) { setCredentialError('Enter an initial student login password before importing.'); return }
+    if (password.length < 8) { setCredentialError('The initial student login password must be at least 8 characters.'); return }
+    setCredentialError('')
     setImporting(true)
-    await onImport(rows, file, password)
-    setImporting(false)
+    try {
+      const saved = await onImport(rows, file, password)
+      if (saved === false) setFileError('The import was not completed. Review the error notification and try again.')
+    } catch (error) {
+      console.error('[students-import] Teacher import handler failed unexpectedly.', error)
+      setFileError(error.message || 'The import failed unexpectedly. No success was reported.')
+    } finally {
+      setImporting(false)
+    }
   }
 
   const summary = serverSummary || importSummary(rows)
@@ -552,7 +564,7 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
       {!file && <div className="dropzone"><FiUploadCloud /><div><strong>Upload the {section ? `Section ${section}` : 'semester'} roster</strong><span>Accepted formats: .xlsx, .xls and .csv · Required columns: USN, Name, Email and six academic attributes</span><label htmlFor="semester-roster-file">Choose Excel or CSV file<input id="semester-roster-file" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && readSpreadsheet(event.target.files[0])} /></label></div></div>}
       {file && <>
         <div className="upload-summary"><span><FiFileText style={{ verticalAlign: 'middle', marginRight: 6 }} /> {file.name}</span><strong>{reading ? 'Reading…' : validating ? 'Checking with server…' : `${rows.length} record${rows.length === 1 ? '' : 's'} found`}</strong></div>
-        <div className="upload-credential form-field"><label className="plain-label">Initial student login password</label><input className="field-control" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" minLength="8" autoComplete="new-password" /><small className="field-hint">This credential is hashed separately for each imported student account.</small></div>
+        <div className="upload-credential form-field"><label className="plain-label">Initial student login password</label><input className="field-control" type="password" value={password} onChange={(event) => { setPassword(event.target.value); setCredentialError(''); setPreviewNotice('') }} onBlur={() => { if (password && password.length < 8) setCredentialError('The initial student login password must be at least 8 characters.') }} placeholder="At least 8 characters" minLength="8" autoComplete="new-password" aria-invalid={Boolean(credentialError)} /><small className="field-hint">This credential is hashed separately for each imported student account.</small>{credentialError && <small className="field-hint error" role="alert">{credentialError}</small>}</div>
         {fileError && <div className="validation-error"><strong>{fileError}</strong></div>}
         {previewNotice && <div className="upload-preview-notice"><FiAlertCircle /> {previewNotice}</div>}
         {!reading && rows.length > 0 && <>
@@ -569,7 +581,7 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
         </>}
       </>}
     </section>
-    <div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setFileError(''); setPreviewNotice(''); setServerSummary(null) }}>Choose another file</button>}<button className="button-primary" type="button" disabled={!rows.some((row) => row.ready) || password.length < 8 || reading || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div>
+    <div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setFileError(''); setCredentialError(''); setPreviewNotice(''); setServerSummary(null) }}>Choose another file</button>}<button className="button-primary" type="button" disabled={!rows.some((row) => row.ready) || reading || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div>
   </div>
 }
 
@@ -925,6 +937,7 @@ export default function TeacherSemester() {
     const localRecords = scopedRows.map((row, index) => { const academic = academicFields(row); return { ...row, ...academic, ...predictAcademic(academic), id: Date.now() + index, initials: row.name.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase() } })
     let savedRecords = localRecords
     let summary = importSummary(rows)
+    let importErrors = []
     let refreshed = false
     if (apiSession) {
       try {
@@ -932,6 +945,7 @@ export default function TeacherSemester() {
         const response = await api.uploadStudents(file, true, { department: user.department, semester, section, password })
         savedRecords = (response.data || []).filter((row) => row.department === user.department && Number(row.semester) === semester && (!section || String(row.section).toUpperCase() === section))
         summary = response.summary || { ...summary, imported: savedRecords.length }
+        importErrors = Array.isArray(response.errors) ? response.errors : []
         try {
           const refreshedResponse = await api.getStudents({ department: user.department, semester, section, limit: 100 })
           if (refreshedResponse.data) { setStudents(refreshedResponse.data); refreshed = true }
@@ -955,12 +969,15 @@ export default function TeacherSemester() {
     const scopeSkipped = Number(summary.outOfScope || 0)
     const duplicateSkipped = Number(summary.duplicates || 0)
     const invalidSkipped = Number(summary.invalid || 0)
+    const failed = Number(summary.failed || 0)
     const detail = [
       scopeSkipped ? `${scopeSkipped} from a different department, semester or section` : '',
       duplicateSkipped ? `${duplicateSkipped} duplicate USN${duplicateSkipped === 1 ? '' : 's'}` : '',
       invalidSkipped ? `${invalidSkipped} invalid row${invalidSkipped === 1 ? '' : 's'}` : '',
+      ...importErrors.slice(0, 3),
     ].filter(Boolean).join('; ')
-    notify(`${imported} student${imported === 1 ? '' : 's'} imported successfully${skipped ? `. ${skipped} skipped${detail ? `: ${detail}` : '.'}` : '.'}`)
+    const moreErrors = importErrors.length > 3 ? ` +${importErrors.length - 3} more row details.` : ''
+    notify(`${imported} student${imported === 1 ? '' : 's'} imported successfully. ${skipped} skipped${failed ? `, ${failed} failed` : ''}.${detail ? ` ${detail}${moreErrors}` : ''}`)
     navigateModule('students')
     return true
   }

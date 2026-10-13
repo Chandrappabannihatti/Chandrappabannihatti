@@ -117,7 +117,7 @@ const api = {
     if (scope.semester) form.append('semester', String(scope.semester))
     if (scope.section) form.append('section', scope.section)
     if (scope.password) form.append('password', scope.password)
-    return unwrap(client.post('/students/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }))
+    return unwrap(client.post('/students/upload', form, { timeout: 120000 }))
   },
   exportStudents: (params) => client.get('/students/export', { params, responseType: 'blob' }),
   sendMessage: (payload) => unwrap(client.post('/messages/send', payload)),

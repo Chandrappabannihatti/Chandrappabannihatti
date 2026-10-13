@@ -1,4 +1,4 @@
-import { ACADEMIC_ATTRIBUTES, academicFields, predictAcademic } from './academic'
+import { ACADEMIC_ATTRIBUTES, academicFields, predictAcademic } from './academic.js'
 
 const validDepartments = new Set(['CSE', 'AIML', 'CSDS', 'CE', 'ECE', 'EEE', 'ME', 'CIVIL'])
 
@@ -87,7 +87,7 @@ export function normalizeImportRows(rawRows = [], scope = {}, existingStudents =
     const name = text(readImportCell(rawRow, 'name'))
     const rowDepartment = text(readImportCell(rawRow, 'department', department)).toUpperCase()
     const rowSemester = numberValue(readImportCell(rawRow, 'semester', semester))
-    const rowSection = text(readImportCell(rawRow, 'section', section || 'A')).toUpperCase()
+    const rowSection = text(readImportCell(rawRow, 'section', section)).toUpperCase()
     const email = text(readImportCell(rawRow, 'email')).toLowerCase()
     const phone = text(readImportCell(rawRow, 'phone'))
     const academicRaw = Object.fromEntries(ACADEMIC_ATTRIBUTES.map(({ key }) => [key, readImportCell(rawRow, key)]))
