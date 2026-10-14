@@ -1547,7 +1547,11 @@ app.delete('/api/students/:id', authRequired, roleRequired('teacher', 'admin'), 
 
 app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'), upload.single('file'), async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ message: 'Please attach an .xlsx or .csv file.' })
+    if (!req.file) {
+      console.warn('[students-import] Upload request did not contain the expected file field.', { field: 'file', contentType: req.headers['content-type'] })
+      return res.status(400).json({ message: 'Please attach an .xlsx or .csv file.' })
+    }
+    console.info('[students-import] File received by Multer.', { field: 'file', originalName: req.file.originalname, size: req.file.size, mimetype: req.file.mimetype })
     const extension = path.extname(req.file.originalname || '').toLowerCase()
     if (!['.xlsx', '.xls', '.csv'].includes(extension)) return res.status(415).json({ message: 'Only .xlsx, .xls and .csv student files are supported.' })
     const adminDepartment = selectedAdminDepartment(req)
@@ -1655,17 +1659,49 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
       const status = scopeIssues.length ? 'out-of-scope' : duplicateIssues.length ? 'duplicate' : validationIssues.length ? 'invalid' : 'ready'
       evaluated.push({ row, rowNumber: index + 2, status, scopeMatch: scopeIssues.length === 0, ready: status === 'ready', issues, scopeIssues, duplicateIssues, validationIssues })
     }
-    const makeSummary = (imported = 0) => ({
-      total: evaluated.length,
-      matching: evaluated.filter((entry) => entry.scopeMatch).length,
-      ready: evaluated.filter((entry) => entry.ready).length,
-      skipped: evaluated.filter((entry) => ['out-of-scope', 'duplicate', 'invalid'].includes(entry.status)).length,
-      outOfScope: evaluated.filter((entry) => entry.status === 'out-of-scope').length,
-      duplicates: evaluated.filter((entry) => entry.status === 'duplicate').length,
-      invalid: evaluated.filter((entry) => entry.status === 'invalid').length,
-      failed: evaluated.filter((entry) => entry.status === 'failed').length,
-      imported,
-    })
+    const makeSummary = (imported = 0) => {
+      const bySection = new Map()
+      evaluated.forEach((entry) => {
+        const row = entry.row
+        const key = `${row.department || 'Unknown'}-${row.semester || 'Unknown'}-${row.section || 'Unspecified'}`
+        const bucket = bySection.get(key) || {
+          department: row.department || '',
+          semester: Number(row.semester) || null,
+          section: row.section || '',
+          total: 0,
+          matching: 0,
+          ready: 0,
+          skipped: 0,
+          outOfScope: 0,
+          duplicates: 0,
+          invalid: 0,
+          failed: 0,
+          imported: 0,
+        }
+        bucket.total += 1
+        if (entry.scopeMatch) bucket.matching += 1
+        if (entry.status === 'ready') bucket.ready += 1
+        if (['out-of-scope', 'duplicate', 'invalid'].includes(entry.status)) bucket.skipped += 1
+        if (entry.status === 'out-of-scope') bucket.outOfScope += 1
+        if (entry.status === 'duplicate') bucket.duplicates += 1
+        if (entry.status === 'invalid') bucket.invalid += 1
+        if (entry.status === 'failed') bucket.failed += 1
+        if (entry.status === 'imported') bucket.imported += 1
+        bySection.set(key, bucket)
+      })
+      return {
+        total: evaluated.length,
+        matching: evaluated.filter((entry) => entry.scopeMatch).length,
+        ready: evaluated.filter((entry) => entry.ready).length,
+        skipped: evaluated.filter((entry) => ['out-of-scope', 'duplicate', 'invalid'].includes(entry.status)).length,
+        outOfScope: evaluated.filter((entry) => entry.status === 'out-of-scope').length,
+        duplicates: evaluated.filter((entry) => entry.status === 'duplicate').length,
+        invalid: evaluated.filter((entry) => entry.status === 'invalid').length,
+        failed: evaluated.filter((entry) => entry.status === 'failed').length,
+        imported,
+        bySection: [...bySection.values()],
+      }
+    }
     const toPreview = () => evaluated.map(({ row, ...meta }) => {
       const { password: _password, ...safeRow } = row
       return { ...safeRow, ...meta }

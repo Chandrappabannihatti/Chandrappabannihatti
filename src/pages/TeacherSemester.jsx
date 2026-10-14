@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   Area,
@@ -473,8 +473,10 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
   const [previewNotice, setPreviewNotice] = useState('')
   const [reading, setReading] = useState(false)
   const [validating, setValidating] = useState(false)
+  const [validationComplete, setValidationComplete] = useState(false)
   const [importing, setImporting] = useState(false)
   const [serverSummary, setServerSummary] = useState(null)
+  const readGeneration = useRef(0)
   const scope = { department: user.department, semester, section }
 
   const mergeServerPreview = (localRows, result) => {
@@ -492,19 +494,32 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
   }
 
   const readSpreadsheet = (selectedFile) => {
+    const generation = readGeneration.current + 1
+    readGeneration.current = generation
+    // Keep the original File object in state for the eventual commit. The
+    // parsed rows are only a validation/preview representation.
     setFile(selectedFile)
     setRows([])
     setFileError('')
     setCredentialError('')
     setPreviewNotice('')
     setServerSummary(null)
+    setReading(false)
+    setValidating(false)
+    setValidationComplete(false)
+    const extension = String(selectedFile?.name || '').toLowerCase().split('.').pop()
+    if (!['xlsx', 'xls', 'csv'].includes(extension)) {
+      setFileError('Only .xlsx, .xls or .csv student files are supported.')
+      return
+    }
     setReading(true)
     const reader = new FileReader()
     reader.onload = (event) => {
+      if (generation !== readGeneration.current) return
       try {
         const workbook = XLSX.read(event.target.result, { type: 'array' })
         const sheet = workbook.Sheets[workbook.SheetNames[0]]
-        const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+        const rawRows = sheet ? XLSX.utils.sheet_to_json(sheet, { defval: '' }) : []
         const parsedRows = normalizeImportRows(rawRows, { ...scope, departments: [user.department] }, students)
         setRows(parsedRows)
         setReading(false)
@@ -512,19 +527,37 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
           setValidating(true)
           Promise.resolve(onPreview(selectedFile, password))
             .then((result) => {
+              if (generation !== readGeneration.current) return
               if (result) mergeServerPreview(parsedRows, result)
               else setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.')
             })
-            .catch(() => setPreviewNotice('Showing local validation. The server preview was unavailable; the upload will be checked again before import.'))
-            .finally(() => setValidating(false))
-        } else if (onPreview) setPreviewNotice('Enter an initial login password of at least 8 characters. The server will validate the credential again before import.')
+            .catch((error) => {
+              if (generation !== readGeneration.current) return
+              setPreviewNotice(error.response?.data?.message || error.message || 'Server validation was unavailable; the upload will be checked again before import.')
+            })
+            .finally(() => {
+              if (generation === readGeneration.current) {
+                setValidating(false)
+                setValidationComplete(true)
+              }
+            })
+        } else if (onPreview) {
+          setPreviewNotice('Enter an initial login password of at least 8 characters. The server will validate the credential again before import.')
+          setValidationComplete(true)
+        } else setValidationComplete(true)
       } catch {
         setRows([])
-        setFileError('This file could not be read. Upload a valid .xlsx, .xls or .csv file.')
         setReading(false)
+        setValidationComplete(false)
+        setFileError('This file could not be read. Upload a valid .xlsx, .xls or .csv file.')
       }
     }
-    reader.onerror = () => { setReading(false); setFileError('The spreadsheet could not be opened. Please try again.') }
+    reader.onerror = () => {
+      if (generation !== readGeneration.current) return
+      setReading(false)
+      setValidationComplete(false)
+      setFileError('The spreadsheet could not be opened. Please try again.')
+    }
     reader.readAsArrayBuffer(selectedFile)
   }
 
@@ -545,15 +578,18 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
   }
 
   const importRows = async () => {
+    if (!file) { setFileError('Select an .xlsx, .xls or .csv file before importing.'); return }
+    if (!validationComplete || reading || validating) { setFileError('Wait for file validation to finish before importing.'); return }
     const readyRows = rows.filter((row) => row.ready)
-    if (!readyRows.length || reading || validating || importing) return
+    if (!readyRows.length || importing) return
     if (!password.trim()) { setCredentialError('Enter an initial student login password before importing.'); return }
     if (password.length < 8) { setCredentialError('The initial student login password must be at least 8 characters.'); return }
     setCredentialError('')
     setImporting(true)
     try {
       const saved = await onImport(rows, file, password)
-      if (saved?.response) {
+      if (saved?.error) setFileError(saved.error)
+      else if (saved?.response) {
         mergeServerPreview(rows, saved.response)
         setServerSummary(saved.response.summary || saved.summary || null)
         setPreviewNotice('Some rows were rejected during commit. Download the rejected report, correct those rows, and retry only the remaining records.')
@@ -571,6 +607,18 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
   const statusMessage = summary.ready
     ? `${summary.matching} records match this scope. ${summary.ready} are ready to import; ${summary.skipped} are rejected and will not be relocated.`
     : 'No rows are ready to import. Review the highlighted rows before choosing another file.'
+  const clearSelectedFile = () => {
+    readGeneration.current += 1
+    setFile(null)
+    setRows([])
+    setFileError('')
+    setCredentialError('')
+    setPreviewNotice('')
+    setServerSummary(null)
+    setReading(false)
+    setValidating(false)
+    setValidationComplete(false)
+  }
 
   return <div className="dashboard-content upload-student-page">
     <ScopeIntro eyebrow={`${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`} title="Upload student roster" description={`Review every row before importing into ${section ? `Section ${section} · ` : ''}Semester ${semester}. Rows from another department, semester or section are rejected and never relocated.`} actions={<><button className="button-ghost" type="button" onClick={() => downloadTemplate('xlsx')}><FiDownload /> Excel template</button><button className="button-ghost" type="button" onClick={() => downloadTemplate('csv')}><FiDownload /> CSV template</button></>} />
@@ -592,12 +640,13 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
             <div className="import-summary-card error"><span>Validation issues</span><strong>{summary.invalid}</strong></div>
           </div>
           <div className={`import-summary-message ${summary.skipped ? 'warning' : 'success'}`}><FiAlertCircle /> {statusMessage}</div>
+          {summary.bySection?.length > 1 && <div className="upload-preview-notice"><FiFileText /> Section breakdown: {summary.bySection.map((item) => `${item.department} · Semester ${item.semester || '—'} · Section ${item.section || '—'}: ${summary.imported ? item.imported : item.ready} ${summary.imported ? 'imported' : 'ready'}`).join(' · ')}</div>}
           {issueRows.length > 0 && <div className="validation-error import-validation-list"><strong>Review highlighted rows before import:</strong>{issueRows.slice(0, 8).map((row) => <div key={row.id}>Row {row.rowNumber}: {row.issues.join(' ')}</div>)}{issueRows.length > 8 && <div>+ {issueRows.length - 8} more row{issueRows.length - 8 === 1 ? '' : 's'} with issues</div>}</div>}
           <div className="table-scroll upload-preview-table"><table className="student-table"><thead><tr><th>Row</th><th>USN</th><th>Name</th><th>Department</th><th>Semester</th><th>Section</th><th>Status</th><th>Details</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={`import-preview-row ${row.status}`}><td>{row.rowNumber}</td><td>{row.usn || '—'}</td><td>{row.name || '—'}</td><td>{row.department || '—'}</td><td>{row.semester || '—'}</td><td>{row.section || '—'}</td><td><span className={`import-status ${row.status}`}><i /> {importStatusLabel(row.status)}</span></td><td className="import-row-details">{row.issues?.length ? row.issues.join(' ') : 'Ready for import'}</td></tr>)}</tbody></table></div>
         </>}
       </>}
     </section>
-    <div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setFileError(''); setCredentialError(''); setPreviewNotice(''); setServerSummary(null) }}>Choose another file</button>}{issueRows.length > 0 && <button className="button-ghost" type="button" onClick={downloadRejectedReport}><FiDownload /> Rejected report</button>}<button className="button-primary" type="button" disabled={!rows.some((row) => row.ready) || reading || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div>
+    <div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={clearSelectedFile}>Choose another file</button>}{issueRows.length > 0 && <button className="button-ghost" type="button" onClick={downloadRejectedReport}><FiDownload /> Rejected report</button>}<button className="button-primary" type="button" disabled={!file || !validationComplete || !rows.some((row) => row.ready) || reading || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div>
   </div>
 }
 
@@ -938,12 +987,13 @@ export default function TeacherSemester() {
       setAuthToken(apiToken)
       return await api.uploadStudents(file, false, { department: user.department, semester, section, password })
     } catch (error) {
-      console.warn('[students-import] Server preview failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: user.department, semester, section })
+      const message = error.response?.data?.message || error.message || 'The server preview failed.'
+      console.warn('[students-import] Server preview failed.', { status: error.response?.status || 'network', message, department: user.department, semester, section })
       if (error.response?.status === 401) {
         await logout()
         navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
       }
-      return null
+      throw error
     }
   }
   const saveImportedStudents = async (rows, file, password) => {
@@ -975,14 +1025,14 @@ export default function TeacherSemester() {
           console.warn('[students-import] Import succeeded, but the section roster refresh failed.', { status: refreshError.response?.status, message: refreshError.message })
         }
       } catch (error) {
-        console.error('[students-import] Import request failed.', { status: error.response?.status || 'network', message: error.response?.data?.message || error.message, department: user.department, semester, section })
+        const message = error.response?.data?.errors?.slice(0, 3).join(' ') || error.response?.data?.message || error.message || 'The student import could not be completed.'
+        console.error('[students-import] Import request failed.', { status: error.response?.status || 'network', message, department: user.department, semester, section })
         if (error.response?.status === 401) {
           await logout()
           navigate(`/login?department=${encodeURIComponent(user.department)}&role=teacher&reason=session`, { replace: true })
-          return false
         }
-        notify(error.response?.data?.errors?.slice(0, 3).join(' ') || error.response?.data?.message || 'The student import could not be completed.')
-        return false
+        notify(message)
+        return { completed: false, error: message }
       }
     }
     if (!refreshed) setStudents((current) => [...savedRecords, ...current])

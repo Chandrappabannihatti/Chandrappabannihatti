@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { removeJsonContentType } from './formDataHeaders.js'
 
 // API-first by default. Set VITE_DEMO_MODE=true when reviewing the UI without the Node service.
 export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true'
@@ -61,6 +62,10 @@ client.interceptors.request.use((config) => {
     config.headers.Authorization = headers.Authorization
     config.headers['X-Access-Token'] = headers['X-Access-Token']
   }
+  // The Axios instance defaults to JSON for normal API calls. Remove that
+  // default for FormData so the browser adapter can generate the multipart
+  // boundary and Multer can populate req.file.
+  config.headers = removeJsonContentType(config.headers, config.data)
   return config
 })
 
