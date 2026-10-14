@@ -15,9 +15,9 @@ import { WebSocket, WebSocketServer } from 'ws'
 
 const require = createRequire(import.meta.url)
 const archiver = require('archiver')
-import { demoStore, nextId } from './demoStore.js'
+import { demoDepartments, demoStore, nextId } from './demoStore.js'
 import { getPool, query, transaction } from './db.js'
-import { academicFields, cleanString, DEFAULT_STUDENT_PASSWORD, isEmail, isPhone, normalizeRisk, normalizeUsn, predictAcademic, predictionAttributeKeys, predictionFields, validDepartments, validSemesters, validateAchievement, validateStudent, validateSubject } from './utils.js'
+import { academicFields, cleanString, DEFAULT_STUDENT_PASSWORD, isEmail, isPhone, normalizeRisk, normalizeUsn, predictAcademic, predictionAttributeKeys, predictionFields, validSemesters, validateAchievement, validateStudent, validateSubject } from './utils.js'
 import { loadReportCard } from './reportCardData.js'
 import { renderReportCardPdf, reportCardFilename } from './reportCardPdf.js'
 
@@ -118,12 +118,12 @@ for (const student of demoStore.students) {
     student.mustChangePassword = true
   }
 }
+for (const teacher of demoStore.teachers) {
+  if (!teacher.passwordHash) teacher.passwordHash = bcrypt.hashSync(teacher.password || 'Teacher@123', 10)
+}
 
 const demoAccounts = {
   admin: { id: 1, secret: 'admin@camps.edu', password: 'Admin@123', name: 'Kavya Menon', role: 'admin', department: 'ALL', email: 'admin@camps.edu', designation: 'Academic Administrator', initials: 'KM' },
-  teacher: { id: 1, secret: 'teacher@camps.edu', password: 'Teacher@123', name: 'Dr. Ananya Rao', role: 'teacher', department: 'CSE', email: 'ananya.rao@pestrust.edu.in', designation: 'Assistant Professor', initials: 'AR' },
-  student: { id: 4, secret: '4PM21CS033', password: 'Student@123', name: 'Ishita Kulkarni', role: 'student', department: 'CSE', semester: 7, usn: '4PM21CS033', email: 'ishita.k@pestrust.edu.in', initials: 'IK' },
-  parent: { id: 2, secret: '4PM21CS033', password: 'Parent@123', name: 'Suresh Kulkarni', role: 'parent', department: 'CSE', semester: 7, usn: '4PM21CS033', studentId: 4, studentName: 'Ishita Kulkarni', email: 'suresh.kulkarni@example.com', relationship: 'Parent', initials: 'SK' },
 }
 
 function demoParentForStudent(student) {
@@ -181,7 +181,7 @@ function selectedAdminDepartment(req) {
 }
 
 async function activeDepartmentCodes() {
-  if (useDemoData) return validDepartments
+  if (useDemoData) return demoDepartments.filter((department) => department.isActive !== false).map((department) => String(department.code).trim().toUpperCase()).filter(Boolean)
   const rows = await query('SELECT code FROM departments WHERE is_active=1 ORDER BY code')
   return rows.map((row) => String(row.code).trim().toUpperCase()).filter(Boolean)
 }
@@ -533,6 +533,16 @@ app.get('/api/health', async (_req, res) => {
   res.json({ ok: true, service: 'camps-api', database, databaseName, prediction: process.env.ML_SERVICE_URL ? 'flask-or-fallback' : 'deterministic-fallback' })
 })
 
+// Login starts before a JWT exists, so expose only active department metadata
+// here. Protected department reads below still enforce role and scope.
+app.get('/api/auth/departments', async (_req, res, next) => {
+  try {
+    if (useDemoData) return res.json({ data: demoDepartments.filter((department) => department.isActive !== false).map(({ code, name, isActive }) => ({ code, name, isActive })) })
+    const rows = await query('SELECT code, name, is_active AS isActive FROM departments WHERE is_active=1 ORDER BY code')
+    res.json({ data: rows })
+  } catch (error) { next(error) }
+})
+
 app.post('/api/auth/login', async (req, res, next) => {
   try {
     const role = cleanString(req.body.role).toLowerCase()
@@ -550,27 +560,20 @@ app.post('/api/auth/login', async (req, res, next) => {
       let account = demoAccounts[role]
       if (role === 'teacher') {
         const savedTeacher = demoStore.teachers.find((teacher) => teacher.email.toLowerCase() === identifier.toLowerCase() && teacher.isActive !== false)
-        if (savedTeacher) {
-          const validPassword = savedTeacher.passwordHash
-            ? await bcrypt.compare(password, savedTeacher.passwordHash)
-            : identifier.toLowerCase() === demoAccounts.teacher.secret.toLowerCase() && password === demoAccounts.teacher.password
-          if (!validPassword) {
-            console.warn('[camps-auth] Login rejected: invalid teacher credentials', { role, identifier, department: requestedDepartment })
-            return res.status(401).json({ message: 'Invalid demo credentials.' })
-          }
-          account = { ...savedTeacher, secret: savedTeacher.email, role: 'teacher' }
-        }
+        account = savedTeacher
+          ? { ...savedTeacher, secret: savedTeacher.email, role: 'teacher' }
+          : null
       }
       if (role === 'student') {
         const savedStudent = demoStore.students.find((student) => normalizeUsn(student.usn) === normalizeUsn(identifier) && student.isActive !== false)
-        // Do not fall back to one hardcoded demo student. Every student row in
-        // the preview store receives the same account contract.
+        // Every demo student is a real scoped row in the preview store; there
+        // is no one-student shortcut that can cross department boundaries.
         account = savedStudent?.passwordHash
           ? { ...savedStudent, secret: normalizeUsn(savedStudent.usn), role: 'student', studentId: savedStudent.id, studentName: savedStudent.name, mustChangePassword: savedStudent.mustChangePassword === true }
           : null
       }
       if (role === 'parent') {
-        const linkedStudent = demoStore.students.find((student) => String(student.usn).toUpperCase() === identifier.toUpperCase() && student.isActive !== false)
+        const linkedStudent = demoStore.students.find((student) => normalizeUsn(student.usn) === normalizeUsn(identifier) && student.isActive !== false)
         const linkedParents = linkedStudent ? demoStore.parents.filter((parent) => Number(parent.studentId) === Number(linkedStudent.id) && parent.isActive !== false) : []
         let savedParent = null
         for (const candidate of linkedParents) {
@@ -582,20 +585,23 @@ app.post('/api/auth/login', async (req, res, next) => {
         if (!savedParent) savedParent = linkedParents.find((parent) => !parent.passwordHash) || null
         account = savedParent
           ? { ...savedParent, secret: linkedStudent.usn, role: 'parent', studentId: linkedStudent.id, studentName: linkedStudent.name, usn: linkedStudent.usn }
-          : demoParentForStudent(linkedStudent) || demoAccounts.parent
+          : demoParentForStudent(linkedStudent)
       }
-      const validDemoPassword = account?.passwordHash ? await bcrypt.compare(password, account.passwordHash) : password === (account?.password || (role === 'parent' ? 'Parent@123' : ''))
-      if (!account || identifier.toLowerCase() !== String(account.secret).toLowerCase() || (role !== 'teacher' && !validDemoPassword)) {
+      const validDemoPassword = account?.passwordHash
+        ? await bcrypt.compare(password, account.passwordHash)
+        : password === (account?.password || (role === 'parent' ? 'Parent@123' : ''))
+      if (!account || identifier.trim().toLowerCase() !== String(account.secret).trim().toLowerCase() || !validDemoPassword) {
         console.warn('[camps-auth] Login rejected: invalid demo credentials', { role, identifier, department: requestedDepartment })
         return res.status(401).json({ message: 'Invalid demo credentials.' })
       }
-      if (requestedDepartment && !validDepartments.includes(requestedDepartment)) {
-        console.warn('[camps-auth] Login rejected: invalid department', { role, identifier, department: requestedDepartment })
-        return res.status(422).json({ message: 'Choose a valid department.' })
+      const demoDepartmentCodes = new Set(demoDepartments.map((department) => String(department.code).toUpperCase()))
+      if (requestedDepartment && !demoDepartmentCodes.has(requestedDepartment)) {
+        console.warn('[camps-auth] Login rejected: invalid demo department', { role, identifier, department: requestedDepartment })
+        return res.status(422).json({ message: 'Choose a valid configured department.' })
       }
-      if (role !== 'admin' && requestedDepartment && requestedDepartment !== account.department) {
-        console.warn('[camps-auth] Login rejected: department scope mismatch', { role, identifier, requestedDepartment, accountDepartment: account.department })
-        return res.status(403).json({ message: `This demo ${role} account is scoped to ${account.department}. Choose that department to continue.` })
+      if (role !== 'admin' && requestedDepartment && requestedDepartment !== String(account.department).toUpperCase()) {
+        console.warn('[camps-auth] Login rejected: department scope mismatch', { role, identifier, department: requestedDepartment, accountDepartment: account.department })
+        return res.status(403).json({ message: `This ${role} account is assigned to ${account.department}. Choose that department to continue.` })
       }
       const user = { ...account, department: role === 'admin' ? requestedDepartment || account.department : account.department }
       console.info('[camps-auth] Demo login succeeded', { role: user.role, userId: user.id, department: user.department, usn: user.usn, studentId: user.studentId })
@@ -1092,9 +1098,9 @@ app.get('/api/departments', authRequired, roleRequired('teacher', 'admin'), asyn
   try {
     const scopedDepartment = req.user.role === 'teacher' ? req.user.department : selectedAdminDepartment(req)
     if (useDemoData) {
-      const data = validDepartments
-        .filter((code) => !scopedDepartment || code === scopedDepartment)
-        .map((code) => ({ code, name: code }))
+      const data = demoDepartments
+        .filter((department) => department.isActive !== false && (!scopedDepartment || department.code === scopedDepartment))
+        .map(({ code, name, isActive }) => ({ code, name, isActive }))
       return res.json({ data })
     }
     const params = scopedDepartment ? { department: scopedDepartment } : {}
@@ -1378,7 +1384,7 @@ app.post('/api/students', authRequired, roleRequired('teacher', 'admin'), async 
     if (req.user.role === 'teacher' && input.department !== req.user.department) return res.status(403).json({ message: 'Teachers may only add students in their department.' })
     if (adminDepartment && input.department !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
     const existing = useDemoData ? demoStore.students : []
-    const allowedDepartments = useDemoData ? validDepartments : (await query('SELECT code FROM departments WHERE is_active=1')).map((row) => String(row.code).toUpperCase())
+    const allowedDepartments = await activeDepartmentCodes()
     const errors = validateStudent(input, existing, { departments: allowedDepartments })
     if (errors.length) return res.status(422).json({ message: 'Student validation failed.', errors })
     if (!useDemoData) {
@@ -1552,7 +1558,7 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
     // Every imported student receives the same documented initial credential;
     // the Password column and request value are deliberately ignored.
     const uploadPassword = DEFAULT_STUDENT_PASSWORD
-    const allowedDepartments = useDemoData ? validDepartments : (await query('SELECT code FROM departments WHERE is_active=1')).map((row) => String(row.code).toUpperCase())
+    const allowedDepartments = await activeDepartmentCodes()
     if (req.user.role === 'teacher' && uploadDepartment !== teacherDepartment) return res.status(403).json({ message: 'Teachers may only import students into their department.' })
     if (adminDepartment && uploadDepartment && uploadDepartment !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
     if (uploadDepartment && !allowedDepartments.includes(uploadDepartment)) return res.status(422).json({ message: 'Choose a valid department for this upload.' })

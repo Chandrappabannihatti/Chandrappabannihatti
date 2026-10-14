@@ -1,4 +1,6 @@
-import { demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, demoStudents, demoSubjects, demoTeachers } from '../src/data/demo.js'
+import { departments as configuredDemoDepartments, demoAchievements, demoAnnouncements, demoMessages, demoRemarks, demoSections, demoStudents, demoSubjects, demoTeachers } from '../src/data/demo.js'
+
+export const demoDepartments = configuredDemoDepartments.map((department) => ({ ...department, isActive: true }))
 
 const demoParents = demoStudents.map((student) => ({
   id: Number(student.id) === 4 ? 2 : 10000 + Number(student.id),

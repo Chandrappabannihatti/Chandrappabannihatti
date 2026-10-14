@@ -70,16 +70,20 @@ npm run dev:full
 
 ### Demo accounts
 
-The default review setup uses the same demo credentials in both the API and the client fallback.
+The default review setup uses the same department-scoped demo credentials in both the API and the client fallback. The `Use sample account` action changes with the selected department; a teacher account is never reused outside its assigned department.
 
-| Role | Identifier | Password |
+| Department | Teacher identifier | Teacher password |
 | --- | --- | --- |
-| Admin | `admin@camps.edu` | `Admin@123` |
-| Teacher | `teacher@camps.edu` | `Teacher@123` |
-| Student | `4PM21CS033` | `Student@123` |
-| Parent | `4PM21CS033` | `Parent@123` |
+| CSE | `teacher@camps.edu` | `Teacher@123` |
+| AIML | `aiml.teacher@camps.edu` | `Teacher@123` |
+| CSDS | `csds.teacher@camps.edu` | `Teacher@123` |
+| CE | `ce.teacher@camps.edu` | `Teacher@123` |
+| CV | `cv.teacher@camps.edu` | `Teacher@123` |
+| ME | `me.teacher@camps.edu` | `Teacher@123` |
+| EEE | `eee.teacher@camps.edu` | `Teacher@123` |
+| ECE | `ece.teacher@camps.edu` | `Teacher@123` |
 
-The demo teacher account is scoped to CSE. Select CSE → Teacher on the entry page, sign in, then open an isolated route such as `/teacher/semester/7/section/B`. Student and parent accounts open the read-only records for Ishita Kulkarni, including achievements. Admin accounts inherit the department selected before login and open the Semester 1–8 dashboard directly; for example, select CSE → Admin, then open Semester 7 to manage the bundled subject catalog.
+The demo student roster contains a scoped sample USN for every configured department; initial student passwords are `Student@123`. A parent uses the linked student USN with `Parent@123`. The demo admin uses `admin@camps.edu` / `Admin@123` and inherits the department selected before login. Selecting the wrong department produces an authorization error rather than silently changing the account scope.
 
 ## MySQL setup
 
@@ -159,7 +163,7 @@ Set `ML_SERVICE_URL=http://127.0.0.1:8000` in the Node `.env`. To use a trained 
 
 The dashboard and every teacher section workspace use the same `.xlsx` / `.xls` / `.csv` import contract. Download either the Excel or CSV template before selecting a file. The template headers are canonical and include `USN`, `Student Name`, `Department`, `Semester`, `Section`, `Gender`, `Email Address`, `Initial Student Login Password`, `Phone Number`, `Parent/Guardian Name`, `Parent Phone`, `Date of Birth`, `Blood Group`, `Address`, `Father/Guardian Name`, `Mother Name`, `Parent Email`, `Certifications`, `Skills`, `Attendance Percentage`, `Average Internal Marks`, `Average Assignment Score`, `Previous GPA`, `Current GPA` and `Participation Score`.
 
-- Active rows in `departments` are the source of truth in MySQL; the UI fetches them from `GET /api/departments`. The legacy `CIVIL`/canonical `CV` reconciliation is handled by the additive database initializer rather than by creating a second department.
+- Active rows in `departments` are the source of truth in MySQL; the unauthenticated login chooser fetches them from `GET /api/auth/departments`, while protected workspaces use `GET /api/departments`. The legacy `CIVIL`/canonical `CV` reconciliation is handled by the additive database initializer rather than by creating a second department.
 - Teachers must choose an explicit semester and configured section before a dashboard import, or use the already scoped semester/section route. The backend derives the teacher department from the JWT and validates every supplied scope cell; a conflict is rejected and never relocated.
 - Admins retain their existing selected-department permissions. They may choose a destination scope or allow active spreadsheet scope values when their existing access permits it. Semester values are restricted to 1–8 and sections must exist for the active department/semester.
 - The browser performs a preview, then the API repeats normalization and validation in a transaction-aware commit. It reports missing fields, academic range/type errors, invalid scope, duplicate normalized USNs/emails, and row-level duplicate/database failures. Rejected rows can be downloaded as a separate report from either upload UI.
@@ -171,9 +175,9 @@ The repository tests, ESLint and Vite production build are runnable in this chec
 
 ## API surface
 
-All routes except login and health require `Authorization: Bearer <jwt>`.
+All routes except login, health, and the active login-department catalog require `Authorization: Bearer <jwt>`.
 
-- `POST /api/auth/login`, `POST /api/auth/change-password`, `POST /api/auth/logout` (students authenticate with department + normalized USN + password; department mismatch is rejected)
+- `GET /api/auth/departments`, `POST /api/auth/login`, `POST /api/auth/change-password`, `POST /api/auth/logout` (`/api/auth/departments` is limited to active department metadata; students authenticate with department + normalized USN + password; department mismatch is rejected)
 - `GET /api/departments`, `GET /api/sections?department=CSE&semester=7`, `POST /api/sections` (active database departments are the source of truth; department and section scope are authorization-checked)
 - `GET /api/subjects?department=CSE&semester=7` (authenticated subject catalog for admin, teacher, student and parent scopes)
 - `POST /api/subjects`, `PUT /api/subjects/:subjectId`, `DELETE /api/subjects/:subjectId` (admin-only subject CRUD with scoped validation)

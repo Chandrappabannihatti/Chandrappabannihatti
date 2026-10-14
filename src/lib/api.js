@@ -87,6 +87,7 @@ const api = {
   validateSession: () => unwrap(client.get('/auth/session')),
   logout: () => unwrap(client.post('/auth/logout')),
   getAdminSummary: () => unwrap(client.get('/admin/summary')),
+  getLoginDepartments: () => unwrap(client.get('/auth/departments')),
   getDepartments: () => unwrap(client.get('/departments')),
   getSections: (params) => unwrap(client.get('/sections', { params })),
   getTeachers: (params) => unwrap(client.get('/teachers', { params })),

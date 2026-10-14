@@ -8,3 +8,21 @@ export const departmentCards = [
   { code: 'EEE', label: 'EEE', name: 'Electrical & Electronics Engineering', tagline: 'Power ideas into life.', icon: '⚡', tone: 'yellow' },
   { code: 'ECE', label: 'ECE', name: 'Electronics & Communication Engineering', tagline: 'Connect a smarter future.', icon: '📡', tone: 'slate' },
 ]
+
+export function departmentCardFor(code, name = '') {
+  const normalizedCode = String(code || '').trim().toUpperCase()
+  const visual = departmentCards.find((item) => item.code === normalizedCode)
+  return {
+    ...(visual || { code: normalizedCode, label: normalizedCode, tagline: 'Department-scoped CAMPS access.', icon: '◎', tone: 'slate' }),
+    code: normalizedCode,
+    label: normalizedCode,
+    name: name || visual?.name || normalizedCode,
+  }
+}
+
+export function decorateDepartmentRows(rows = []) {
+  return rows
+    .filter((row) => row && row.isActive !== false)
+    .map((row) => departmentCardFor(row.code, row.name))
+    .filter((row) => row.code)
+}

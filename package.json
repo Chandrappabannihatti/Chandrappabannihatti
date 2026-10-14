@@ -15,7 +15,7 @@
     "db:migrate-student-accounts": "node server/scripts/migrate-student-accounts.js",
     "model:evaluate": "python3 ml-service/evaluate_model.py",
     "model:train": "python3 ml-service/train_model.py",
-    "test": "node --test server/studentValidation.test.js server/studentAccountMigration.test.js server/reportCardData.test.js src/lib/clientReportCard.test.js src/lib/reportCardDownload.test.js src/lib/roleRoutes.test.js src/lib/studentImport.test.js",
+    "test": "node --test server/studentValidation.test.js server/studentAccountMigration.test.js server/reportCardData.test.js src/lib/clientReportCard.test.js src/lib/reportCardDownload.test.js src/lib/roleRoutes.test.js src/lib/studentImport.test.js src/lib/departmentAuth.test.js",
     "test:report-cards": "node --test server/reportCardData.test.js src/lib/clientReportCard.test.js src/lib/reportCardDownload.test.js src/lib/roleRoutes.test.js"
   },
   "dependencies": {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { FiArrowLeft, FiArrowRight, FiBookOpen, FiCheck, FiChevronRight, FiEdit3, FiGrid, FiLogOut, FiPlus, FiRefreshCw, FiSettings, FiShield, FiTrash2, FiUser, FiUsers, FiX } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
-import { departmentCards } from '../data/departments'
+import { departmentCardFor } from '../data/departments'
 import { getDemoSubjects } from '../data/demo'
 import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
@@ -40,7 +40,7 @@ export default function AdminSubjectHierarchy() {
   const { user, token } = useAuth()
   const apiToken = getAuthToken() || token
   const apiSession = !DEMO_MODE && isApiToken(apiToken)
-  const department = useMemo(() => departmentCards.find((item) => item.code === user.department) || departmentCards[0], [user.department])
+  const department = useMemo(() => departmentCardFor(user.department), [user.department])
   const [subjectCounts, setSubjectCounts] = useState(() => Object.fromEntries(adminSemesters.map((semester) => [semester, apiSession ? null : scopedLocalSubjects(department.code, semester).length])))
   const [countsLoading, setCountsLoading] = useState(apiSession)
   const [notice, setNotice] = useState('')
@@ -92,7 +92,7 @@ export function AdminSubjectManagement() {
   const routeDepartment = String(departmentParam || '').toUpperCase()
   const department = user.department !== 'ALL' ? user.department : routeDepartment
   const semester = Number(semesterParam)
-  const departmentDetails = useMemo(() => departmentCards.find((item) => item.code === department) || departmentCards[0], [department])
+  const departmentDetails = useMemo(() => departmentCardFor(department), [department])
   const scopeMismatch = user.department !== 'ALL' && routeDepartment !== user.department
   const validSemester = Number.isInteger(semester) && semester >= 1 && semester <= 8
   const [subjects, setSubjects] = useState(() => validSemester && !apiSession ? scopedLocalSubjects(departmentDetails.code, semester) : [])

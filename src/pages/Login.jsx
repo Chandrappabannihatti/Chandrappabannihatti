@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { FiArrowRight, FiCheck, FiEye, FiEyeOff, FiKey, FiLock, FiUser, FiUsers } from 'react-icons/fi'
 import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
-import { departmentCards } from '../data/departments'
+import { departmentCards, decorateDepartmentRows } from '../data/departments'
+import { demoStudentForDepartment, demoTeacherForDepartment, parentUser, studentUser } from '../data/demo'
 import { useAuth } from '../context/AuthContext'
+import api, { DEMO_MODE } from '../lib/api'
 import { dashboardPathForRole } from '../lib/roleRoutes'
 
 const accountDetails = {
@@ -21,27 +23,59 @@ const roleOptions = [
   { value: 'admin', label: 'Admin', icon: FiLock },
 ]
 
+function sampleCredentials(role, department) {
+  const code = String(department || '').trim().toUpperCase()
+  if (role === 'admin') return { identifier: 'admin@camps.edu', password: 'Admin@123', available: true }
+  if (role === 'teacher') {
+    const teacher = demoTeacherForDepartment(code)
+    return teacher ? { identifier: teacher.email, password: teacher.password || 'Teacher@123', available: true } : { identifier: '', password: '', available: false }
+  }
+  const student = code === 'CSE' ? studentUser : demoStudentForDepartment(code)
+  if (!student) return { identifier: '', password: '', available: false }
+  if (role === 'student') return { identifier: student.usn, password: 'Student@123', available: true }
+  if (role === 'parent') return { identifier: code === 'CSE' ? parentUser.usn : student.usn, password: 'Parent@123', available: true }
+  return { identifier: '', password: '', available: false }
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { login, isAuthenticated, user } = useAuth()
   const initialRole = accountDetails[params.get('role')] ? params.get('role') : 'teacher'
   const department = String(params.get('department') || '').trim().toUpperCase()
-  const departmentDetails = useMemo(() => departmentCards.find((item) => item.code === department) || departmentCards[0], [department])
+  const [departments, setDepartments] = useState(departmentCards)
+  const [departmentsLoading, setDepartmentsLoading] = useState(!DEMO_MODE)
+  const departmentDetails = useMemo(() => departments.find((item) => item.code === department) || { code: department, label: department, name: department, tagline: 'Department-scoped CAMPS access.', icon: '◎', tone: 'slate' }, [departments, department])
+  const initialSample = sampleCredentials(initialRole, department)
   const [role, setRole] = useState(initialRole)
-  const [identifier, setIdentifier] = useState(accountDetails[initialRole].value)
-  const [password, setPassword] = useState(accountDetails[initialRole].password)
+  const [identifier, setIdentifier] = useState(initialSample.identifier)
+  const [password, setPassword] = useState(initialSample.password)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(params.get('reason') === 'session' ? 'Your session expired. Please sign in again to continue.' : '')
   const details = useMemo(() => accountDetails[role], [role])
+  const sample = useMemo(() => sampleCredentials(role, departmentDetails.code), [role, departmentDetails.code])
+
+  useEffect(() => {
+    if (DEMO_MODE) return undefined
+    let mounted = true
+    api.getLoginDepartments().then((response) => {
+      const configured = decorateDepartmentRows(response?.data)
+      if (mounted && configured.length) setDepartments(configured)
+    }).catch((loadError) => {
+      console.warn('[camps-auth] Login department catalog could not be refreshed.', { status: loadError.response?.status || 'network', message: loadError.response?.data?.message || loadError.message })
+    }).finally(() => { if (mounted) setDepartmentsLoading(false) })
+    return () => { mounted = false }
+  }, [])
+
   if (isAuthenticated && user) return <Navigate to={dashboardPathForRole(user.role)} replace />
-  if (!departmentCards.some((item) => item.code === department)) return <Navigate to="/" replace />
+  if (!departmentsLoading && !departments.some((item) => item.code === department)) return <Navigate to="/" replace />
 
   const changeRole = (nextRole) => {
+    const nextSample = sampleCredentials(nextRole, departmentDetails.code)
     setRole(nextRole)
-    setIdentifier(accountDetails[nextRole].value)
-    setPassword(accountDetails[nextRole].password)
+    setIdentifier(nextSample.identifier)
+    setPassword(nextSample.password)
     setError('')
   }
 
@@ -73,7 +107,7 @@ export default function Login() {
           {error && <div className="erp-login-error">{error}</div>}
           <button className="erp-login-submit" disabled={loading} type="submit">{loading ? 'Signing in…' : 'Sign In Securely'} {!loading && <FiArrowRight />}</button>
         </form>
-        <div className="erp-demo-hint"><span><FiKey /> Demo access enabled</span><button type="button" onClick={() => { setIdentifier(details.value); setPassword(details.password); setError('') }}>Use sample account</button></div>
+        <div className="erp-demo-hint"><span><FiKey /> {sample.available ? 'Department sample account available' : 'Use your assigned CAMPS credentials'}</span>{sample.available && <button type="button" onClick={() => { setIdentifier(sample.identifier); setPassword(sample.password); setError('') }}>Use sample account</button>}</div>
         <p className="erp-login-security"><FiCheck /> JWT-secured, department-aware access</p>
       </div>
     </section>

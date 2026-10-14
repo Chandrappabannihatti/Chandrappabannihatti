@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import dotenv from 'dotenv'
 import { getPool } from '../db.js'
-import { demoAchievements, demoAnnouncements, demoRemarks, demoSections, demoStudents, demoSubjects } from '../../src/data/demo.js'
+import { demoAchievements, demoAnnouncements, demoRemarks, demoSections, demoStudents, demoSubjects, demoTeachers } from '../../src/data/demo.js'
 
 dotenv.config()
 const pool = getPool()
@@ -28,6 +28,10 @@ await pool.query('INSERT INTO admins (user_id, name, email, password_hash) VALUE
 const [teacherResult] = await pool.query('INSERT INTO users (role, display_name, email, password_hash) VALUES ("teacher", "Dr. Ananya Rao", "teacher@camps.edu", ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [hashes.teacher])
 const [teacherTableResult] = await pool.query('INSERT INTO teachers (user_id, employee_code, name, email, password_hash, department_code, designation) VALUES (?, "FAC-CSE-001", "Dr. Ananya Rao", "teacher@camps.edu", ?, "CSE", "Assistant Professor") ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), password_hash=VALUES(password_hash)', [teacherResult.insertId, hashes.teacher])
 const teacherId = teacherTableResult.insertId
+for (const teacher of demoTeachers.filter((item) => item.department !== 'CSE')) {
+  const [teacherUser] = await pool.query('INSERT INTO users (role, display_name, email, password_hash) VALUES ("teacher", ?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), display_name=VALUES(display_name), password_hash=VALUES(password_hash)', [teacher.name, teacher.email, hashes.teacher])
+  await pool.query('INSERT INTO teachers (user_id, employee_code, name, email, password_hash, department_code, designation, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), user_id=VALUES(user_id), name=VALUES(name), password_hash=VALUES(password_hash), department_code=VALUES(department_code), designation=VALUES(designation), phone=VALUES(phone)', [teacherUser.insertId, teacher.employeeCode, teacher.name, teacher.email, hashes.teacher, teacher.department, teacher.designation, teacher.phone || null])
+}
 
 for (const item of demoStudents) {
   const [[sectionRow]] = await pool.query('SELECT section_id FROM sections WHERE department_code=? AND semester=? AND section_name=? LIMIT 1', [item.department, item.semester, item.section])

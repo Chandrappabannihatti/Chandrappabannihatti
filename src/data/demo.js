@@ -38,6 +38,10 @@ export const demoSections = departments.flatMap((department) => semesters.flatMa
   sortOrder: index,
 }))))
 
+// The local review catalog mirrors the eight configured departments so a demo
+// login can exercise the same department-aware account contract as MySQL.
+const supplementalDemoDepartments = departments.filter(({ code }) => !['CSE', 'AIML', 'ECE'].includes(code))
+
 export const demoStudents = [
 
   { id: 1, usn: '4PM21CS001', name: 'Aarav Bhat', department: 'CSE', semester: 7, section: 'A', gender: 'Male', email: 'aarav.bhat@pestrust.edu.in', phone: '+91 98452 10341', parentName: 'Vikram Bhat', parentPhone: '+91 98450 77120', attendancePercentage: 92, currentGpa: 8.9, averageInternalMarks: 88, averageAssignmentScore: 90, previousGpa: 8.6, result: 'Pass', risk: 'Low Risk', participationScore: 67.5, initials: 'AB' },
@@ -60,6 +64,29 @@ export const demoStudents = [
   { id: 20, usn: '4PM20CS089', name: 'Abhishek Pai', department: 'CSE', semester: 8, section: 'A', gender: 'Male', email: 'abhishek.pai@pestrust.edu.in', phone: '+91 98450 10489', parentName: 'Anita Pai', parentPhone: '+91 98450 70489', attendancePercentage: 86, currentGpa: 8.1, averageInternalMarks: 80, averageAssignmentScore: 85, previousGpa: 8, result: 'Pass', risk: 'Low Risk', participationScore: 62.8, initials: 'AP' },
   { id: 13, usn: '4PM23AI018', name: 'Arjun Rao', department: 'AIML', semester: 7, section: 'A', gender: 'Male', email: 'arjun.rao@pestrust.edu.in', phone: '+91 98450 43119', parentName: 'Madhav Rao', parentPhone: '+91 98451 84119', attendancePercentage: 90, currentGpa: 8.7, averageInternalMarks: 86, averageAssignmentScore: 90, previousGpa: 8.5, result: 'Pass', risk: 'Low Risk', participationScore: 66.5, initials: 'AR' },
   { id: 14, usn: '4PM21EC006', name: 'Kiran Kumar', department: 'ECE', semester: 7, section: 'B', gender: 'Male', email: 'kiran.kumar@pestrust.edu.in', phone: '+91 98453 40029', parentName: 'Shobha Kumar', parentPhone: '+91 98450 20219', attendancePercentage: 70, currentGpa: 6.7, averageInternalMarks: 59, averageAssignmentScore: 65, previousGpa: 6.9, result: 'Pass', risk: 'Medium Risk', participationScore: 48.5, initials: 'KK' },
+  ...supplementalDemoDepartments.map((department, index) => ({
+    id: 101 + index,
+    usn: `4PM26${department.code}001`,
+    name: `${department.code} Sample Student`,
+    department: department.code,
+    semester: 1,
+    section: 'A',
+    gender: 'Other',
+    email: `${department.code.toLowerCase()}.student@pestrust.edu.in`,
+    phone: '+91 98450 20001',
+    parentName: `${department.code} Parent`,
+    parentPhone: '+91 98450 20002',
+    parentEmail: `${department.code.toLowerCase()}.parent@example.com`,
+    attendancePercentage: 82,
+    currentGpa: 7.8,
+    averageInternalMarks: 74,
+    averageAssignmentScore: 79,
+    previousGpa: 7.6,
+    result: 'Pass',
+    risk: 'Low Risk',
+    participationScore: 68,
+    initials: department.code.slice(0, 2),
+  })),
 ]
 
 export const demoMessages = [
@@ -160,7 +187,14 @@ export const currentUser = {
 }
 
 export const demoTeachers = [
-  { id: 1, employeeCode: 'FAC-CSE-001', name: 'Dr. Ananya Rao', email: 'teacher@camps.edu', department: 'CSE', designation: 'Assistant Professor', phone: '+91 98450 10001', isActive: true, initials: 'AR' },
+  { id: 1, employeeCode: 'FAC-CSE-001', name: 'Dr. Ananya Rao', email: 'teacher@camps.edu', password: 'Teacher@123', department: 'CSE', designation: 'Assistant Professor', phone: '+91 98450 10001', isActive: true, initials: 'AR' },
+  { id: 2, employeeCode: 'FAC-AIML-001', name: 'Dr. Meera Joshi', email: 'aiml.teacher@camps.edu', password: 'Teacher@123', department: 'AIML', designation: 'Assistant Professor', phone: '+91 98450 10002', isActive: true, initials: 'MJ' },
+  { id: 3, employeeCode: 'FAC-CSDS-001', name: 'Dr. Rahul Nair', email: 'csds.teacher@camps.edu', password: 'Teacher@123', department: 'CSDS', designation: 'Assistant Professor', phone: '+91 98450 10003', isActive: true, initials: 'RN' },
+  { id: 4, employeeCode: 'FAC-CE-001', name: 'Dr. Kavitha Rao', email: 'ce.teacher@camps.edu', password: 'Teacher@123', department: 'CE', designation: 'Assistant Professor', phone: '+91 98450 10004', isActive: true, initials: 'KR' },
+  { id: 5, employeeCode: 'FAC-CV-001', name: 'Dr. Naveen Kumar', email: 'cv.teacher@camps.edu', password: 'Teacher@123', department: 'CV', designation: 'Assistant Professor', phone: '+91 98450 10005', isActive: true, initials: 'NK' },
+  { id: 6, employeeCode: 'FAC-ME-001', name: 'Dr. Priya Shetty', email: 'me.teacher@camps.edu', password: 'Teacher@123', department: 'ME', designation: 'Assistant Professor', phone: '+91 98450 10006', isActive: true, initials: 'PS' },
+  { id: 7, employeeCode: 'FAC-EEE-001', name: 'Dr. Arvind Rao', email: 'eee.teacher@camps.edu', password: 'Teacher@123', department: 'EEE', designation: 'Assistant Professor', phone: '+91 98450 10007', isActive: true, initials: 'AR' },
+  { id: 8, employeeCode: 'FAC-ECE-001', name: 'Dr. Sahana Pai', email: 'ece.teacher@camps.edu', password: 'Teacher@123', department: 'ECE', designation: 'Assistant Professor', phone: '+91 98450 10008', isActive: true, initials: 'SP' },
 ]
 
 export const studentUser = {
@@ -183,6 +217,45 @@ export const parentUser = {
   usn: '4PM21CS033',
   studentName: 'Ishita Kulkarni',
   initials: 'SK',
+}
+
+export const demoAdminAccount = {
+  id: 1,
+  secret: 'admin@camps.edu',
+  password: 'Admin@123',
+  name: 'Kavya Menon',
+  role: 'admin',
+  department: 'ALL',
+  email: 'admin@camps.edu',
+  designation: 'Academic Administrator',
+  initials: 'KM',
+}
+
+export function demoTeacherForDepartment(department) {
+  const code = String(department || '').trim().toUpperCase()
+  return demoTeachers.find((teacher) => teacher.department === code) || null
+}
+
+export function demoStudentForDepartment(department) {
+  const code = String(department || '').trim().toUpperCase()
+  return demoStudents.find((student) => student.department === code && student.isActive !== false) || null
+}
+
+export function demoParentForStudent(student) {
+  if (!student) return null
+  return {
+    id: Number(student.id) === 4 ? 2 : 10000 + Number(student.id),
+    name: student.parentName || `${student.name} Parent`,
+    role: 'parent',
+    department: student.department,
+    semester: Number(student.semester),
+    usn: student.usn,
+    studentId: Number(student.id),
+    studentName: student.name,
+    email: student.parentEmail || `${String(student.usn).toLowerCase()}@parents.camps.edu`,
+    relationship: 'Parent',
+    initials: String(student.parentName || `${student.name} Parent`).split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase(),
+  }
 }
 
 export const cloneDemoStudents = () => demoStudents.map((student) => ({ ...student }))

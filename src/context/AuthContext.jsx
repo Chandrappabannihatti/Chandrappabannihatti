@@ -1,15 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, isApiToken, setAuthToken } from '../lib/api'
-import { currentUser, demoStudents, parentUser, studentUser } from '../data/demo'
+import { demoAdminAccount, demoParentForStudent, demoStudents, demoTeachers } from '../data/demo'
 import { hashLocalCredential } from '../lib/localCredentials'
 
 const AuthContext = createContext(null)
 
 const demoAccounts = {
-  admin: { secret: 'admin@camps.edu', password: 'Admin@123', user: { name: 'Kavya Menon', role: 'admin', designation: 'Academic Administrator', email: 'admin@camps.edu', department: 'ALL', initials: 'KM' } },
-  teacher: { secret: 'teacher@camps.edu', password: 'Teacher@123', user: currentUser },
-  student: { secret: studentUser.usn, password: 'Student@123', user: studentUser },
-  parent: { secret: parentUser.usn, password: 'Parent@123', user: parentUser },
+  admin: { secret: demoAdminAccount.secret, password: demoAdminAccount.password, user: demoAdminAccount },
 }
 
 function persistSession(next) {
@@ -124,6 +121,7 @@ export function AuthProvider({ children }) {
     let user
     let localTeacher = null
     let localStudent = null
+    let localParent = null
     if (normalizedRole === 'student') {
       localStudent = demoStudents.find((student) => String(student.usn).trim().toUpperCase() === String(identifier).trim().toUpperCase() && student.isActive !== false)
       if (!localStudent) throw new Error('No student record exists for this USN in the local review data.')
@@ -132,17 +130,26 @@ export function AuthProvider({ children }) {
       const savedHash = storedPasswords[String(localStudent.usn).trim().toUpperCase()]
       const expectedHash = savedHash || await hashLocalCredential('Student@123')
       if (await hashLocalCredential(password) !== expectedHash) throw new Error('Invalid student credentials.')
-      if (requestedDepartment && requestedDepartment !== String(localStudent.department).toUpperCase()) throw new Error(`This student account is scoped to ${localStudent.department}. Choose that department to continue.`)
+      if (requestedDepartment && requestedDepartment !== String(localStudent.department).toUpperCase()) throw new Error(`This student account is assigned to ${localStudent.department}. Choose that department to continue.`)
       user = { ...localStudent, role: 'student', studentId: localStudent.id, mustChangePassword: !savedHash }
+    } else if (normalizedRole === 'parent') {
+      const linkedStudent = demoStudents.find((student) => String(student.usn).trim().toUpperCase() === String(identifier).trim().toUpperCase() && student.isActive !== false)
+      if (!linkedStudent) throw new Error('No student record exists for this parent login.')
+      if (password !== 'Parent@123') throw new Error('Invalid parent credentials.')
+      if (requestedDepartment && requestedDepartment !== String(linkedStudent.department).toUpperCase()) throw new Error(`This parent account is assigned to ${linkedStudent.department}. Choose that department to continue.`)
+      localParent = demoParentForStudent(linkedStudent)
     } else if (normalizedRole === 'teacher') {
       try {
         const storedTeachers = JSON.parse(localStorage.getItem('camps_teachers') || '[]')
         localTeacher = Array.isArray(storedTeachers) ? storedTeachers.find((teacher) => teacher.email?.toLowerCase() === identifier.trim().toLowerCase() && (teacher.passwordHash || teacher.password)) : null
-      } catch { /* fall through to the bundled demo account */ }
+      } catch { /* fall through to the configured department demo account */ }
+      if (!localTeacher) localTeacher = demoTeachers.find((teacher) => teacher.email?.toLowerCase() === identifier.trim().toLowerCase() && teacher.isActive !== false) || null
     }
     if (localStudent) {
       // The local review path follows the same USN/password/department rules
       // as the MySQL API; it is not a single hardcoded student shortcut.
+    } else if (localParent) {
+      user = { ...localParent, role: 'parent' }
     } else if (localTeacher) {
       if (localTeacher.passwordHash) {
         const submittedHash = await hashLocalCredential(password)
@@ -167,16 +174,13 @@ export function AuthProvider({ children }) {
           console.warn('[camps-auth] Legacy teacher credential could not be migrated.', migrationError.message)
         }
       }
-      if (requestedDepartment && requestedDepartment !== localTeacher.department) throw new Error(`This demo teacher account is scoped to ${localTeacher.department}. Choose that department to continue.`)
+      if (requestedDepartment && requestedDepartment !== String(localTeacher.department).toUpperCase()) throw new Error(`This teacher account is assigned to ${localTeacher.department}. Choose that department to continue.`)
       const { password: _password, passwordHash: _passwordHash, ...teacherProfile } = localTeacher
       user = { ...teacherProfile, role: 'teacher', department: localTeacher.department }
     } else {
       const account = demoAccounts[normalizedRole]
       if (!account || identifier.trim().toLowerCase() !== account.secret.toLowerCase() || password !== account.password) {
-        throw new Error(`Use the demo ${normalizedRole} credentials shown below to continue.`)
-      }
-      if (normalizedRole !== 'admin' && requestedDepartment && requestedDepartment !== account.user.department) {
-        throw new Error(`This demo ${normalizedRole} account is scoped to ${account.user.department}. Choose that department to continue.`)
+        throw new Error(`Use the configured ${normalizedRole} credentials shown below to continue.`)
       }
       user = { ...account.user, department: normalizedRole === 'admin' ? requestedDepartment || account.user.department : account.user.department }
     }
