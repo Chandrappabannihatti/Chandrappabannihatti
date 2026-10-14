@@ -109,6 +109,16 @@ async function modelEvaluationSummary() {
   }
 }
 
+// The demo store mirrors the real account contract so the preview does not
+// make only one hardcoded student appear to be supported. Production login
+// always uses the MySQL branch below.
+for (const student of demoStore.students) {
+  if (!student.passwordHash) {
+    student.passwordHash = bcrypt.hashSync(DEFAULT_STUDENT_PASSWORD, 10)
+    student.mustChangePassword = true
+  }
+}
+
 const demoAccounts = {
   admin: { id: 1, secret: 'admin@camps.edu', password: 'Admin@123', name: 'Kavya Menon', role: 'admin', department: 'ALL', email: 'admin@camps.edu', designation: 'Academic Administrator', initials: 'KM' },
   teacher: { id: 1, secret: 'teacher@camps.edu', password: 'Teacher@123', name: 'Dr. Ananya Rao', role: 'teacher', department: 'CSE', email: 'ananya.rao@pestrust.edu.in', designation: 'Assistant Professor', initials: 'AR' },
@@ -553,7 +563,11 @@ app.post('/api/auth/login', async (req, res, next) => {
       }
       if (role === 'student') {
         const savedStudent = demoStore.students.find((student) => normalizeUsn(student.usn) === normalizeUsn(identifier) && student.isActive !== false)
-        if (savedStudent?.passwordHash) account = { ...savedStudent, secret: normalizeUsn(savedStudent.usn), role: 'student', studentId: savedStudent.id, studentName: savedStudent.name, mustChangePassword: savedStudent.mustChangePassword === true }
+        // Do not fall back to one hardcoded demo student. Every student row in
+        // the preview store receives the same account contract.
+        account = savedStudent?.passwordHash
+          ? { ...savedStudent, secret: normalizeUsn(savedStudent.usn), role: 'student', studentId: savedStudent.id, studentName: savedStudent.name, mustChangePassword: savedStudent.mustChangePassword === true }
+          : null
       }
       if (role === 'parent') {
         const linkedStudent = demoStore.students.find((student) => String(student.usn).toUpperCase() === identifier.toUpperCase() && student.isActive !== false)
@@ -597,13 +611,12 @@ app.post('/api/auth/login', async (req, res, next) => {
 
     let rows
     if (role === 'teacher') rows = await query('SELECT id, name, email, password_hash, department_code AS department, designation FROM teachers WHERE email = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toLowerCase() })
-    else if (role === 'student') rows = await query(`SELECT s.id, s.name, s.usn, s.email, s.password_hash AS legacyPasswordHash,
+    else if (role === 'student') rows = await query(`SELECT s.id, s.name, s.usn, s.email,
         s.department_code AS department, s.semester, u.id AS accountId,
         u.password_hash AS accountPasswordHash, u.must_change_password AS mustChangePassword
       FROM students s
-      LEFT JOIN users u ON u.role='student' AND (u.student_id=s.id OR (u.student_id IS NULL AND LOWER(u.email)=LOWER(s.email)))
+      JOIN users u ON u.role='student' AND u.student_id=s.id AND u.is_active=1
       WHERE UPPER(TRIM(s.usn)) = :identifier AND s.is_active = 1
-      ORDER BY CASE WHEN u.student_id=s.id THEN 0 ELSE 1 END, u.id
       LIMIT 1`, { identifier: normalizeUsn(identifier) })
     else if (role === 'parent') rows = await query('SELECT p.id, p.name, p.email, p.password_hash, p.student_id AS studentId, s.usn, s.name AS studentName, s.department_code AS department, s.semester FROM parents p JOIN students s ON s.id = p.student_id WHERE UPPER(TRIM(s.usn)) = :identifier AND p.is_active = 1 AND s.is_active = 1 ORDER BY p.id', { identifier: normalizeUsn(identifier) })
     else rows = await query('SELECT id, name, email, password_hash FROM admins WHERE email = :identifier AND is_active = 1 LIMIT 1', { identifier: identifier.toLowerCase() })
@@ -619,8 +632,20 @@ app.post('/api/auth/login', async (req, res, next) => {
         }
       }
     } else if (found) {
-      const passwordHash = role === 'student' ? (found.accountPasswordHash || found.legacyPasswordHash) : found.password_hash
+      const passwordHash = role === 'student' ? found.accountPasswordHash : found.password_hash
       passwordValid = Boolean(passwordHash) && await bcrypt.compare(password, passwordHash)
+    }
+    if (!found && role === 'student') {
+      const studentRows = await query('SELECT id, department_code AS department FROM students WHERE UPPER(TRIM(usn))=:identifier AND is_active=1 LIMIT 1', { identifier: normalizeUsn(identifier) })
+      const studentProfile = studentRows[0]
+      if (studentProfile && requestedDepartment && requestedDepartment !== String(studentProfile.department || '').toUpperCase()) {
+        console.warn('[camps-auth] Login rejected: student department scope mismatch before account lookup', { role, identifier, requestedDepartment, accountDepartment: studentProfile.department })
+        return res.status(403).json({ message: `This student account is scoped to ${studentProfile.department}. Choose that department to continue.` })
+      }
+      if (studentProfile) {
+        console.warn('[camps-auth] Login rejected: student account is not provisioned', { role, identifier, department: requestedDepartment, studentId: studentProfile.id })
+        return res.status(401).json({ message: 'No active student login account exists for this USN. Run the student-account migration or contact the academic office.' })
+      }
     }
     if (!found || !passwordValid) {
       console.warn('[camps-auth] Login rejected: invalid database credentials', { role, identifier, department: requestedDepartment })
@@ -1378,7 +1403,7 @@ app.post('/api/students', authRequired, roleRequired('teacher', 'admin'), async 
       // The surrounding transaction rolls both records back on any duplicate
       // email, USN, section or account-link failure.
       const [studentResult] = await connection.query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, date_of_birth, blood_group, address, email, phone, parent_name, father_name, mother_name, parent_phone, parent_email, certifications, skills, attendance_percentage, average_internal_marks, average_assignment_score, previous_gpa, current_gpa, participation_score, result, risk, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [student.usn, student.name, student.department, student.semester, student.section, sectionRow.sectionId, student.gender, student.dateOfBirth || null, student.bloodGroup || null, student.address, student.email, student.phone || null, student.parentName || null, student.fatherName || null, student.motherName || null, student.parentPhone || null, student.parentEmail || null, JSON.stringify(student.certifications || []), JSON.stringify(student.skills || []), student.attendancePercentage, student.averageInternalMarks, student.averageAssignmentScore, student.previousGpa, student.currentGpa, student.participationScore, student.result, student.risk, passwordHash])
-      const [userResult] = await connection.query('INSERT INTO users (role, display_name, email, password_hash, student_id, must_change_password) VALUES (?, ?, ?, ?, ?, TRUE)', ['student', student.name, student.email, passwordHash, studentResult.insertId])
+      const [userResult] = await connection.query('INSERT INTO users (role, display_name, email, password_hash, student_id, must_change_password) VALUES (?, ?, NULL, ?, ?, TRUE)', ['student', student.name, passwordHash, studentResult.insertId])
       return { userId: userResult.insertId, studentId: studentResult.insertId }
     })
     res.status(201).json({
@@ -1451,8 +1476,11 @@ app.put('/api/students/:id', authRequired, roleRequired('teacher', 'admin'), asy
         throw conflict
       }
       if (linkedUser) {
-        const userFields = ['display_name=?', 'email=?', 'student_id=?']
-        const userValues = [student.name, student.email, id]
+        // Student login identity is the normalized USN/profile link, not the
+        // optional account email. Preserve any existing account email so a
+        // duplicate student contact email cannot block profile edits.
+        const userFields = ['display_name=?', 'student_id=?']
+        const userValues = [student.name, id]
         if (passwordHash) { userFields.push('password_hash=?', 'must_change_password=FALSE'); userValues.push(passwordHash) }
         userValues.push(linkedUser.id)
         await connection.query(`UPDATE users SET ${userFields.join(', ')} WHERE id=?`, userValues)
@@ -1461,7 +1489,7 @@ app.put('/api/students/:id', authRequired, roleRequired('teacher', 'admin'), asy
         accountCreated = true
         accountInitialPassword = !passwordHash && !rows[0].password_hash
         if (!passwordHash && !rows[0].password_hash) await connection.query(`UPDATE students SET password_hash=? WHERE id=?`, [repairHash, id])
-        await connection.query('INSERT INTO users (role, display_name, email, password_hash, student_id, must_change_password) VALUES (?, ?, ?, ?, ?, ?)', ['student', student.name, student.email, repairHash, id, accountInitialPassword])
+        await connection.query('INSERT INTO users (role, display_name, email, password_hash, student_id, must_change_password) VALUES (?, ?, NULL, ?, ?, ?)', ['student', student.name, repairHash, id, accountInitialPassword])
       }
     })
     const response = { data: { ...student, id, sectionId: sectionRow.sectionId } }
@@ -1646,7 +1674,7 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
           const passwordHash = await bcrypt.hash(uploadPassword, 10)
           const created = await transaction(async (connection) => {
             const [studentResult] = await connection.query('INSERT INTO students (usn, name, department_code, semester, section, section_id, gender, date_of_birth, blood_group, address, email, phone, parent_name, father_name, mother_name, parent_phone, parent_email, certifications, skills, attendance_percentage, average_internal_marks, average_assignment_score, previous_gpa, current_gpa, participation_score, result, risk, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [row.usn, row.name, row.department, row.semester, row.section, sectionRow.sectionId, row.gender, row.dateOfBirth || null, row.bloodGroup || null, row.address || null, row.email, row.phone || null, row.parentName || null, row.fatherName || null, row.motherName || null, row.parentPhone || null, row.parentEmail || null, JSON.stringify(row.certifications || []), JSON.stringify(row.skills || []), row.attendancePercentage, row.averageInternalMarks, row.averageAssignmentScore, row.previousGpa, row.currentGpa, row.participationScore, row.result, row.risk, passwordHash])
-            const [userResult] = await connection.query('INSERT INTO users (role, display_name, email, password_hash, student_id, must_change_password) VALUES (?, ?, ?, ?, ?, TRUE)', ['student', row.name, row.email, passwordHash, studentResult.insertId])
+            const [userResult] = await connection.query('INSERT INTO users (role, display_name, email, password_hash, student_id, must_change_password) VALUES (?, ?, NULL, ?, ?, TRUE)', ['student', row.name, passwordHash, studentResult.insertId])
             return { userId: userResult.insertId, studentId: studentResult.insertId }
           })
           const safeRow = { ...row }

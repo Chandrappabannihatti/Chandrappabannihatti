@@ -14,7 +14,7 @@ if (!pool) {
     console.log(JSON.stringify(report, null, 2))
     process.exitCode = report.errors.length ? 1 : 0
   } catch (error) {
-    console.error(JSON.stringify({ created: [], skipped: [], errors: [{ message: error.message }], counts: { created: 0, skipped: 0, errors: 1 } }, null, 2))
+    console.error(JSON.stringify({ totalStudents: 0, checked: 0, created: [], skipped: [], errors: [{ message: error.message }], counts: { checked: 0, created: 0, skipped: 0, errors: 1 } }, null, 2))
     process.exitCode = 1
   } finally {
     await pool.end()

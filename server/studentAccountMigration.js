@@ -6,7 +6,14 @@ export function isBcryptHash(value) {
 }
 
 export function emptyMigrationReport() {
-  return { created: [], skipped: [], errors: [], counts: { created: 0, skipped: 0, errors: 0 } }
+  return {
+    totalStudents: 0,
+    checked: 0,
+    created: [],
+    skipped: [],
+    errors: [],
+    counts: { checked: 0, created: 0, skipped: 0, errors: 0 },
+  }
 }
 
 function addResult(report, bucket, student, message = '') {
@@ -23,13 +30,16 @@ function addResult(report, bucket, student, message = '') {
 export async function migrateStudentAccounts({ runQuery, runTransaction, hash = bcrypt.hash }) {
   const report = emptyMigrationReport()
   const students = await runQuery('SELECT id, usn, name, email, password_hash AS passwordHash FROM students ORDER BY id')
+  report.totalStudents = students.length
 
   for (const student of students) {
+    report.checked += 1
+    report.counts.checked += 1
     try {
-      await runTransaction(async (connection) => {
+      const result = await runTransaction(async (connection) => {
         const [userRows] = await connection.query(
-          'SELECT id, student_id AS studentId, email, password_hash AS passwordHash FROM users WHERE role=? AND (student_id=? OR email=?) LIMIT 1 FOR UPDATE',
-          ['student', student.id, student.email],
+          'SELECT id, student_id AS studentId, email, password_hash AS passwordHash, is_active AS isActive FROM users WHERE role=? AND (student_id=? OR email=?) ORDER BY (student_id=?) DESC, id LIMIT 1 FOR UPDATE',
+          ['student', student.id, student.email, student.id],
         )
         const account = userRows[0]
         if (account && account.studentId && Number(account.studentId) !== Number(student.id)) {
@@ -38,7 +48,8 @@ export async function migrateStudentAccounts({ runQuery, runTransaction, hash = 
           throw error
         }
 
-        const validAccount = account && isBcryptHash(account.passwordHash)
+        const accountIsActive = account && account.isActive !== false && Number(account.isActive) !== 0
+        const validAccount = account && accountIsActive && isBcryptHash(account.passwordHash)
         if (validAccount) {
           if (!account.studentId) {
             await connection.query('UPDATE users SET student_id=? WHERE id=? AND role=?', [student.id, account.id, 'student'])
@@ -46,28 +57,39 @@ export async function migrateStudentAccounts({ runQuery, runTransaction, hash = 
           if (!isBcryptHash(student.passwordHash)) {
             await connection.query('UPDATE students SET password_hash=? WHERE id=?', [account.passwordHash, student.id])
           }
-          addResult(report, 'skipped', student, 'valid account already exists')
-          return
+          return { bucket: 'skipped', message: 'valid account already exists' }
+        }
+
+        // An inactive account with a valid hash is still a usable credential;
+        // reactivate it without replacing the password. This keeps migration
+        // safe for students whose account was intentionally paused earlier.
+        if (account && isBcryptHash(account.passwordHash)) {
+          await connection.query(
+            'UPDATE users SET display_name=?, student_id=?, is_active=TRUE WHERE id=? AND role=?',
+            [student.name, student.id, account.id, 'student'],
+          )
+          if (!isBcryptHash(student.passwordHash)) await connection.query('UPDATE students SET password_hash=? WHERE id=?', [account.passwordHash, student.id])
+          return { bucket: 'skipped', message: 'valid account reactivated' }
         }
 
         const passwordHash = await hash(DEFAULT_STUDENT_PASSWORD, 10)
         if (account) {
           await connection.query(
-            'UPDATE users SET display_name=?, email=?, password_hash=?, student_id=?, must_change_password=TRUE, is_active=TRUE WHERE id=? AND role=?',
-            [student.name, student.email, passwordHash, student.id, account.id, 'student'],
+            'UPDATE users SET display_name=?, password_hash=?, student_id=?, must_change_password=TRUE, is_active=TRUE WHERE id=? AND role=?',
+            [student.name, passwordHash, student.id, account.id, 'student'],
           )
           await connection.query('UPDATE students SET password_hash=? WHERE id=?', [passwordHash, student.id])
-          addResult(report, 'created', student, 'repaired account with missing or invalid bcrypt hash')
-          return
+          return { bucket: 'created', message: 'repaired account with missing or invalid bcrypt hash' }
         }
 
         await connection.query(
-          'INSERT INTO users (role, display_name, email, password_hash, student_id, must_change_password) VALUES (?, ?, ?, ?, ?, TRUE)',
-          ['student', student.name, student.email, passwordHash, student.id],
+          'INSERT INTO users (role, display_name, email, password_hash, student_id, must_change_password) VALUES (?, ?, NULL, ?, ?, TRUE)',
+          ['student', student.name, passwordHash, student.id],
         )
         if (!isBcryptHash(student.passwordHash)) await connection.query('UPDATE students SET password_hash=? WHERE id=?', [passwordHash, student.id])
-        addResult(report, 'created', student, 'created account with the configured initial credential')
+        return { bucket: 'created', message: 'created account with the configured initial credential' }
       })
+      addResult(report, result.bucket, student, result.message)
     } catch (error) {
       addResult(report, 'errors', student, error.message || 'Account migration failed.')
     }

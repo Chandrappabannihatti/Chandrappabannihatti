@@ -19,12 +19,14 @@ function createFakeDatabase(students, initialAccounts = []) {
         return [{ affectedRows: 1 }]
       }
       if (sql.startsWith('UPDATE users SET display_name=')) {
-        const account = accounts.find((candidate) => Number(candidate.id) === Number(params[4]))
-        Object.assign(account, { name: params[0], email: params[1], passwordHash: params[2], studentId: Number(params[3]), mustChangePassword: true })
+        const hasPasswordUpdate = sql.includes('password_hash=?')
+        const accountId = hasPasswordUpdate ? params[3] : params[2]
+        const account = accounts.find((candidate) => Number(candidate.id) === Number(accountId))
+        Object.assign(account, { name: params[0], ...(hasPasswordUpdate ? { passwordHash: params[1], mustChangePassword: true } : {}), studentId: Number(hasPasswordUpdate ? params[2] : params[1]), isActive: true })
         return [{ affectedRows: 1 }]
       }
       if (sql.startsWith('INSERT INTO users')) {
-        accounts.push({ role: params[0], name: params[1], email: params[2], passwordHash: params[3], studentId: Number(params[4]), mustChangePassword: true, id: accounts.length + 1 })
+        accounts.push({ role: params[0], name: params[1], email: null, passwordHash: params[2], studentId: Number(params[3]), mustChangePassword: true, id: accounts.length + 1 })
         return [{ insertId: accounts.at(-1).id }]
       }
       return [{ affectedRows: 1 }]
@@ -48,10 +50,11 @@ test('student account migration is idempotent and reports created and skipped re
   const hash = async (password) => bcrypt.hash(password, 10)
 
   const first = await migrateStudentAccounts({ ...database, hash })
-  assert.deepEqual(first.counts, { created: 1, skipped: 1, errors: 0 })
+  assert.equal(first.totalStudents, 2)
+  assert.deepEqual(first.counts, { checked: 2, created: 1, skipped: 1, errors: 0 })
   assert.equal(database.accounts.filter((account) => account.role === 'student').length, 2)
   assert.equal(database.accounts.find((account) => account.studentId === 2).passwordHash === DEFAULT_STUDENT_PASSWORD, false)
 
   const second = await migrateStudentAccounts({ ...database, hash })
-  assert.deepEqual(second.counts, { created: 0, skipped: 2, errors: 0 })
+  assert.deepEqual(second.counts, { checked: 2, created: 0, skipped: 2, errors: 0 })
 })

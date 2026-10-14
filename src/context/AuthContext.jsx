@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import api, { DEMO_MODE, LOCAL_SESSION_TOKEN, isApiToken, setAuthToken } from '../lib/api'
-import { currentUser, parentUser, studentUser } from '../data/demo'
+import { currentUser, demoStudents, parentUser, studentUser } from '../data/demo'
 import { hashLocalCredential } from '../lib/localCredentials'
 
 const AuthContext = createContext(null)
@@ -123,13 +123,27 @@ export function AuthProvider({ children }) {
 
     let user
     let localTeacher = null
-    if (normalizedRole === 'teacher') {
+    let localStudent = null
+    if (normalizedRole === 'student') {
+      localStudent = demoStudents.find((student) => String(student.usn).trim().toUpperCase() === String(identifier).trim().toUpperCase() && student.isActive !== false)
+      if (!localStudent) throw new Error('No student record exists for this USN in the local review data.')
+      let storedPasswords = {}
+      try { storedPasswords = JSON.parse(localStorage.getItem('camps_student_passwords') || '{}') || {} } catch { storedPasswords = {} }
+      const savedHash = storedPasswords[String(localStudent.usn).trim().toUpperCase()]
+      const expectedHash = savedHash || await hashLocalCredential('Student@123')
+      if (await hashLocalCredential(password) !== expectedHash) throw new Error('Invalid student credentials.')
+      if (requestedDepartment && requestedDepartment !== String(localStudent.department).toUpperCase()) throw new Error(`This student account is scoped to ${localStudent.department}. Choose that department to continue.`)
+      user = { ...localStudent, role: 'student', studentId: localStudent.id, mustChangePassword: !savedHash }
+    } else if (normalizedRole === 'teacher') {
       try {
         const storedTeachers = JSON.parse(localStorage.getItem('camps_teachers') || '[]')
         localTeacher = Array.isArray(storedTeachers) ? storedTeachers.find((teacher) => teacher.email?.toLowerCase() === identifier.trim().toLowerCase() && (teacher.passwordHash || teacher.password)) : null
       } catch { /* fall through to the bundled demo account */ }
     }
-    if (localTeacher) {
+    if (localStudent) {
+      // The local review path follows the same USN/password/department rules
+      // as the MySQL API; it is not a single hardcoded student shortcut.
+    } else if (localTeacher) {
       if (localTeacher.passwordHash) {
         const submittedHash = await hashLocalCredential(password)
         if (submittedHash !== localTeacher.passwordHash) throw new Error('Invalid teacher credentials.')

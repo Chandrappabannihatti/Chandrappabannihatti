@@ -94,7 +94,7 @@ npm run db:seed
 
 The schema is in [`database/schema.sql`](database/schema.sql), with department and subject seed notes in [`database/seed.sql`](database/seed.sql). `npm run db:init` is additive: it upgrades existing profile/academic columns, reconciles a lone historical `CIVIL` department to `CV` without deleting academic rows, adds the durable student-account link and normalized-USN uniqueness checks, and refuses ambiguous duplicates for manual review. It never drops, recreates or resets the academic database. Passwords are bcrypt-hashed by the seed script.
 
-Teacher-created and imported students receive exactly one linked `users` account with normalized USN as the login identifier and the one-time initial password `Student@123`. Only the bcrypt hash is persisted. A successful manual create response contains a narrowly scoped one-time teacher confirmation (`initialCredentials`); normal student/profile/export responses never contain a password or hash. New accounts set `must_change_password`, and students change it through `POST /api/auth/change-password` after first login.
+Teacher-created and imported students receive exactly one linked `users` account with normalized USN as the login identifier and the one-time initial password `Student@123`. The account is linked by `student_id`; the optional `users.email` field is not used as the student username, so duplicate student contact emails cannot prevent account provisioning. Only the bcrypt hash is persisted. A successful manual create response contains a narrowly scoped one-time teacher confirmation (`initialCredentials`); normal student/profile/export responses never contain a password or hash. New accounts set `must_change_password`, and students change it through `POST /api/auth/change-password` after first login.
 
 For existing profiles, run the repeatable, per-record account repair after `npm run db:init`:
 
@@ -102,7 +102,7 @@ For existing profiles, run the repeatable, per-record account repair after `npm 
 USE_DEMO_DATA=false npm run db:migrate-student-accounts
 ```
 
-The command skips valid linked accounts and prints JSON counts/lists for `created`, `skipped` and `errors`. It does not overwrite a valid password. Run it again safely; already repaired accounts are skipped.
+The command checks every student row and prints `totalStudents` plus JSON counts/lists for `checked`, `created`, `skipped` and `errors`. It skips valid linked accounts, reactivates inactive accounts without replacing valid hashes, and does not overwrite a valid password. Run it again safely; already repaired accounts are skipped.
 
 ## Average Academic Performance prediction service
 
