@@ -33,6 +33,12 @@ test('student validation rejects duplicate USNs', () => {
   assert.ok(errors.includes('USN already exists.'))
 })
 
+test('student validation rejects out-of-range academic values instead of clamping them', () => {
+  const errors = validateStudent({ ...validStudent, attendancePercentage: 101, currentGpa: 10.1 })
+  assert.ok(errors.includes('attendancePercentage must be between 0 and 100.'))
+  assert.ok(errors.includes('currentGpa must be between 0 and 10.'))
+})
+
 test('student validation can use active database department options', () => {
   const errors = validateStudent({ ...validStudent, department: 'BIO' }, [], { departments: ['CSE', 'BIO'] })
   assert.deepEqual(errors, [])

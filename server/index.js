@@ -1545,14 +1545,15 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
     const extension = path.extname(req.file.originalname || '').toLowerCase()
     if (!['.xlsx', '.xls', '.csv'].includes(extension)) return res.status(415).json({ message: 'Only .xlsx, .xls and .csv student files are supported.' })
     const adminDepartment = selectedAdminDepartment(req)
-    const uploadDepartment = cleanString(req.body.department || adminDepartment || (req.user.department === 'ALL' ? '' : req.user.department)).toUpperCase()
+    const teacherDepartment = cleanString(req.user.department).toUpperCase()
+    const uploadDepartment = cleanString(req.body.department || adminDepartment || (teacherDepartment === 'ALL' ? '' : teacherDepartment)).toUpperCase()
     const requestedSemester = req.body.semester ? Number(req.body.semester) : 0
     const requestedSection = cleanString(req.body.section).toUpperCase()
     // Every imported student receives the same documented initial credential;
     // the Password column and request value are deliberately ignored.
     const uploadPassword = DEFAULT_STUDENT_PASSWORD
     const allowedDepartments = useDemoData ? validDepartments : (await query('SELECT code FROM departments WHERE is_active=1')).map((row) => String(row.code).toUpperCase())
-    if (req.user.role === 'teacher' && uploadDepartment !== req.user.department) return res.status(403).json({ message: 'Teachers may only import students into their department.' })
+    if (req.user.role === 'teacher' && uploadDepartment !== teacherDepartment) return res.status(403).json({ message: 'Teachers may only import students into their department.' })
     if (adminDepartment && uploadDepartment && uploadDepartment !== adminDepartment) return res.status(403).json({ message: 'This admin session is scoped to the selected department.' })
     if (uploadDepartment && !allowedDepartments.includes(uploadDepartment)) return res.status(422).json({ message: 'Choose a valid department for this upload.' })
     if (requestedSemester && !validSemesters.includes(requestedSemester)) return res.status(422).json({ message: 'Semester must be between 1 and 8.' })
@@ -1628,7 +1629,7 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
       const duplicateIssues = []
       // Initial credentials are server-controlled and are never accepted from
       // spreadsheet cells or returned in the preview payload.
-      if (req.user.role === 'teacher' && row.department !== req.user.department) scopeIssues.push(`Department must be ${req.user.department} for this teacher.`)
+      if (req.user.role === 'teacher' && row.department !== teacherDepartment) scopeIssues.push(`Department must be ${teacherDepartment} for this teacher.`)
       if (uploadDepartment && row.department !== uploadDepartment) scopeIssues.push(`Department must be ${uploadDepartment} for this upload.`)
       if (requestedSemester && Number(row.semester) !== requestedSemester) scopeIssues.push(`Semester must be ${requestedSemester} for this upload.`)
       if (requestedSection && row.section !== requestedSection) scopeIssues.push(`Section must be ${requestedSection} for this upload.`)
@@ -1680,6 +1681,8 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
         const savedRow = { ...safeRow, passwordHash, mustChangePassword: true, sectionId: sectionRow.sectionId }
         demoStore.students.unshift(savedRow)
         importedRows.push({ ...safeRow, sectionId: sectionRow.sectionId })
+        entry.ready = false
+        entry.status = 'imported'
       }
     } else {
       for (const entry of readyEntries) {
@@ -1694,6 +1697,8 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
           })
           const safeRow = { ...row }
           importedRows.push({ ...safeRow, id: created.studentId, userId: created.userId, sectionId: sectionRow.sectionId })
+          entry.ready = false
+          entry.status = 'imported'
         } catch (error) {
           entry.ready = false
           if (error.code === 'ER_DUP_ENTRY') {
