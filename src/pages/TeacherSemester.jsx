@@ -57,7 +57,7 @@ import { useAuth } from '../context/AuthContext'
 import { achievementTypes, cloneDemoStudents, demoAchievements, demoAnnouncements, demoRemarks, demoSections, getDemoMessages, getDemoSubjects, markDemoMessageRead, upsertDemoMessage } from '../data/demo'
 import api, { DEMO_MODE, getAuthToken, isApiToken, setAuthToken } from '../lib/api'
 import { ACADEMIC_ATTRIBUTES, PREDICTION_INPUTS, academicFields, predictAcademic, predictionFields } from '../lib/academic'
-import { DEFAULT_STUDENT_PASSWORD, importStatusLabel, importSummary, normalizeImportRows } from '../lib/studentImport'
+import { DEFAULT_STUDENT_PASSWORD, createStudentImportTemplate, importStatusLabel, importSummary, normalizeImportRows, rejectedImportRecords } from '../lib/studentImport'
 import { Brand } from './Landing'
 import BackButton from '../components/BackButton'
 import ChatView from '../components/ChatView'
@@ -480,9 +480,13 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
   const mergeServerPreview = (localRows, result) => {
     if (!result?.preview?.length) return
     const serverRows = new Map(result.preview.map((row, index) => [Number(row.rowNumber || index + 2), row]))
+    const importedUsns = new Set((result.data || []).map((row) => String(row.usn || '').trim().toUpperCase()).filter(Boolean))
     setRows(localRows.map((row) => {
       const serverRow = serverRows.get(row.rowNumber)
-      return serverRow ? { ...row, ...serverRow, id: row.id, rowNumber: row.rowNumber } : row
+      const merged = serverRow ? { ...row, ...serverRow, id: row.id, rowNumber: row.rowNumber } : row
+      return importedUsns.has(String(merged.usn || '').trim().toUpperCase())
+        ? { ...merged, status: 'imported', ready: false, issues: [], scopeIssues: [], duplicateIssues: [], validationIssues: [] }
+        : merged
     }))
     if (result.summary) setServerSummary(result.summary)
   }
@@ -501,7 +505,7 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
         const workbook = XLSX.read(event.target.result, { type: 'array' })
         const sheet = workbook.Sheets[workbook.SheetNames[0]]
         const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
-        const parsedRows = normalizeImportRows(rawRows, scope, students)
+        const parsedRows = normalizeImportRows(rawRows, { ...scope, departments: [user.department] }, students)
         setRows(parsedRows)
         setReading(false)
         if (onPreview && password.length >= 8) {
@@ -524,12 +528,20 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
     reader.readAsArrayBuffer(selectedFile)
   }
 
-  const downloadTemplate = () => {
-    const template = [{ USN: '4PM25CS101', Name: 'Sample Student', Department: user.department, Semester: semester, Section: section || '', Gender: 'Female', Email: 'sample@pestrust.edu.in', Phone: '+91 98450 00000', 'Parent Name': 'Parent Name', 'Parent Phone': '+91 98450 00001', 'Father Name': 'Parent Name', 'Mother Name': 'Mother Name', 'Parent Email': 'parent@example.com', Password: DEFAULT_STUDENT_PASSWORD, 'Date of Birth': '2004-06-15', 'Blood Group': 'O+', Address: 'Residential address', Certifications: 'NPTEL, AWS', Skills: 'Python, React', 'Attendance Percentage': 80, 'Average Internal Marks': 75, 'Average Assignment Score': 80, 'Previous GPA': 7.4, 'Current GPA': 7.5, 'Participation Score': 78 }]
-    const worksheet = XLSX.utils.json_to_sheet(template)
+  const templateRow = createStudentImportTemplate({ department: user.department, semester, section })
+  const downloadTemplate = (format = 'xlsx') => {
+    const worksheet = XLSX.utils.json_to_sheet([templateRow])
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, `Semester ${semester}`)
-    XLSX.writeFile(workbook, `${user.department}-semester-${semester}-student-template.xlsx`)
+    XLSX.writeFile(workbook, `${user.department}-semester-${semester}-student-template.${format}`)
+  }
+  const downloadRejectedReport = () => {
+    const rejected = rejectedImportRecords(rows)
+    if (!rejected.length) return
+    const worksheet = XLSX.utils.json_to_sheet(rejected)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Rejected records')
+    XLSX.writeFile(workbook, `${user.department}-semester-${semester}-rejected-students.xlsx`)
   }
 
   const importRows = async () => {
@@ -541,7 +553,11 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
     setImporting(true)
     try {
       const saved = await onImport(rows, file, password)
-      if (saved === false) setFileError('The import was not completed. Review the error notification and try again.')
+      if (saved?.response) {
+        mergeServerPreview(rows, saved.response)
+        setServerSummary(saved.response.summary || saved.summary || null)
+        setPreviewNotice('Some rows were rejected during commit. Download the rejected report, correct those rows, and retry only the remaining records.')
+      } else if (saved === false) setFileError('The import was not completed. Review the error notification and try again.')
     } catch (error) {
       console.error('[students-import] Teacher import handler failed unexpectedly.', error)
       setFileError(error.message || 'The import failed unexpectedly. No success was reported.')
@@ -553,11 +569,11 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
   const summary = serverSummary || importSummary(rows)
   const issueRows = rows.filter((row) => row.issues?.length)
   const statusMessage = summary.ready
-    ? `${summary.matching} records match this scope. ${summary.ready} are ready to import; ${summary.skipped} will be skipped.`
+    ? `${summary.matching} records match this scope. ${summary.ready} are ready to import; ${summary.skipped} are rejected and will not be relocated.`
     : 'No rows are ready to import. Review the highlighted rows before choosing another file.'
 
   return <div className="dashboard-content upload-student-page">
-    <ScopeIntro eyebrow={`${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`} title="Upload student roster" description={`Review every row before importing into ${section ? `Section ${section} · ` : ''}Semester ${semester}. Rows from another department, semester or section are skipped automatically.`} actions={<button className="button-ghost" type="button" onClick={downloadTemplate}><FiDownload /> Download template</button>} />
+    <ScopeIntro eyebrow={`${user.department} · Semester ${semester}${section ? ` · Section ${section}` : ''}`} title="Upload student roster" description={`Review every row before importing into ${section ? `Section ${section} · ` : ''}Semester ${semester}. Rows from another department, semester or section are rejected and never relocated.`} actions={<><button className="button-ghost" type="button" onClick={() => downloadTemplate('xlsx')}><FiDownload /> Excel template</button><button className="button-ghost" type="button" onClick={() => downloadTemplate('csv')}><FiDownload /> CSV template</button></>} />
     <div className="semester-context-banner"><FiShield /><span>Import scope locked to <strong>{user.department} · Semester {semester}{section ? ` · Section ${section}` : ''}</strong>. Only matching, valid and non-duplicate USNs can be added.</span></div>
     <section className="content-card upload-workflow">
       <div className="upload-steps"><span className="active"><b>1</b> Upload</span><span className="active"><b>2</b> Preview &amp; validate</span><span><b>3</b> Import</span></div>
@@ -572,7 +588,7 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
             <div className="import-summary-card"><span>Total records</span><strong>{summary.total}</strong></div>
             <div className="import-summary-card scope-match"><span>Match current scope</span><strong>{summary.matching}</strong></div>
             <div className="import-summary-card ready"><span>Ready to import</span><strong>{summary.ready}</strong></div>
-            <div className="import-summary-card warning"><span>Skipped</span><strong>{summary.skipped}</strong></div>
+            <div className="import-summary-card warning"><span>Rejected</span><strong>{summary.skipped}</strong></div>
             <div className="import-summary-card error"><span>Validation issues</span><strong>{summary.invalid}</strong></div>
           </div>
           <div className={`import-summary-message ${summary.skipped ? 'warning' : 'success'}`}><FiAlertCircle /> {statusMessage}</div>
@@ -581,7 +597,7 @@ function UploadSemesterStudentsPage({ user, semester, section = '', students, on
         </>}
       </>}
     </section>
-    <div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setFileError(''); setCredentialError(''); setPreviewNotice(''); setServerSummary(null) }}>Choose another file</button>}<button className="button-primary" type="button" disabled={!rows.some((row) => row.ready) || reading || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div>
+    <div className="upload-page-actions"><button className="button-ghost" type="button" onClick={onCancel}>Cancel</button>{file && <button className="button-ghost" type="button" onClick={() => { setFile(null); setRows([]); setFileError(''); setCredentialError(''); setPreviewNotice(''); setServerSummary(null) }}>Choose another file</button>}{issueRows.length > 0 && <button className="button-ghost" type="button" onClick={downloadRejectedReport}><FiDownload /> Rejected report</button>}<button className="button-primary" type="button" disabled={!rows.some((row) => row.ready) || reading || validating || importing} onClick={importRows}><FiCheck /> {importing ? 'Importing…' : `Import ${summary.ready || ''} matching student${summary.ready === 1 ? '' : 's'}`}</button></div>
   </div>
 }
 
@@ -942,11 +958,13 @@ export default function TeacherSemester() {
     let savedRecords = localRecords
     let summary = importSummary(rows)
     let importErrors = []
+    let serverResponse = null
     let refreshed = false
     if (apiSession) {
       try {
         setAuthToken(apiToken)
         const response = await api.uploadStudents(file, true, { department: user.department, semester, section, password })
+        serverResponse = response
         savedRecords = (response.data || []).filter((row) => row.department === user.department && Number(row.semester) === semester && (!section || String(row.section).toUpperCase() === section))
         summary = response.summary || { ...summary, imported: savedRecords.length }
         importErrors = Array.isArray(response.errors) ? response.errors : []
@@ -981,7 +999,8 @@ export default function TeacherSemester() {
       ...importErrors.slice(0, 3),
     ].filter(Boolean).join('; ')
     const moreErrors = importErrors.length > 3 ? ` +${importErrors.length - 3} more row details.` : ''
-    notify(`${imported} student${imported === 1 ? '' : 's'} imported successfully. ${skipped} skipped${failed ? `, ${failed} failed` : ''}.${detail ? ` ${detail}${moreErrors}` : ''}`)
+    notify(`${imported} student${imported === 1 ? '' : 's'} imported successfully. ${skipped} rejected${failed ? `, ${failed} failed` : ''}.${detail ? ` ${detail}${moreErrors}` : ''}`)
+    if (skipped || failed) return { completed: false, response: serverResponse, summary }
     navigateModule('students')
     return true
   }

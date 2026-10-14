@@ -1468,7 +1468,7 @@ app.put('/api/students/:id', authRequired, roleRequired('teacher', 'admin'), asy
       studentValues.push(id)
       await connection.query(`UPDATE students SET ${studentFields.join(', ')} WHERE id=?`, studentValues)
 
-      const [userRows] = await connection.query('SELECT id, student_id AS studentId, password_hash AS passwordHash FROM users WHERE role=? AND (student_id=? OR email=?) LIMIT 1 FOR UPDATE', ['student', id, rows[0].email])
+      const [userRows] = await connection.query('SELECT id, student_id AS studentId, password_hash AS passwordHash FROM users WHERE role=? AND (student_id=? OR (student_id IS NULL AND email=?)) LIMIT 1 FOR UPDATE', ['student', id, rows[0].email])
       const linkedUser = userRows[0]
       if (linkedUser && linkedUser.studentId && Number(linkedUser.studentId) !== id) {
         const conflict = new Error('The existing student account is linked to another profile.')
@@ -1542,6 +1542,8 @@ app.delete('/api/students/:id', authRequired, roleRequired('teacher', 'admin'), 
 app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'), upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Please attach an .xlsx or .csv file.' })
+    const extension = path.extname(req.file.originalname || '').toLowerCase()
+    if (!['.xlsx', '.xls', '.csv'].includes(extension)) return res.status(415).json({ message: 'Only .xlsx, .xls and .csv student files are supported.' })
     const adminDepartment = selectedAdminDepartment(req)
     const uploadDepartment = cleanString(req.body.department || adminDepartment || (req.user.department === 'ALL' ? '' : req.user.department)).toUpperCase()
     const requestedSemester = req.body.semester ? Number(req.body.semester) : 0
@@ -1563,15 +1565,16 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
     const rows = rawRows.map((row, index) => {
       const normalized = normalizeStudent({
         usn: cell(row, ['USN', 'usn']),
-        name: cell(row, ['Name', 'name']),
+        name: cell(row, ['Student Name', 'Name', 'name']),
         department: cell(row, ['Department', 'department'], uploadDepartment),
         semester: cell(row, ['Semester', 'semester'], requestedSemester),
         section: cell(row, ['Section', 'section'], requestedSection),
-        email: cell(row, ['Email', 'email']),
-        phone: cell(row, ['Phone', 'phone']),
-        parentName: cell(row, ['Parent Name', 'parentName']),
+        gender: cell(row, ['Gender', 'gender']),
+        email: cell(row, ['Email Address', 'Email', 'email']),
+        phone: cell(row, ['Phone Number', 'Phone', 'phone']),
+        parentName: cell(row, ['Parent/Guardian Name', 'Parent Name', 'parentName']),
         parentPhone: cell(row, ['Parent Phone', 'parentPhone']),
-        fatherName: cell(row, ['Father Name', 'fatherName']),
+        fatherName: cell(row, ['Father/Guardian Name', 'Father Name', 'fatherName']),
         motherName: cell(row, ['Mother Name', 'motherName']),
         parentEmail: cell(row, ['Parent Email', 'parentEmail']),
         dateOfBirth: cell(row, ['Date of Birth', 'dateOfBirth']),
@@ -1608,11 +1611,23 @@ app.post('/api/students/upload', authRequired, roleRequired('teacher', 'admin'),
     const evaluated = []
     for (const [index, row] of rows.entries()) {
       const scopeIssues = []
-      const validationIssues = validateStudent(row, [])
+      // normalizeStudent clamps values for safe display/storage, so validate the
+      // original spreadsheet values before that clamping can hide an invalid
+      // academic value from the preview.
+      const source = rawRows[index]
+      const validationRow = {
+        ...row,
+        attendancePercentage: cell(source, ['Attendance Percentage', 'AttendancePercentage', 'attendancePercentage']),
+        averageInternalMarks: cell(source, ['Average Internal Marks', 'AverageInternalMarks', 'averageInternalMarks']),
+        averageAssignmentScore: cell(source, ['Average Assignment Score', 'AverageAssignmentScore', 'averageAssignmentScore']),
+        previousGpa: cell(source, ['Previous GPA', 'PreviousGPA', 'previousGpa']),
+        currentGpa: cell(source, ['Current GPA', 'CurrentGPA', 'currentGpa']),
+        participationScore: cell(source, ['Participation Score', 'ParticipationScore', 'participationScore']),
+      }
+      const validationIssues = validateStudent(validationRow, [], { departments: allowedDepartments })
       const duplicateIssues = []
       // Initial credentials are server-controlled and are never accepted from
       // spreadsheet cells or returned in the preview payload.
-      const source = rawRows[index]
       if (req.user.role === 'teacher' && row.department !== req.user.department) scopeIssues.push(`Department must be ${req.user.department} for this teacher.`)
       if (uploadDepartment && row.department !== uploadDepartment) scopeIssues.push(`Department must be ${uploadDepartment} for this upload.`)
       if (requestedSemester && Number(row.semester) !== requestedSemester) scopeIssues.push(`Semester must be ${requestedSemester} for this upload.`)

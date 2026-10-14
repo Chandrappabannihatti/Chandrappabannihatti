@@ -10,7 +10,7 @@ function createFakeDatabase(students, initialAccounts = []) {
   const runTransaction = async (callback) => callback({
     query: async (sql, params) => {
       if (sql.startsWith('SELECT id, student_id')) {
-        const account = accounts.find((candidate) => candidate.role === 'student' && (Number(candidate.studentId) === Number(params[1]) || String(candidate.email).toLowerCase() === String(params[2]).toLowerCase()))
+        const account = accounts.find((candidate) => candidate.role === 'student' && (Number(candidate.studentId) === Number(params[1]) || (!candidate.studentId && String(candidate.email).toLowerCase() === String(params[2]).toLowerCase())))
         return [[account ? { ...account } : undefined].filter(Boolean)]
       }
       if (sql.startsWith('UPDATE users SET student_id=')) {
@@ -57,4 +57,16 @@ test('student account migration is idempotent and reports created and skipped re
 
   const second = await migrateStudentAccounts({ ...database, hash })
   assert.deepEqual(second.counts, { checked: 2, created: 0, skipped: 2, errors: 0 })
+})
+
+test('student account migration does not bind a duplicate contact email to another student', async () => {
+  const existingHash = await bcrypt.hash('Already changed', 10)
+  const database = createFakeDatabase([
+    { id: 1, usn: '4PM26CSE002', name: 'First Student', email: 'shared@example.com', passwordHash: existingHash },
+    { id: 2, usn: '4PM26ECE002', name: 'Second Student', email: 'shared@example.com', passwordHash: null },
+  ], [{ id: 10, role: 'student', studentId: 1, email: 'shared@example.com', passwordHash: existingHash }])
+  const report = await migrateStudentAccounts({ ...database, hash: (password) => bcrypt.hash(password, 10) })
+  assert.deepEqual(report.counts, { checked: 2, created: 1, skipped: 1, errors: 0 })
+  assert.equal(database.accounts.filter((account) => account.role === 'student').length, 2)
+  assert.equal(database.accounts.find((account) => account.studentId === 2).email, null)
 })

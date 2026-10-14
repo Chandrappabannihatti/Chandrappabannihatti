@@ -38,8 +38,8 @@ export async function migrateStudentAccounts({ runQuery, runTransaction, hash = 
     try {
       const result = await runTransaction(async (connection) => {
         const [userRows] = await connection.query(
-          'SELECT id, student_id AS studentId, email, password_hash AS passwordHash, is_active AS isActive FROM users WHERE role=? AND (student_id=? OR email=?) ORDER BY (student_id=?) DESC, id LIMIT 1 FOR UPDATE',
-          ['student', student.id, student.email, student.id],
+          'SELECT id, student_id AS studentId, email, password_hash AS passwordHash, is_active AS isActive FROM users WHERE role=? AND (student_id=? OR (student_id IS NULL AND email=?)) ORDER BY id LIMIT 1 FOR UPDATE',
+          ['student', student.id, student.email],
         )
         const account = userRows[0]
         if (account && account.studentId && Number(account.studentId) !== Number(student.id)) {

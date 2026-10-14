@@ -155,6 +155,20 @@ python app.py
 
 Set `ML_SERVICE_URL=http://127.0.0.1:8000` in the Node `.env`. To use a trained model, place a binary classifier at `ml-service/model/camps_xgboost.joblib` or set `MODEL_PATH`. The model must expose `predict_proba` and consume the five inputs in the order listed in `ml-service/app.py`.
 
+## Universal student import workflow
+
+The dashboard and every teacher section workspace use the same `.xlsx` / `.xls` / `.csv` import contract. Download either the Excel or CSV template before selecting a file. The template headers are canonical and include `USN`, `Student Name`, `Department`, `Semester`, `Section`, `Gender`, `Email Address`, `Initial Student Login Password`, `Phone Number`, `Parent/Guardian Name`, `Parent Phone`, `Date of Birth`, `Blood Group`, `Address`, `Father/Guardian Name`, `Mother Name`, `Parent Email`, `Certifications`, `Skills`, `Attendance Percentage`, `Average Internal Marks`, `Average Assignment Score`, `Previous GPA`, `Current GPA` and `Participation Score`.
+
+- Active rows in `departments` are the source of truth in MySQL; the UI fetches them from `GET /api/departments`. The legacy `CIVIL`/canonical `CV` reconciliation is handled by the additive database initializer rather than by creating a second department.
+- Teachers must choose an explicit semester and configured section before a dashboard import, or use the already scoped semester/section route. The backend derives the teacher department from the JWT and validates every supplied scope cell; a conflict is rejected and never relocated.
+- Admins retain their existing selected-department permissions. They may choose a destination scope or allow active spreadsheet scope values when their existing access permits it. Semester values are restricted to 1–8 and sections must exist for the active department/semester.
+- The browser performs a preview, then the API repeats normalization and validation in a transaction-aware commit. It reports missing fields, academic range/type errors, invalid scope, duplicate normalized USNs/emails, and row-level duplicate/database failures. Rejected rows can be downloaded as a separate report from either upload UI.
+- Student accounts are created with normalized USN login identity, a bcryptjs hash of `Student@123`, `must_change_password=TRUE`, and a nullable account email. Existing valid credentials are preserved by the repeatable migration; missing/invalid links are repaired without binding duplicate contact emails to another student.
+
+## Verification limits
+
+The repository tests, ESLint and Vite production build are runnable in this checkout. Demo-mode API preview checks can exercise multiple departments, semesters and sections without changing the configured database. Live-MySQL migration, production database acceptance, browser automation, Flask service availability and a mounted XGBoost artifact remain environment-dependent and must be run where those services and credentials are available. Do not treat demo-mode results as proof of production database state.
+
 ## API surface
 
 All routes except login and health require `Authorization: Bearer <jwt>`.
