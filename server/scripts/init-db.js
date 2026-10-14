@@ -44,11 +44,6 @@ const addColumns = async (table, columns) => {
   }
   return await getColumns(table)
 }
-const dropColumns = async (table, columns) => {
-  const existing = new Set((await getColumns(table)).map((column) => column.name))
-  for (const name of columns) if (existing.has(name)) await connection.query(`ALTER TABLE ${identifier(table)} DROP COLUMN ${identifier(name)}`)
-}
-
 const canonicalStudentColumns = {
   password_hash: 'VARCHAR(255) NULL',
   section_id: 'BIGINT UNSIGNED NULL',
@@ -77,10 +72,6 @@ const hadStudentResult = studentColumnsBefore.some((column) => column.name === '
 const hadStudentRisk = studentColumnsBefore.some((column) => column.name === 'risk')
 let studentColumns = await addColumns('students', canonicalStudentColumns)
 if (studentColumns.some((column) => column.name === 'section')) await connection.query(`ALTER TABLE ${identifier('students')} ALTER COLUMN ${identifier('section')} DROP DEFAULT`)
-const studentColumnNames = new Set(studentColumns.map((column) => column.name))
-const studentLegacyColumns = ['attendance', 'ia1', 'ia2', 'assignment_marks', 'previous_sgpa', 'cgpa', 'backlogs']
-const studentLegacy = studentLegacyColumns.filter((name) => studentColumnNames.has(name))
-
 // Older releases used a short Low/Medium/High enum. Move it out of the way before
 // creating the canonical exact-label enum, then backfill it below.
 let studentLegacyRisk = false
@@ -117,7 +108,8 @@ if (studentLegacyRisk) {
 } else if (!hadStudentRisk) {
   await connection.query(`UPDATE ${identifier('students')} SET risk = CASE WHEN ${studentScore} >= 75 THEN 'Low Risk' WHEN ${studentScore} >= 55 THEN 'Medium Risk' ELSE 'High Risk' END`)
 }
-await dropColumns('students', [...studentLegacy, ...(studentLegacyRisk ? ['legacy_risk'] : [])])
+// The legacy columns are retained after backfill so this upgrade never removes
+// source academic data. New application reads use the canonical columns above.
 
 // The first schema used a prediction table with ia1/ia2/backlogs/pass_probability
 // and short risk labels. Upgrade it in place so existing data speaks the same
@@ -167,12 +159,14 @@ if (await tableExists('predictions')) {
   } else if (!hadPredictionRisk) {
     await connection.query(`UPDATE ${identifier('predictions')} SET risk = CASE WHEN ${predictionScore} >= 75 THEN 'Low Risk' WHEN ${predictionScore} >= 55 THEN 'Medium Risk' ELSE 'High Risk' END`)
   }
-  await dropColumns('predictions', ['attendance', 'ia1', 'ia2', 'assignment_marks', 'previous_sgpa', 'cgpa', 'backlogs', 'pass_probability', ...(predictionLegacyRisk ? ['legacy_risk'] : [])])
+  // Keep legacy prediction columns for rollback/auditability. The canonical
+  // fields above are the application contract, so no source data is dropped.
   if (!(await getIndexes('predictions')).includes('idx_prediction_risk')) await connection.query(`ALTER TABLE ${identifier('predictions')} ADD KEY ${identifier('idx_prediction_risk')} (risk, created_at)`)
 }
 
 // Existing releases stored subject marks in internal_marks. Copy the usable
-// subject-scoped values into subject_records, then remove the legacy table.
+// subject-scoped values into subject_records while retaining the legacy table
+// for rollback and auditability.
 if (await tableExists('internal_marks')) {
   const internalColumns = new Set((await getColumns('internal_marks')).map((column) => column.name))
   if (internalColumns.has('subject_code') && (internalColumns.has('ia1') || internalColumns.has('ia2'))) {
@@ -191,7 +185,6 @@ if (await tableExists('internal_marks')) {
         GROUP BY student_id, subject_code
       ) att ON att.student_id = im.student_id AND att.subject_code = im.subject_code
       ON DUPLICATE KEY UPDATE attendance_percentage = VALUES(attendance_percentage), average_internal_marks = VALUES(average_internal_marks), recorded_by = VALUES(recorded_by)`)
-    await connection.query(`DROP TABLE ${identifier('internal_marks')}`)
   }
 }
 
