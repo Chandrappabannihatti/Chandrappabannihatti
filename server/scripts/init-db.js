@@ -1,0 +1,252 @@
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import mysql from 'mysql2/promise'
+import dotenv from 'dotenv'
+
+dotenv.config()
+
+const configuredDatabase = String(process.env.DB_NAME || 'camps_project4').trim()
+const identifier = (name) => `\`${name.replaceAll('`', '``')}\``
+const connection = await mysql.createConnection({
+  host: process.env.DB_HOST || '127.0.0.1',
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  multipleStatements: true,
+})
+
+const rawSchema = await fs.readFile(path.resolve('database/schema.sql'), 'utf8')
+const schema = rawSchema
+  .replace(/^\s*CREATE DATABASE IF NOT EXISTS [^;]+;\s*/im, '')
+  .replace(/^\s*USE\s+`?[A-Za-z0-9_$-]+`?;\s*/im, '')
+await connection.query(`CREATE DATABASE IF NOT EXISTS ${identifier(configuredDatabase)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`)
+await connection.query(`USE ${identifier(configuredDatabase)}`)
+await connection.query(schema)
+const tableExists = async (table) => {
+  const [rows] = await connection.query('SELECT COUNT(*) AS total FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?', [table])
+  return Number(rows[0]?.total) > 0
+}
+const getColumns = async (table) => {
+  const [rows] = await connection.query('SELECT COLUMN_NAME AS name, COLUMN_TYPE AS columnType FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?', [table])
+  return rows
+}
+const getIndexes = async (table) => {
+  const [rows] = await connection.query('SELECT DISTINCT INDEX_NAME AS name FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ?', [table])
+  return rows.map((row) => row.name)
+}
+const addColumns = async (table, columns) => {
+  const existing = new Set((await getColumns(table)).map((column) => column.name))
+  for (const [name, definition] of Object.entries(columns)) {
+    if (!existing.has(name)) {
+      await connection.query(`ALTER TABLE ${identifier(table)} ADD COLUMN ${identifier(name)} ${definition}`)
+      existing.add(name)
+    }
+  }
+  return await getColumns(table)
+}
+const canonicalStudentColumns = {
+  password_hash: 'VARCHAR(255) NULL',
+  section_id: 'BIGINT UNSIGNED NULL',
+  date_of_birth: 'DATE NULL',
+  blood_group: 'VARCHAR(8) NULL',
+  address: 'VARCHAR(255) NULL',
+  father_name: 'VARCHAR(120) NULL',
+  mother_name: 'VARCHAR(120) NULL',
+  parent_email: 'VARCHAR(160) NULL',
+  certifications: 'JSON NULL',
+  skills: 'JSON NULL',
+  attendance_percentage: 'DECIMAL(5,2) NOT NULL DEFAULT 0',
+  average_internal_marks: 'DECIMAL(5,2) NOT NULL DEFAULT 0',
+  average_assignment_score: 'DECIMAL(5,2) NOT NULL DEFAULT 0',
+  previous_gpa: 'DECIMAL(4,2) NOT NULL DEFAULT 0',
+  current_gpa: 'DECIMAL(4,2) NOT NULL DEFAULT 0',
+  participation_score: 'DECIMAL(5,2) NOT NULL DEFAULT 0',
+  result: "ENUM('Pass', 'Fail') NOT NULL DEFAULT 'Fail'",
+  risk: "ENUM('Low Risk', 'Medium Risk', 'High Risk') NOT NULL DEFAULT 'High Risk'",
+}
+
+// CREATE TABLE IF NOT EXISTS does not change an already-initialised students table.
+// Add the profile and canonical Average Academic Performance columns during upgrades.
+const studentColumnsBefore = await getColumns('students')
+const hadStudentResult = studentColumnsBefore.some((column) => column.name === 'result')
+const hadStudentRisk = studentColumnsBefore.some((column) => column.name === 'risk')
+let studentColumns = await addColumns('students', canonicalStudentColumns)
+if (studentColumns.some((column) => column.name === 'section')) await connection.query(`ALTER TABLE ${identifier('students')} ALTER COLUMN ${identifier('section')} DROP DEFAULT`)
+// Older releases used a short Low/Medium/High enum. Move it out of the way before
+// creating the canonical exact-label enum, then backfill it below.
+let studentLegacyRisk = false
+const studentRiskColumn = studentColumns.find((column) => column.name === 'risk')
+if (studentRiskColumn && !studentRiskColumn.columnType.toLowerCase().includes("'low risk'")) {
+  if ((await getIndexes('students')).includes('idx_student_risk')) await connection.query(`ALTER TABLE ${identifier('students')} DROP INDEX ${identifier('idx_student_risk')}`)
+  await connection.query(`ALTER TABLE ${identifier('students')} CHANGE COLUMN ${identifier('risk')} ${identifier('legacy_risk')} VARCHAR(32) NULL`)
+  await connection.query(`ALTER TABLE ${identifier('students')} ADD COLUMN ${identifier('risk')} ENUM('Low Risk', 'Medium Risk', 'High Risk') NOT NULL DEFAULT 'High Risk'`)
+  studentLegacyRisk = true
+} else if (!studentRiskColumn) {
+  await connection.query(`ALTER TABLE ${identifier('students')} ADD COLUMN ${identifier('risk')} ENUM('Low Risk', 'Medium Risk', 'High Risk') NOT NULL DEFAULT 'High Risk'`)
+}
+
+studentColumns = await getColumns('students')
+const studentHas = (name) => studentColumns.some((column) => column.name === name)
+const bounded = (expression, min, max) => `LEAST(${max}, GREATEST(${min}, COALESCE(${expression}, 0)))`
+const studentBackfills = []
+if (studentHas('attendance')) studentBackfills.push(`attendance_percentage = CASE WHEN attendance_percentage = 0 THEN ${bounded('attendance', 0, 100)} ELSE attendance_percentage END`)
+if (studentHas('ia1') || studentHas('ia2')) {
+  const internalExpression = studentHas('ia1') && studentHas('ia2') ? '(COALESCE(ia1, 0) + COALESCE(ia2, 0)) / 2' : `COALESCE(${studentHas('ia1') ? 'ia1' : 'ia2'}, 0)`
+  studentBackfills.push(`average_internal_marks = CASE WHEN average_internal_marks = 0 THEN ${bounded(internalExpression, 0, 100)} ELSE average_internal_marks END`)
+}
+if (studentHas('assignment_marks')) studentBackfills.push(`average_assignment_score = CASE WHEN average_assignment_score = 0 THEN ${bounded('assignment_marks', 0, 100)} ELSE average_assignment_score END`)
+if (studentHas('previous_sgpa')) studentBackfills.push(`previous_gpa = CASE WHEN previous_gpa = 0 THEN ${bounded('previous_sgpa', 0, 10)} ELSE previous_gpa END`)
+if (studentHas('cgpa')) studentBackfills.push(`current_gpa = CASE WHEN current_gpa = 0 THEN ${bounded('cgpa', 0, 10)} ELSE current_gpa END`)
+if (studentBackfills.length) await connection.query(`UPDATE ${identifier('students')} SET ${studentBackfills.join(', ')}`)
+
+const studentScore = '(attendance_percentage * 0.30 + average_internal_marks * 0.25 + average_assignment_score * 0.15 + (previous_gpa / 10) * 15 + participation_score * 0.15)'
+// Newly-added result/risk values are derived from the five model inputs; Current GPA
+// is deliberately absent from this expression.
+if (!hadStudentResult) await connection.query(`UPDATE ${identifier('students')} SET result = CASE WHEN ${studentScore} >= 60 THEN 'Pass' ELSE 'Fail' END`)
+if (studentLegacyRisk) {
+  await connection.query(`UPDATE ${identifier('students')} SET risk = CASE WHEN LOWER(COALESCE(legacy_risk, '')) LIKE '%high%' THEN 'High Risk' WHEN LOWER(COALESCE(legacy_risk, '')) LIKE '%medium%' THEN 'Medium Risk' WHEN LOWER(COALESCE(legacy_risk, '')) LIKE '%low%' THEN 'Low Risk' ELSE CASE WHEN ${studentScore} >= 75 THEN 'Low Risk' WHEN ${studentScore} >= 55 THEN 'Medium Risk' ELSE 'High Risk' END END`)
+} else if (!hadStudentRisk) {
+  await connection.query(`UPDATE ${identifier('students')} SET risk = CASE WHEN ${studentScore} >= 75 THEN 'Low Risk' WHEN ${studentScore} >= 55 THEN 'Medium Risk' ELSE 'High Risk' END`)
+}
+// The legacy columns are retained after backfill so this upgrade never removes
+// source academic data. New application reads use the canonical columns above.
+
+// The first schema used a prediction table with ia1/ia2/backlogs/pass_probability
+// and short risk labels. Upgrade it in place so existing data speaks the same
+// five-input, Pass/Fail + exact-risk contract as a fresh database.
+if (await tableExists('predictions')) {
+  const predictionColumnsDefinition = {
+    attendance_percentage: 'DECIMAL(5,2) NOT NULL DEFAULT 0',
+    average_internal_marks: 'DECIMAL(5,2) NOT NULL DEFAULT 0',
+    average_assignment_score: 'DECIMAL(5,2) NOT NULL DEFAULT 0',
+    previous_gpa: 'DECIMAL(4,2) NOT NULL DEFAULT 0',
+    participation_score: 'DECIMAL(5,2) NOT NULL DEFAULT 0',
+    result: "ENUM('Pass', 'Fail') NOT NULL DEFAULT 'Fail'",
+  }
+  const predictionColumnsBefore = await getColumns('predictions')
+  const hadPredictionResult = predictionColumnsBefore.some((column) => column.name === 'result')
+  const hadPredictionRisk = predictionColumnsBefore.some((column) => column.name === 'risk')
+  let predictionColumns = await addColumns('predictions', predictionColumnsDefinition)
+  const predictionHas = (name) => predictionColumns.some((column) => column.name === name)
+  let predictionLegacyRisk = false
+  const predictionRiskColumn = predictionColumns.find((column) => column.name === 'risk')
+  if (predictionRiskColumn && !predictionRiskColumn.columnType.toLowerCase().includes("'low risk'")) {
+    if ((await getIndexes('predictions')).includes('idx_prediction_risk')) await connection.query(`ALTER TABLE ${identifier('predictions')} DROP INDEX ${identifier('idx_prediction_risk')}`)
+    await connection.query(`ALTER TABLE ${identifier('predictions')} CHANGE COLUMN ${identifier('risk')} ${identifier('legacy_risk')} VARCHAR(32) NULL`)
+    await connection.query(`ALTER TABLE ${identifier('predictions')} ADD COLUMN ${identifier('risk')} ENUM('Low Risk', 'Medium Risk', 'High Risk') NOT NULL DEFAULT 'High Risk'`)
+    predictionLegacyRisk = true
+  } else if (!predictionRiskColumn) {
+    await connection.query(`ALTER TABLE ${identifier('predictions')} ADD COLUMN ${identifier('risk')} ENUM('Low Risk', 'Medium Risk', 'High Risk') NOT NULL DEFAULT 'High Risk'`)
+  }
+
+  predictionColumns = await getColumns('predictions')
+  const predictionBackfills = []
+  if (predictionHas('attendance')) predictionBackfills.push(`attendance_percentage = CASE WHEN attendance_percentage = 0 THEN ${bounded('attendance', 0, 100)} ELSE attendance_percentage END`)
+  if (predictionHas('ia1') || predictionHas('ia2')) {
+    const internalExpression = predictionHas('ia1') && predictionHas('ia2') ? '(COALESCE(ia1, 0) + COALESCE(ia2, 0)) / 2' : `COALESCE(${predictionHas('ia1') ? 'ia1' : 'ia2'}, 0)`
+    predictionBackfills.push(`average_internal_marks = CASE WHEN average_internal_marks = 0 THEN ${bounded(internalExpression, 0, 100)} ELSE average_internal_marks END`)
+  }
+  if (predictionHas('assignment_marks')) predictionBackfills.push(`average_assignment_score = CASE WHEN average_assignment_score = 0 THEN ${bounded('assignment_marks', 0, 100)} ELSE average_assignment_score END`)
+  if (predictionHas('previous_sgpa')) predictionBackfills.push(`previous_gpa = CASE WHEN previous_gpa = 0 THEN ${bounded('previous_sgpa', 0, 10)} ELSE previous_gpa END`)
+  if (predictionHas('cgpa')) predictionBackfills.push(`previous_gpa = CASE WHEN previous_gpa = 0 THEN ${bounded('cgpa', 0, 10)} ELSE previous_gpa END`)
+  if (predictionBackfills.length) await connection.query(`UPDATE ${identifier('predictions')} SET ${predictionBackfills.join(', ')}`)
+
+  const predictionScore = '(attendance_percentage * 0.30 + average_internal_marks * 0.25 + average_assignment_score * 0.15 + (previous_gpa / 10) * 15 + participation_score * 0.15)'
+  if (predictionHas('pass_probability')) await connection.query(`UPDATE ${identifier('predictions')} SET result = CASE WHEN pass_probability >= 60 THEN 'Pass' ELSE 'Fail' END`)
+  else if (!hadPredictionResult) await connection.query(`UPDATE ${identifier('predictions')} SET result = CASE WHEN ${predictionScore} >= 60 THEN 'Pass' ELSE 'Fail' END`)
+  if (predictionLegacyRisk) {
+    await connection.query(`UPDATE ${identifier('predictions')} SET risk = CASE WHEN LOWER(COALESCE(legacy_risk, '')) LIKE '%high%' THEN 'High Risk' WHEN LOWER(COALESCE(legacy_risk, '')) LIKE '%medium%' THEN 'Medium Risk' WHEN LOWER(COALESCE(legacy_risk, '')) LIKE '%low%' THEN 'Low Risk' ELSE CASE WHEN ${predictionScore} >= 75 THEN 'Low Risk' WHEN ${predictionScore} >= 55 THEN 'Medium Risk' ELSE 'High Risk' END END`)
+  } else if (!hadPredictionRisk) {
+    await connection.query(`UPDATE ${identifier('predictions')} SET risk = CASE WHEN ${predictionScore} >= 75 THEN 'Low Risk' WHEN ${predictionScore} >= 55 THEN 'Medium Risk' ELSE 'High Risk' END`)
+  }
+  // Keep legacy prediction columns for rollback/auditability. The canonical
+  // fields above are the application contract, so no source data is dropped.
+  if (!(await getIndexes('predictions')).includes('idx_prediction_risk')) await connection.query(`ALTER TABLE ${identifier('predictions')} ADD KEY ${identifier('idx_prediction_risk')} (risk, created_at)`)
+}
+
+// Existing releases stored subject marks in internal_marks. Copy the usable
+// subject-scoped values into subject_records while retaining the legacy table
+// for rollback and auditability.
+if (await tableExists('internal_marks')) {
+  const internalColumns = new Set((await getColumns('internal_marks')).map((column) => column.name))
+  if (internalColumns.has('subject_code') && (internalColumns.has('ia1') || internalColumns.has('ia2'))) {
+    const internalExpression = internalColumns.has('ia1') && internalColumns.has('ia2') ? '(COALESCE(im.ia1, 0) + COALESCE(im.ia2, 0)) / 2' : `COALESCE(im.${internalColumns.has('ia1') ? 'ia1' : 'ia2'}, 0)`
+    await connection.query(`INSERT INTO subject_records (subject_id, student_id, attendance_percentage, average_internal_marks, recorded_by, created_at)
+      SELECT sub.subject_id, im.student_id,
+        LEAST(100, GREATEST(0, COALESCE(att.attendance_percentage, 0))),
+        LEAST(100, GREATEST(0, COALESCE(${internalExpression}, 0))),
+        im.recorded_by, im.created_at
+      FROM internal_marks im
+      JOIN students st ON st.id = im.student_id
+      JOIN subjects sub ON sub.department_code = st.department_code AND sub.semester = im.semester AND sub.subject_code = im.subject_code
+      LEFT JOIN (
+        SELECT student_id, subject_code, AVG(attendance_percentage) AS attendance_percentage
+        FROM attendance
+        GROUP BY student_id, subject_code
+      ) att ON att.student_id = im.student_id AND att.subject_code = im.subject_code
+      ON DUPLICATE KEY UPDATE attendance_percentage = VALUES(attendance_percentage), average_internal_marks = VALUES(average_internal_marks), recorded_by = VALUES(recorded_by)`)
+  }
+}
+
+// Reconcile the historical CIVIL label to the configured CV code without
+// dropping or recreating academic rows. If both codes already exist, stop and
+// require a database owner to resolve the duplicate rather than merging data.
+const [civilDepartmentRows] = await connection.query(`SELECT code, name, is_active AS isActive FROM ${identifier('departments')} WHERE code IN ('CV', 'CIVIL') ORDER BY code`)
+const civilDepartment = civilDepartmentRows.find((row) => String(row.code).toUpperCase() === 'CIVIL')
+const cvDepartment = civilDepartmentRows.find((row) => String(row.code).toUpperCase() === 'CV')
+if (civilDepartment && cvDepartment) throw new Error('Both CV and CIVIL departments exist. Resolve the duplicate department codes before running the additive migration.')
+if (civilDepartment && !cvDepartment) {
+  await connection.query(`INSERT INTO ${identifier('departments')} (code, name, is_active) VALUES ('CV', ?, ?)`, [civilDepartment.name, civilDepartment.isActive])
+  for (const table of ['sections', 'subjects', 'teachers', 'students', 'achievements', 'messages', 'announcements']) {
+    if (await tableExists(table)) await connection.query(`UPDATE ${identifier(table)} SET department_code='CV' WHERE department_code='CIVIL'`)
+  }
+  await connection.query(`DELETE FROM ${identifier('departments')} WHERE code='CIVIL'`)
+}
+
+// Student accounts are linked by student profile ID rather than by mutable
+// email. The columns and indexes below are additive and safe to run again.
+await addColumns('users', {
+  student_id: 'BIGINT UNSIGNED NULL',
+  must_change_password: 'BOOLEAN NOT NULL DEFAULT FALSE',
+})
+const userIndexes = await getIndexes('users')
+if (!userIndexes.includes('uq_users_student_account')) await connection.query(`ALTER TABLE ${identifier('users')} ADD UNIQUE KEY ${identifier('uq_users_student_account')} (role, student_id)`)
+if (!userIndexes.includes('idx_users_student_id')) await connection.query(`ALTER TABLE ${identifier('users')} ADD KEY ${identifier('idx_users_student_id')} (student_id)`)
+const [studentUsnDuplicates] = await connection.query(`SELECT UPPER(TRIM(usn)) AS normalizedUsn, COUNT(*) AS total FROM ${identifier('students')} GROUP BY UPPER(TRIM(usn)) HAVING COUNT(*) > 1`)
+if (studentUsnDuplicates.length) {
+  await connection.end()
+  throw new Error(`Cannot add the normalized USN constraint: duplicate USNs require review (${studentUsnDuplicates.map((row) => `${row.normalizedUsn} × ${row.total}`).join(', ')}). No student rows were changed.`)
+}
+await connection.query(`UPDATE ${identifier('students')} SET usn=UPPER(TRIM(usn)) WHERE usn <> UPPER(TRIM(usn))`)
+const [studentUsnIndexes] = await connection.query(`SELECT DISTINCT INDEX_NAME AS name FROM information_schema.statistics WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'students' AND COLUMN_NAME = 'usn' AND NON_UNIQUE = 0`)
+if (!studentUsnIndexes.length) await connection.query(`ALTER TABLE ${identifier('students')} ADD UNIQUE KEY ${identifier('uq_student_usn')} (usn)`)
+const [studentAccountForeignKeys] = await connection.query(`SELECT CONSTRAINT_NAME AS name FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'student_id' AND REFERENCED_TABLE_NAME = 'students'`)
+if (!studentAccountForeignKeys.length) await connection.query(`ALTER TABLE ${identifier('users')} ADD CONSTRAINT ${identifier('fk_user_student')} FOREIGN KEY (student_id) REFERENCES ${identifier('students')}(id) ON DELETE CASCADE`)
+
+// Upgrade the legacy scope-only message table to explicit role-aware delivery.
+// Message IDs are role-table IDs (teacher, parent, student or admin), so a
+// teacher ID can never accidentally resolve to a parent or user-table ID.
+if (await tableExists('messages')) {
+  await addColumns('messages', {
+    sender_role: "ENUM('admin', 'teacher', 'student', 'parent') NULL",
+    receiver_id: 'BIGINT UNSIGNED NULL',
+    receiver_role: "ENUM('admin', 'teacher', 'student', 'parent') NULL",
+    status: "ENUM('sent', 'delivered', 'read') NOT NULL DEFAULT 'sent'",
+    read_status: 'BOOLEAN NOT NULL DEFAULT FALSE',
+  })
+  const [legacyRecipientIndexRows] = await connection.query("SELECT COLUMN_NAME AS columnName FROM information_schema.statistics WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'messages' AND INDEX_NAME = 'idx_message_recipient'")
+  if (legacyRecipientIndexRows.some((row) => row.columnName === 'recipient_user_id')) await connection.query(`ALTER TABLE ${identifier('messages')} DROP INDEX ${identifier('idx_message_recipient')}`)
+  const messageIndexes = await getIndexes('messages')
+  if (!messageIndexes.includes('idx_message_recipient')) await connection.query(`ALTER TABLE ${identifier('messages')} ADD KEY ${identifier('idx_message_recipient')} (receiver_id, receiver_role, read_status, created_at)`)
+  // Existing records used users.id in sender_id/recipient_user_id. Preserve
+  // their displayability while new records use the explicit role IDs above.
+  await connection.query(`UPDATE ${identifier('messages')} m JOIN ${identifier('users')} u ON u.id = m.sender_id SET m.sender_role = u.role WHERE m.sender_role IS NULL`)
+  await connection.query(`UPDATE ${identifier('messages')} m JOIN ${identifier('users')} u ON u.id = m.recipient_user_id SET m.receiver_id = m.recipient_user_id, m.receiver_role = u.role WHERE m.receiver_id IS NULL AND m.recipient_user_id IS NOT NULL`)
+  await connection.query(`UPDATE ${identifier('messages')} SET read_status = TRUE, status = 'read' WHERE read_at IS NOT NULL`)
+  await connection.query(`UPDATE ${identifier('messages')} SET status = 'delivered' WHERE status = 'sent' AND receiver_id IS NOT NULL AND read_status = FALSE`)
+  const foreignKeys = (await connection.query(`SELECT CONSTRAINT_NAME AS name FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'messages' AND REFERENCED_TABLE_NAME IS NOT NULL`))[0].map((row) => row.name)
+  for (const key of ['fk_message_sender', 'fk_message_recipient']) if (foreignKeys.includes(key)) await connection.query(`ALTER TABLE ${identifier('messages')} DROP FOREIGN KEY ${identifier(key)}`)
+}
+
+await connection.end()
+console.log('CAMPS schema created or upgraded with the Average Academic Performance and role-aware messaging contracts.')
